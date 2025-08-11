@@ -1,16 +1,10 @@
-import js from "@eslint/js";
-
 export default [
-  js.configs.recommended,           // ESLint's recommended rules
   {
-    files: ["**/*.js"],
-    languageOptions: {
-      ecmaVersion: "latest",
-      sourceType: "module",
-    },
+    files: ["**/*.js", "**/*.jsx"],
+    languageOptions: { ecmaVersion: "latest", sourceType: "module" },
     rules: {
-      // add custom rule tweaks here
+      semi: ["error", "always"],
+      quotes: ["error", "double"],
     },
-    ignores: ["dist/**", "node_modules/**"]
-  }
+  },
 ];
