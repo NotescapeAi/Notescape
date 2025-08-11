@@ -1,46 +1,15 @@
-# Node.js / React
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-dist/
-build/
-coverage/
-dist/
-.next/
-out/
-coverage/
-*.log
+# macOS
+.DS_Store
 
-# Python
+# Node / Vite
+node_modules/
+dist/
+
+# Python / FastAPI
+.venv/
 __pycache__/
 *.pyc
-.venv/
-env/
-venv/
+
+# Env files
 .env
 .env.*
-__pycache__/
-*.pyc
-*.pyo
-
-# OS / Editor
-.DS_Store
-Thumbs.db
-*.swp
-
-# Logs
-*.log
-
-# Local env files
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-
-
-
-
-# Misc
-*.local
