@@ -28,3 +28,6 @@ Thumbs.db
 .env.test.local
 .env.production.local
 
+
+# OS junk
+.DS_Store
