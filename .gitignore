@@ -6,12 +6,23 @@ yarn-error.log*
 dist/
 build/
 coverage/
+dist/
+.next/
+out/
+coverage/
+*.log
 
 # Python
 __pycache__/
 *.pyc
 .venv/
 env/
+venv/
+.env
+.env.*
+__pycache__/
+*.pyc
+*.pyo
 
 # OS / Editor
 .DS_Store
@@ -29,5 +40,7 @@ Thumbs.db
 .env.production.local
 
 
-# OS junk
-.DS_Store
+
+
+# Misc
+*.local
