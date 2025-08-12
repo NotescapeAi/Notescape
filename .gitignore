@@ -7,9 +7,17 @@ dist/
 
 # Python / FastAPI
 .venv/
+venv/
+env/
 __pycache__/
 *.pyc
 
 # Env files
 .env
 .env.*
+
+# Python virtual envs
+.venv/
+venv/
+env/
+
