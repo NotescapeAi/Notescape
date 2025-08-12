@@ -28,7 +28,5 @@ venv/
 env/
 frontend/node_modules/
 coverage/
-
-# Coverage
-coverage/
 frontend/coverage/
+
