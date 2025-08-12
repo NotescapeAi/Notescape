@@ -21,3 +21,10 @@ __pycache__/
 venv/
 env/
 
+
+# Python/Node local envs
+.venv/
+venv/
+env/
+frontend/node_modules/
+coverage/
