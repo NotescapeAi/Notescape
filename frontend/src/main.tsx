@@ -1,12 +1,19 @@
+import "@fontsource/montserrat/400.css"; // normal
+import "@fontsource/montserrat/700.css"; // bold
 import React from "react";
+
 import { createRoot } from "react-dom/client";
-import { createBrowserRouter, RouterProvider } from "react-router-dom";
-import App from "./App";
-import Pricing from "./pages/Pricing";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+import PricingPage from "./pages/Pricing";
 
-const router = createBrowserRouter([
-  { path: "/", element: <App /> },
-  { path: "/pricing", element: <Pricing /> },
-]);
+const container = document.getElementById("root") as HTMLElement;
+const root = createRoot(container);
 
-createRoot(document.getElementById("root")!).render(<RouterProvider router={router} />);
+root.render(
+  <BrowserRouter>
+    <Routes>
+      {/* ...other routes */}
+      <Route path="/pricing" element={<PricingPage />} />
+    </Routes>
+  </BrowserRouter>
+);
