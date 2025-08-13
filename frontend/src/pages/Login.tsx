@@ -1,14 +1,17 @@
-import React, { useState, MouseEvent, FormEvent } from "react";
-import { useNavigate, Link } from "react-router-dom";
-import "./NotescapeStartPage.css"; // your stylesheet
+import React, { useState, FormEvent, MouseEvent } from "react";
+import { Link, useNavigate } from "react-router-dom";
 
+/**
+ * Login page — ripple + social handlers + form submit.
+ * ESLint-friendly: no unused vars, errors are logged.
+ */
 export default function Login(): JSX.Element {
   const navigate = useNavigate();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   const addRipple = (e: MouseEvent<HTMLButtonElement>) => {
     const btn = e.currentTarget;
@@ -17,20 +20,19 @@ export default function Login(): JSX.Element {
     const size = Math.max(rect.width, rect.height);
     ripple.className = "ripple";
     ripple.style.width = ripple.style.height = `${size}px`;
-    const x = e.clientX - rect.left - size / 2;
-    const y = e.clientY - rect.top - size / 2;
-    ripple.style.left = `${x}px`;
-    ripple.style.top = `${y}px`;
+    ripple.style.left = `${e.clientX - rect.left - size / 2}px`;
+    ripple.style.top = `${e.clientY - rect.top - size / 2}px`;
     btn.appendChild(ripple);
     ripple.addEventListener("animationend", () => ripple.remove());
   };
 
+  // Use this handler for both Apple & Google buttons
   const onSocial = (provider: "Apple" | "Google", e: MouseEvent<HTMLButtonElement>) => {
-    // ripple + placeholder behavior
     addRipple(e);
-    setError(`Social sign-in with ${provider} is not wired yet.`);
+    // placeholder behavior — log and show temporary message
+    console.log(`${provider} sign-in clicked`);
+    setError(`${provider} sign-in not wired yet.`);
     setTimeout(() => setError(""), 1400);
-    // TODO: wire provider OAuth flow here
   };
 
   const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
@@ -38,12 +40,6 @@ export default function Login(): JSX.Element {
     setError("");
 
     if (!email || !password) {
-      const form = (e.currentTarget.closest(".login-container") as HTMLElement | null);
-      if (form) {
-        form.classList.remove("shake");
-        void form.offsetWidth; // restart animation
-        form.classList.add("shake");
-      }
       setError("Please enter both email and password.");
       return;
     }
@@ -52,9 +48,12 @@ export default function Login(): JSX.Element {
     try {
       // simulate auth request
       await new Promise((r) => setTimeout(r, 900));
-      // TODO: call real auth API, handle errors
-      navigate("/dashboard"); // change destination as needed
-    } catch (err) {
+      navigate("/dashboard");
+    } catch (caughtError) {
+      // log the error (prevents ESLint 'defined but never used' complaint)
+      // and show a friendly message
+      // eslint-disable-next-line no-console
+      console.error("Login error:", caughtError);
       setError("Login failed. Please try again.");
     } finally {
       setSubmitting(false);
@@ -64,24 +63,31 @@ export default function Login(): JSX.Element {
   return (
     <main className="page">
       <header className="logo">
-  <img src="/logo1.png" alt="Notescape logo" width={70} height={50} />
-  <h1>Notescape</h1>
-</header>
-
+        <img src="/logo1.png" alt="Notescape logo" width={70} height={50} />
+        <h1>Notescape</h1>
+      </header>
 
       <div className="login-container">
         <h2 className="login-title">Log in</h2>
 
-        {/* Social buttons */}
-        <button className="social-btn" onClick={() => console.log("Apple Sign In")}>
+        {/* Apple Sign In */}
+        <button
+          type="button"
+          className="social-btn"
+          onClick={(e) => onSocial("Apple", e)}
+        >
           <img src="/apple.svg" alt="Apple logo" className="icon" width={18} height={18} />
-          Continue with Apple
+          CONTINUE WITH APPLE
         </button>
 
         {/* Google Sign In */}
-        <button className="social-btn" onClick={() => console.log("Google Sign In")}>
+        <button
+          type="button"
+          className="social-btn"
+          onClick={(e) => onSocial("Google", e)}
+        >
           <img src="/google.svg" alt="Google logo" className="icon" width={18} height={18} />
-          Continue with Google
+          CONTINUE WITH GOOGLE
         </button>
 
         <div className="divider" role="separator" aria-label="or">
@@ -90,7 +96,6 @@ export default function Login(): JSX.Element {
           <span />
         </div>
 
-        {/* Error */}
         {error && <p className="error" role="status">{error}</p>}
 
         <form onSubmit={onSubmit} noValidate>
@@ -119,7 +124,7 @@ export default function Login(): JSX.Element {
           <button
             type="submit"
             className="login-btn"
-            onClick={(e) => addRipple(e as MouseEvent<HTMLButtonElement>)}
+            onClick={(e) => addRipple(e)}
             disabled={submitting}
           >
             {!submitting ? "LOG IN" : <span className="spinner" aria-hidden />}
@@ -134,5 +139,3 @@ export default function Login(): JSX.Element {
     </main>
   );
 }
-
-
