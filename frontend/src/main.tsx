@@ -5,6 +5,7 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import PricingPage from "./pages/Pricing";
+import NotescapeStartPage from "./pages/NotescapeStartPage"; // <-- import your start page
 
 const container = document.getElementById("root") as HTMLElement;
 const root = createRoot(container);
@@ -12,7 +13,10 @@ const root = createRoot(container);
 root.render(
   <BrowserRouter>
     <Routes>
-      {/* ...other routes */}
+      {/* Home route */}
+      <Route path="/" element={<NotescapeStartPage />} />
+
+      {/* Pricing route */}
       <Route path="/pricing" element={<PricingPage />} />
     </Routes>
   </BrowserRouter>
