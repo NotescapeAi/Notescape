@@ -51,38 +51,11 @@ body::before{
 
 /* ---------- Logo ---------- */
 .logo{
-  display:flex; align-items:center; gap:10px;
-  margin:6px 0 18px;
+  display:flex; align-items:center;
+  margin:6px 0 25px;
   color:#2b2e42;
 }
-.logo-mark {
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  background: linear-gradient(180deg, #fff, #f3f1ff);
-  border: 1px solid #ebeaf7;
-  box-shadow: 0 6px 16px var(--shadow);
-  color: #5b4ae6;
-  overflow: hidden; /* keeps image contained */
-  opacity: 0;
-  transform: translateY(-8px) scale(.98);
-  animation: logoEnter .55s var(--easing) .08s forwards;
-}
 
-.logo-mark img {
-  width: 60%;
-  height: 60%;
-  object-fit: contain;
-}
-
-@keyframes logoEnter {
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
 
 @keyframes logoEnter{ to{opacity:1; transform:translateY(0) scale(1)} }
 .logo h1{
@@ -91,6 +64,7 @@ body::before{
   -webkit-background-clip:text; background-clip:text; color:transparent;
   background-size:200% 100%;
   animation: shimmerText 8s linear infinite;
+  margin-left: -5%;
 }
 @keyframes shimmerText{ to { background-position:200% 0 } }
 
@@ -106,6 +80,7 @@ body::before{
   box-shadow: 0 24px 60px rgba(15,23,36,.10), 0 2px 0 rgba(255,255,255,.6) inset;
   animation: fadeUp .9s var(--easing) both;
 }
+
 @keyframes fadeUp{
   from{ opacity:0; transform:translateY(16px); filter:blur(6px) }
   to  { opacity:1; transform:translateY(0);    filter:blur(0)  }
@@ -131,6 +106,7 @@ body::before{
   border:1px solid rgba(13,24,50,.9);
   color:#0f1724;
   box-shadow: 0 6px 18px var(--shadow);
+ 
 }
 .social-btn:hover{ transform: translateY(-2px); box-shadow:0 12px 28px rgba(30, 13, 108, 0.12) ;color: var(--brand1); }
 .social-btn:active{ transform: translateY(1px) scale(.997) }
@@ -174,7 +150,7 @@ body::before{
 /* ---------- Links ---------- */
 .links{ display:flex; justify-content:center; align-items:center; gap:5px; flex-wrap:wrap; margin-top:5px }
 
-.ghost-btn:hover{  color:var(--brand2);   box-shadow:0 rgba(11,15,30,.1) }
+.ghost-btn:hover{  color:var(--brand1);   box-shadow:0 rgba(18, 40, 121, 0.1) }
 
 /* ---------- Mobile ---------- */
 @media (max-width: 480px){
@@ -187,7 +163,7 @@ body::before{
 }
 
 /* Tiny devices */
-@media (max-width:360px){
+@media (max-width:250px){
   .login-container{ padding:16px; width:96% }
   .logo h1{ display:none } /* keep icon only */
   .social-btn, .login-btn{ padding:12px 14px; font-size:.98rem }
@@ -197,4 +173,77 @@ body::before{
 @media (prefers-reduced-motion: reduce){
   *, *::before, *::after{ animation:none !important; transition:none !important }
   body::before{ display:none }
+}
+
+/*Login Page */
+
+.error{ color:#b91c1c; background:rgba(249,115,22,0.04); padding:8px 12px; border-radius:8px; margin-bottom:12px }
+.form-field{ margin-bottom:14px; text-align:left }
+input[type="email"], input[type="password"]{
+  width:100%; padding:12px 14px; border-radius:12px; border:1px solid var(--muted);
+  background:#fff; font-size:15px; outline:none; box-shadow: 0 6px 18px rgba(11,15,30,0.02);
+  transition: box-shadow .18s ease, transform .12s ease, border-color .12s ease;
+}
+input:focus{ border-color: var(--brand1); box-shadow: 0 10px 30px rgba(139,92,246,0.08); transform: translateY(-1px) }
+.links2 {
+  display: flex;
+  justify-content: space-between; /* one left, one right */
+  margin-top: 16px;
+}
+
+.links2 a {
+  color: #2563eb; /* nice blue */
+  font-size: 14px;
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.2s ease;
+}
+
+.links2 a:hover {
+  color:#8b5cf6;
+}
+.social-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px; /* space between icon and text */
+  padding: 12px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--muted, #ddd);
+  background-color: #fff;
+  font-size: 15px;
+  font-weight: 500;
+  color: #111;
+  cursor: pointer;
+  transition: background-color 0.2s ease, transform 0.12s ease;
+  width: 100%;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+}
+
+.social-btn img {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.social-btn:hover {
+  background-color: #f9f9f9;
+  transform: translateY(-1px);
+}
+
+.social-btn:active {
+  transform: translateY(0);
+}
+
+@media (max-width: 480px) {
+  .social-btn {
+    font-size: 14px;
+    padding: 10px 14px;
+    gap: 8px;
+  }
+
+  .social-btn img {
+    width: 16px;
+    height: 16px;
+  }
 }
