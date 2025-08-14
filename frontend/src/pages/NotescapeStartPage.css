@@ -341,3 +341,10 @@ input:focus {
   border-radius: 8px;
   margin-bottom: 12px;
 }
+
+/* Dashboard */
+.delete-btn {
+  background-color: #ff4d4f;
+  color: white;
+  margin-top: 10px;
+}
