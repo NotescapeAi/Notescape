@@ -1,3 +1,4 @@
+// src/pages/NotescapeStartPage.tsx
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
@@ -5,6 +6,9 @@ import {
   signInWithGoogle,
   signInWithApple,
 } from "../firebase/firebaseAuth";
+import { auth } from "../firebase/firebase";
+import { fetchSignInMethodsForEmail } from "firebase/auth";
+import { FirebaseError } from "firebase/app";
 import "./NotescapeStartPage.css";
 
 export default function NotescapeStartPage() {
@@ -24,6 +28,9 @@ export default function NotescapeStartPage() {
     setShowEmailForm(true);
   };
 
+  // Helper to normalize email
+  const normalizeEmail = (raw: string) => raw.trim().toLowerCase();
+
   // Social login handler
   const onSocial = async (provider: "Apple" | "Google") => {
     setError("");
@@ -35,12 +42,50 @@ export default function NotescapeStartPage() {
       }
       navigate("/dashboard");
     } catch (err: unknown) {
-      if (err instanceof Error) {
-        console.error(`${provider} login error:`, err.message);
-        setError(`${provider} login failed. Please try again.`);
+      console.error(`${provider} login error:`, err);
+
+      if (err instanceof FirebaseError) {
+        // Handle account-exists-with-different-credential conflict
+        if (err.code === "auth/account-exists-with-different-credential") {
+          const conflictEmail =
+            (err.customData?.email as string | undefined) || "";
+          if (conflictEmail) {
+            try {
+              const methods = await fetchSignInMethodsForEmail(
+                auth,
+                normalizeEmail(conflictEmail)
+              );
+              if (methods.includes("password")) {
+                setError(
+                  "An account with this email already exists with a password. Please log in with email & password."
+                );
+              } else if (methods.includes("google.com")) {
+                setError(
+                  "This email is already linked with Google. Please continue with Google."
+                );
+              } else if (methods.includes("apple.com")) {
+                setError(
+                  "This email is already linked with Apple. Please continue with Apple."
+                );
+              } else {
+                setError(
+                  "An account with this email already exists with a different sign-in method."
+                );
+              }
+            } catch (fetchErr) {
+              console.error("fetchSignInMethodsForEmail error:", fetchErr);
+              setError(`${provider} login failed. Please try another method.`);
+            }
+          } else {
+            setError(`${provider} login failed. Please try another method.`);
+          }
+        } else if (err.code === "auth/popup-closed-by-user") {
+          setError("Sign-in was cancelled. Please try again.");
+        } else {
+          setError(`${provider} login failed. Please try again.`);
+        }
       } else {
-        console.error(`${provider} login error:`, err);
-        setError(`${provider} login failed.`);
+        setError(`${provider} login failed. Please try again.`);
       }
     }
   };
@@ -50,7 +95,9 @@ export default function NotescapeStartPage() {
     e.preventDefault();
     setError("");
 
-    if (!email || !password || !confirmPassword) {
+    const cleanEmail = normalizeEmail(email);
+
+    if (!cleanEmail || !password || !confirmPassword) {
       setError("Please fill all fields.");
       return;
     }
@@ -62,15 +109,39 @@ export default function NotescapeStartPage() {
 
     setSubmitting(true);
     try {
-      await signup(email, password);
+      await signup(cleanEmail, password);
       navigate("/dashboard");
     } catch (err: unknown) {
-      if (err instanceof Error) {
-        console.error("Signup error:", err.message);
-        setError("Signup failed. Please try again.");
+      console.error("Signup error:", err);
+
+      if (err instanceof FirebaseError) {
+        if (err.code === "auth/email-already-in-use") {
+          try {
+            const methods = await fetchSignInMethodsForEmail(auth, cleanEmail);
+            if (methods.includes("password")) {
+              setError("You already have an account. Please log in instead.");
+            } else if (methods.includes("google.com")) {
+              setError(
+                "This email is already linked with Google. Please continue with Google sign-in."
+              );
+            } else if (methods.includes("apple.com")) {
+              setError(
+                "This email is already linked with Apple. Please continue with Apple sign-in."
+              );
+            } else {
+              setError(
+                "This email is already in use. Try logging in or use a different email."
+              );
+            }
+          } catch (fetchErr) {
+            console.error("fetchSignInMethodsForEmail error:", fetchErr);
+            setError("This email is already in use. Please log in instead.");
+          }
+        } else {
+          setError("Signup failed. Please try again.");
+        }
       } else {
-        console.error("Signup error:", err);
-        setError("Signup failed.");
+        setError("Signup failed. Please try again.");
       }
     } finally {
       setSubmitting(false);
@@ -84,11 +155,19 @@ export default function NotescapeStartPage() {
         <h1>Notescape</h1>
       </header>
 
-      <section className="login-container" role="region" aria-label="Get Started">
+      <section
+        className="login-container"
+        role="region"
+        aria-label="Get Started"
+      >
         <h2 className="login-title">Get Started</h2>
 
         {/* Social buttons */}
-        <button className="social-btn" onClick={() => onSocial("Apple")}>
+        <button
+          className="social-btn"
+          onClick={() => onSocial("Apple")}
+          aria-label="Continue with Apple"
+        >
           <img
             src="/apple.svg"
             alt="Apple logo"
@@ -99,7 +178,11 @@ export default function NotescapeStartPage() {
           Continue with Apple
         </button>
 
-        <button className="social-btn" onClick={() => onSocial("Google")}>
+        <button
+          className="social-btn"
+          onClick={() => onSocial("Google")}
+          aria-label="Continue with Google"
+        >
           <img
             src="/google.svg"
             alt="Google logo"
@@ -116,7 +199,6 @@ export default function NotescapeStartPage() {
           <span />
         </div>
 
-        {/* Continue with Email button */}
         {!showEmailForm && (
           <button className="login-btn" onClick={handleEmailClick}>
             <span className="btn-inner">
@@ -126,7 +208,6 @@ export default function NotescapeStartPage() {
           </button>
         )}
 
-        {/* Email Form */}
         {showEmailForm && (
           <form className="email-form" onSubmit={onSubmit} noValidate>
             {error && <p className="error">{error}</p>}
@@ -138,6 +219,7 @@ export default function NotescapeStartPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
+                aria-label="Email"
               />
             </div>
 
@@ -148,6 +230,7 @@ export default function NotescapeStartPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                aria-label="Password"
               />
               <button
                 type="button"
@@ -165,6 +248,7 @@ export default function NotescapeStartPage() {
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 required
+                aria-label="Confirm password"
               />
               <button
                 type="button"
