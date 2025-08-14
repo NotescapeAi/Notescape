@@ -1,5 +1,6 @@
 import React, { useState, FormEvent, MouseEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { login, signInWithGoogle, signInWithApple } from "../firebase/firebaseAuth";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -9,6 +10,7 @@ export default function Login() {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  // Ripple effect
   const addRipple = (e: MouseEvent<HTMLButtonElement>) => {
     const btn = e.currentTarget;
     const rect = btn.getBoundingClientRect();
@@ -22,15 +24,28 @@ export default function Login() {
     ripple.addEventListener("animationend", () => ripple.remove());
   };
 
-  // Use this handler for both Apple & Google buttons
-  const onSocial = (provider: "Apple" | "Google", e: MouseEvent<HTMLButtonElement>) => {
+  // Social login handler
+  const onSocial = async (provider: "Apple" | "Google", e: MouseEvent<HTMLButtonElement>) => {
     addRipple(e);
-    // placeholder behavior — log and show temporary message
-    console.log(`${provider} sign-in clicked`);
-    setError(`${provider} sign-in not wired yet.`);
-    setTimeout(() => setError(""), 1400);
+    setError("");
+    try {
+      if (provider === "Google") {
+        await signInWithGoogle();
+      } else if (provider === "Apple") {
+        await signInWithApple();
+      }
+      navigate("/dashboard");
+    } catch (err: unknown) {
+      console.error(`${provider} login error:`, err);
+      if (err instanceof Error) {
+        setError(`${provider} login failed: ${err.message}`);
+      } else {
+        setError(`${provider} login failed. Please try again.`);
+      }
+    }
   };
 
+  // Email/Password login
   const onSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError("");
@@ -42,15 +57,15 @@ export default function Login() {
 
     setSubmitting(true);
     try {
-      // simulate auth request
-      await new Promise((r) => setTimeout(r, 900));
+      await login(email, password);
       navigate("/dashboard");
-    } catch (caughtError) {
-      // log the error (prevents ESLint 'defined but never used' complaint)
-      // and show a friendly message
-      // eslint-disable-next-line no-console
-      console.error("Login error:", caughtError);
-      setError("Login failed. Please try again.");
+    } catch (err: unknown) {
+      console.error("Login error:", err);
+      if (err instanceof Error) {
+        setError(`Login failed: ${err.message}`);
+      } else {
+        setError("Login failed. Please check your credentials.");
+      }
     } finally {
       setSubmitting(false);
     }
@@ -67,21 +82,13 @@ export default function Login() {
         <h2 className="login-title">Log in</h2>
 
         {/* Apple Sign In */}
-        <button
-          type="button"
-          className="social-btn"
-          onClick={(e) => onSocial("Apple", e)}
-        >
+        <button type="button" className="social-btn" onClick={(e) => onSocial("Apple", e)}>
           <img src="/apple.svg" alt="Apple logo" className="icon" width={18} height={18} />
           CONTINUE WITH APPLE
         </button>
 
         {/* Google Sign In */}
-        <button
-          type="button"
-          className="social-btn"
-          onClick={(e) => onSocial("Google", e)}
-        >
+        <button type="button" className="social-btn" onClick={(e) => onSocial("Google", e)}>
           <img src="/google.svg" alt="Google logo" className="icon" width={18} height={18} />
           CONTINUE WITH GOOGLE
         </button>
@@ -128,14 +135,13 @@ export default function Login() {
         </form>
 
         <div className="links2">
-  <Link to="/get-started" className="ghost-btn">
-    Create account
-  </Link>
-  <Link to="/forgot-password" className="ghost-btn">
-    Forgot password?
-  </Link>
-</div>
-
+          <Link to="/get-started" className="ghost-btn">
+            Create account
+          </Link>
+          <Link to="/forgot-password" className="ghost-btn">
+            Forgot password?
+          </Link>
+        </div>
       </div>
     </main>
   );
