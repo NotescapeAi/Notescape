@@ -247,3 +247,97 @@ input:focus{ border-color: var(--brand1); box-shadow: 0 10px 30px rgba(139,92,24
     height: 16px;
   }
 }
+
+/* Signup / Email Form */
+.email-form {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+/* Individual form fields */
+.form-field {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Inputs */
+input[type="email"],
+input[type="password"],
+input[type="text"] {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--muted, #ccc);
+  background: #fff;
+  font-size: 15px;
+  outline: none;
+  box-shadow: 0 6px 18px rgba(11, 15, 30, 0.02);
+  transition: box-shadow 0.18s ease, transform 0.12s ease, border-color 0.12s ease;
+}
+
+/* Focused input */
+input:focus {
+  border-color: var(--brand1);
+  box-shadow: 0 10px 30px rgba(139, 92, 246, 0.08);
+  transform: translateY(-1px);
+}
+
+/* Password field container */
+.password-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+/* Toggle password button */
+.toggle-password {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: #2563eb;
+  font-weight: 500;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 6px;
+}
+
+.toggle-password:hover {
+  color: #8b5cf6;
+}
+
+/* Animation for form appearance */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Error message */
+.error {
+  color: #b91c1c;
+  background: rgba(249, 115, 22, 0.04);
+  padding: 8px 12px;
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+/* Success message (optional) */
+.success {
+  color: #16a34a;
+  background: rgba(134, 239, 172, 0.2);
+  padding: 8px 12px;
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
