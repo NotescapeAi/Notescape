@@ -1,8 +1,12 @@
 import React, { useState, FormEvent } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { sendPasswordResetEmail } from "firebase/auth";
+import { AuthError } from "firebase/auth"; 
+import { auth } from "../firebase/firebase";
 import "./NotescapeStartPage.css";
 
 export default function ForgotPassword() {
+  const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -12,7 +16,8 @@ export default function ForgotPassword() {
     e.preventDefault();
     setError("");
     setMessage("");
-    if (!email) {
+
+    if (!email.trim()) {
       setError("Please enter your email.");
       return;
     }
@@ -20,11 +25,31 @@ export default function ForgotPassword() {
     setSubmitting(true);
 
     try {
-      // simulate API request
-      await new Promise((r) => setTimeout(r, 1000));
-      setMessage("If this email exists, a reset link has been sent.");
-    } catch  {
-      setError("Something went wrong. Please try again.");
+      await sendPasswordResetEmail(auth, email, {
+        url: `${window.location.origin}/login`,
+      });
+      setMessage(
+        "Password reset email sent! Check your inbox and follow the link to set a new password."
+      );
+      setEmail("");
+
+     
+      setTimeout(() => {
+        navigate("/login");
+      }, 5000);
+    } catch (err: unknown) {
+      console.error("Password reset error:", err);
+
+      if (typeof err === "object" && err !== null && "code" in err) {
+        const authErr = err as AuthError;
+        if (authErr.code === "auth/user-not-found") {
+          setError("No account found with this email.");
+        } else {
+          setError("Something went wrong. Please try again.");
+        }
+      } else {
+        setError("An unexpected error occurred.");
+      }
     } finally {
       setSubmitting(false);
     }
