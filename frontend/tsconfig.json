@@ -3,5 +3,14 @@
   "references": [
     { "path": "./tsconfig.app.json" },
     { "path": "./tsconfig.node.json" }
-  ]
+  ],
+  "compilerOptions": {
+    "target": "es2017",
+    "lib": ["dom", "esnext"],
+    "jsx": "react-jsx",
+    "module": "esnext",
+    "strict": true
+  }
 }
+
+

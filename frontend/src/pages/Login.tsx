@@ -1,11 +1,7 @@
 import React, { useState, FormEvent, MouseEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
-/**
- * Login page — ripple + social handlers + form submit.
- * ESLint-friendly: no unused vars, errors are logged.
- */
-export default function Login(): JSX.Element {
+export default function Login() {
   const navigate = useNavigate();
 
   const [email, setEmail] = useState("");
@@ -132,9 +128,14 @@ export default function Login(): JSX.Element {
         </form>
 
         <div className="links2">
-          <Link to="/signup" className="ghost-btn">Create account</Link>
-          <Link to="/forgot-password" className="ghost-btn">Forgot password?</Link>
-        </div>
+  <Link to="/get-started" className="ghost-btn">
+    Create account
+  </Link>
+  <Link to="/forgot-password" className="ghost-btn">
+    Forgot password?
+  </Link>
+</div>
+
       </div>
     </main>
   );
