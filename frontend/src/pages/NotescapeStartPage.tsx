@@ -1,23 +1,52 @@
 import React, { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import {
+  signup,
+  signInWithGoogle,
+  signInWithApple,
+} from "../firebase/firebaseAuth";
 import "./NotescapeStartPage.css";
 
 export default function NotescapeStartPage() {
+  const navigate = useNavigate();
+
   const [showEmailForm, setShowEmailForm] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
 
-  // separate states for each password field
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   const handleEmailClick = () => {
     setShowEmailForm(true);
   };
 
-  const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  // Social login handler
+  const onSocial = async (provider: "Apple" | "Google") => {
+    setError("");
+    try {
+      if (provider === "Google") {
+        await signInWithGoogle();
+      } else if (provider === "Apple") {
+        await signInWithApple();
+      }
+      navigate("/dashboard");
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        console.error(`${provider} login error:`, err.message);
+        setError(`${provider} login failed. Please try again.`);
+      } else {
+        console.error(`${provider} login error:`, err);
+        setError(`${provider} login failed.`);
+      }
+    }
+  };
+
+  // Email/Password signup
+  const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError("");
 
@@ -25,12 +54,27 @@ export default function NotescapeStartPage() {
       setError("Please fill all fields.");
       return;
     }
+
     if (password !== confirmPassword) {
       setError("Passwords do not match.");
       return;
     }
 
-    console.log("Form submitted:", { email, password });
+    setSubmitting(true);
+    try {
+      await signup(email, password);
+      navigate("/dashboard");
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        console.error("Signup error:", err.message);
+        setError("Signup failed. Please try again.");
+      } else {
+        console.error("Signup error:", err);
+        setError("Signup failed.");
+      }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -44,13 +88,25 @@ export default function NotescapeStartPage() {
         <h2 className="login-title">Get Started</h2>
 
         {/* Social buttons */}
-        <button className="social-btn" onClick={() => console.log("Apple Sign In")}>
-          <img src="/apple.svg" alt="Apple logo" className="icon" width={18} height={18} />
+        <button className="social-btn" onClick={() => onSocial("Apple")}>
+          <img
+            src="/apple.svg"
+            alt="Apple logo"
+            className="icon"
+            width={18}
+            height={18}
+          />
           Continue with Apple
         </button>
 
-        <button className="social-btn" onClick={() => console.log("Google Sign In")}>
-          <img src="/google.svg" alt="Google logo" className="icon" width={18} height={18} />
+        <button className="social-btn" onClick={() => onSocial("Google")}>
+          <img
+            src="/google.svg"
+            alt="Google logo"
+            className="icon"
+            width={18}
+            height={18}
+          />
           Continue with Google
         </button>
 
@@ -119,8 +175,8 @@ export default function NotescapeStartPage() {
               </button>
             </div>
 
-            <button type="submit" className="login-btn">
-              Sign Up
+            <button type="submit" className="login-btn" disabled={submitting}>
+              {!submitting ? "Sign Up" : "Signing Up..."}
             </button>
           </form>
         )}
