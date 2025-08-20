@@ -3,6 +3,8 @@ import React from "react";
 import "@fontsource/montserrat/400.css";
 import "@fontsource/montserrat/700.css";
 import "./pricing.css";
+import Navbar from "../components/Navbar";
+import Footer from "../components/Footer";
 
 export default function Pricing() {
   const onSubmit: React.FormEventHandler<HTMLFormElement> = (e) => {
@@ -11,9 +13,13 @@ export default function Pricing() {
   };
 
   return (
-    <div className="font-montserrat text-gray-900">
-      <main className="pricing-hero flex flex-col items-center text-center px-4">
-        <div className="container max-w-2xl space-y-6">
+    <div className="font-montserrat text-gray-900 flex flex-col min-h-screen">
+      {/* --- Navbar --- */}
+      <Navbar />
+
+      {/* --- Main Content --- */}
+      <main className="pricing-hero flex flex-col items-center text-center flex-grow">
+        <div className="container space-y-6 max-w-5xl">
           <header className="eyebrow">New features coming soon</header>
 
           <h1 className="title">Pricing Plans</h1>
@@ -36,6 +42,9 @@ export default function Pricing() {
           </form>
         </div>
       </main>
+
+      {/* --- Footer --- */}
+      <Footer />
     </div>
   );
 }

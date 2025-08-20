@@ -13,6 +13,9 @@
 
 .pricing-hero{
   min-height:100vh;
+  width: 100%;        /* full width */
+  height: 100vh;      /* full height of viewport */
+ 
   background:
     radial-gradient(1200px 600px at 10% -10%, rgba(123,95,239,.18), transparent 60%),
     radial-gradient(900px 500px at 110% 20%, rgba(95,239,195,.20), transparent 60%),
@@ -24,10 +27,13 @@
   padding:56px 16px;
 }
 
-.container{
-  width:100%;
-  max-width:980px;
+.container {
+  width: 100%;
+  max-width: 100%;  /* remove restriction */
+  margin: 0;        /* reset */
+  padding: 0 24px;  /* optional padding for breathing space */
 }
+
 
 .eyebrow{
   display:inline-block;
