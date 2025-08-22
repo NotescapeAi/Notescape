@@ -27,13 +27,19 @@
   padding:56px 16px;
 }
 
-.container {
+/* ✅ scoped only to Pricing page */
+.pricing-container {
   width: 100%;
+
   max-width: 100%;  /* remove restriction */
   margin: 0;        /* reset */
   padding: 0 24px;  /* optional padding for breathing space */
-}
 
+  max-width: 100%;
+  margin: 0;
+  padding: 0 2px;
+
+}
 
 .eyebrow{
   display:inline-block;
@@ -151,4 +157,7 @@
   .title{ font-size:34px; }
   .card{ padding:22px; }
 }  
+
+
+
 
