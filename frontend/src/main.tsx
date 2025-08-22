@@ -1,9 +1,6 @@
 import "@fontsource/montserrat/400.css"; // normal
 import "@fontsource/montserrat/700.css"; // bold
 import React from "react";
-import Navbar from "./components/Navbar";
-import Footer from "./components/Footer";
-
 import Login from "./pages/Login";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
