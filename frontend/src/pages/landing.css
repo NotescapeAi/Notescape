@@ -1,3 +1,33 @@
+
+/* ===== Design tokens (reused from your theme) ===== */
+:root{
+  --bg:#f7f7fb;
+  --panel:#ffffff;
+  --ink:#0f1724;
+  --muted:#cfd2e6;
+  --brand1:#8b5cf6; /* purple */
+  --brand2:#ec4899; /* pink */
+  --shadow:rgba(15,23,36,.10);
+  --ring: rgba(139,92,246,.45);
+  --radius-lg:22px;
+  --radius-md:16px;
+  --radius-sm:12px;
+  --easing:cubic-bezier(.2,.8,.2,1);
+}
+
+/* Page ambiance to match your image */
+body {
+  background:
+    radial-gradient(1200px 800px at 6% -10%, rgba(139,92,246,.14), transparent 60%),
+    radial-gradient(1000px 700px at 95% 110%, rgba(148, 72, 236, 0.12), transparent 60%),
+    linear-gradient(180deg, #eadbf8 0%, #f3f3fb 100%);
+  background-attachment: fixed;
+  color: var(--ink);
+}
+
+.container { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
+
+
 /* ===== AGR animated gradient text ===== */
 /* DARKER gradient text for Landing hero only */
 .agr-hero{

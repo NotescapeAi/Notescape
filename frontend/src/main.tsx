@@ -1,6 +1,7 @@
 import "@fontsource/montserrat/400.css"; // normal
 import "@fontsource/montserrat/700.css"; // bold
 import React from "react";
+
 import Login from "./pages/Login";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
@@ -18,6 +19,7 @@ const root = createRoot(container);
 
 root.render(
   <BrowserRouter>
+
     <Routes>
       {/* Existing routes */}
       <Route path="/" element={<NotescapeStartPage />} />
@@ -33,5 +35,6 @@ root.render(
       <Route path="/privacy-policy" element={<PrivacyPage />} />
       <Route path="/contact" element={<SupportPage />} />
     </Routes>
+
   </BrowserRouter>
 );

@@ -6,7 +6,7 @@ const Navbar: React.FC = () => {
       <nav className="ns-nav">
         <Link to="/" className="ns-logo">
           <img src="/logo1.png" alt="Notescape logo" />
-          <span className="ns-brand agr-text">Notescape</span>
+          <span className="ns-brand ">Notescape</span>
         </Link>
 
         <div className="ns-nav-links">
