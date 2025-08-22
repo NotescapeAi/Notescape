@@ -18,8 +18,8 @@
 body {
   background:
     radial-gradient(1200px 800px at 6% -10%, rgba(139,92,246,.14), transparent 60%),
-    radial-gradient(1000px 700px at 95% 110%, rgba(236,72,153,.12), transparent 60%),
-    linear-gradient(180deg, #fafaff 0%, #f3f3fb 100%);
+    radial-gradient(1000px 700px at 95% 110%, rgba(148, 72, 236, 0.12), transparent 60%),
+    linear-gradient(180deg, #eadbf8 0%, #f3f3fb 100%);
   background-attachment: fixed;
   color: var(--ink);
 }
@@ -27,32 +27,68 @@ body {
 .container { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
 
 /* ===== AGR animated gradient text ===== */
-.agr-text{
-  background: linear-gradient(90deg,#2b2e42,#5b4ae6 40%,#d44f9c 80%);
+/* DARKER gradient text for Landing hero only */
+.agr-hero{
+  /* brand palette (yours) */
+  --c1:#1d1273;    /* purple */
+  --c2:#4131ba;  /* indigo */
+  --c3:#ba42e2;   /* pink */
+
+  /* darken for contrast — tweak 12–18% */
+  --shade: 16%;
+  --c1d: color-mix(in srgb, var(--c1) calc(100% - var(--shade)), black var(--shade));
+  --c2d: color-mix(in srgb, var(--c2) calc(100% - var(--shade)), black var(--shade));
+  --c3d: color-mix(in srgb, var(--c3) calc(100% - var(--shade)), black var(--shade));
+
+  display:inline-block;
+
+  /* Fallback first (older browsers without color-mix) */
+  background: linear-gradient(100deg, #372aa7 0%, #4032c8 50%, #b33878 70%, #4032c8 85%, #372aa7 100%);
+  /* Preferred */
+  background: linear-gradient(100deg, var(--c1d) 0%, var(--c2d) 50%, var(--c3d) 70%, var(--c2d) 85%, var(--c1d) 100%);
+
+  background-size: 280% 100%;
+  background-position: 0% 50%;
   -webkit-background-clip: text;
   background-clip: text;
+  -webkit-text-fill-color: transparent;
   color: transparent;
-  background-size: 200% 100%;
-  animation: shimmerText 8s linear infinite;
+
+  /* gentle drift */
+  animation: heroGradient 18s ease-in-out infinite;
+  will-change: background-position;
+
+  
 }
-@keyframes shimmerText{ to { background-position:200% 0 } }
+
+@keyframes heroGradient{
+  0%   { background-position:   0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position:   0% 50%; }
+}
+
+/* Respect user preference (note the correct class) */
+@media (prefers-reduced-motion: reduce){
+  .agr-hero{ animation:none; background-position:50% 50%; }
+}
+
 
 /* ===== Oval Navbar ===== */
-.ns-nav-wrap { position: sticky; top: 18px; z-index: 50; }
+.ns-nav-wrap { position: sticky; top: 10px; z-index: 0; }
 .ns-nav{
   display:flex; align-items:center; justify-content:space-between;
   margin: 0 auto;
-  padding: 12px 22px;
-  max-width: 1120px;
-  background: rgba(255,255,255,.85);
+  padding: 10px 10px;
+  max-width: 1320px;
+  background: rgba(255, 255, 255, 0.85);
   backdrop-filter: saturate(180%) blur(12px);
   border: 1px solid rgba(17,24,39,0.06);
   border-radius: 9999px; /* oval */
   box-shadow: 0 10px 30px var(--shadow);
 }
 .ns-logo{ display:inline-flex; align-items:center; gap:10px; text-decoration:none; }
-.ns-logo img{ height: 38px; width: 45px; border-radius: 8px; }
-.ns-logo .ns-brand{ font-weight: 800; letter-spacing: -0.3px; font-size: 20px; }
+.ns-logo img{ height: 32px; width: 40px; border-radius: 8px; }
+.ns-logo .ns-brand{ font-weight: 610; letter-spacing: -0.3px; font-size: 20px; color: rgb(30, 30, 30);}
 
 .ns-nav-links{ display:flex; align-items:center; gap: 20px; }
 .ns-link{
@@ -65,7 +101,7 @@ body {
 .btn-primary{
   display:inline-flex; align-items:center; justify-content:center; gap:10px;
   background: linear-gradient(90deg, var(--brand1), var(--brand2));
-  color:#fff; padding:10px 16px; border-radius:999px; font-weight:800; font-size:14px;
+  color:#fff; padding:10px 16px; border-radius:999px; font-weight:600; font-size:14px;
   border:0; text-decoration:none; box-shadow:0 10px 28px rgba(139,92,246,.24);
   transition: transform .15s var(--easing), box-shadow .18s var(--easing), background-position .5s ease;
   background-size:200% 100%;
@@ -84,7 +120,7 @@ body {
 .landing-hero{ padding: 72px 0 40px; }
 .hero-grid{ display:grid; grid-template-columns: 1.05fr .95fr; gap: 40px; align-items:center; }
 .hero-copy{ max-width: 580px; }
-.hero-title{ font-size: clamp(40px, 6vw, 64px); line-height: 1.04; margin: 0 0 14px; font-weight: 900; }
+.hero-title{ font-size: clamp(40px, 6vw, 64px); line-height: 1.04; margin: 0 0 14px; font-weight: 700; }
 .hero-sub{ font-size: 18px; color:#475569; margin: 0 0 24px; }
 .cta-row{ display:flex; gap: 12px; align-items:center; }
 
@@ -228,9 +264,10 @@ body {
 
 /* ===== Footer ===== */
 .ns-footer{
-  margin-top: 0;
+  
+  margin-top: 0px; /* 4rem */
   background: var(--purple-gradient);
-  background: #c1b3dd;
+  background: #4E38B2;
   border-top: none;
 }
 
@@ -263,7 +300,7 @@ body {
 
 .foot-note{ 
   margin: 16px 0 0; 
-  color: rgb(124, 69, 133); 
+  color: rgb(223, 217, 224); 
   font-size: 16px;
   line-height: 1.6;
 }
@@ -272,12 +309,12 @@ body {
   margin: 0 0 20px; 
   font-weight: 700;
   font-size: 18px;
-  color: rgb(124, 69, 133);
+  color: rgb(174, 174, 174);
 }
 
 .ns-footer a{
   display: block; 
-  color: rgb(124, 69, 133); 
+  color: rgb(255, 255, 255); 
   text-decoration: none; 
   margin: 12px 0;
   font-size: 15px;
@@ -285,7 +322,7 @@ body {
 }
 
 .ns-footer a:hover{ 
-  color: #ffffff;
+  color: hsl(240, 0%, 41%);
 }
 
 .subscribe{ 
@@ -323,7 +360,7 @@ body {
 
 .foot-bottom{
   padding: 32px 40px;
-  color: rgb(124, 69, 133); 
+  color: rgb(160, 160, 160); 
   font-size: 14px; 
   text-align: center;
   border-top: 1px solid rgba(255,255,255,.1);
@@ -383,7 +420,7 @@ body {
     padding: 0 20px; 
   }
   .ns-nav-wrap {
-    padding: 0 20px;
+    padding: 0 0px;
   }
   .ns-nav{ 
     padding: 12px 20px;

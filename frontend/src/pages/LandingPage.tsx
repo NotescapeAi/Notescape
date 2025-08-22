@@ -21,7 +21,7 @@ export default function LandingPage() {
       <section id="hero" className="landing-hero">
         <div className="container hero-grid">
           <div className="hero-copy">
-            <h1 className="hero-title agr-text">
+            <h1 className="hero-title agr-hero">
               Digitize.<br />Understand.<br />Master.
             </h1>
             <p className="hero-sub">
