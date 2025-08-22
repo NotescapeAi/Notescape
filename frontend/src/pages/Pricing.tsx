@@ -13,35 +13,37 @@ export default function Pricing() {
   };
 
   return (
+    
     <div className="font-montserrat text-gray-900 flex flex-col min-h-screen">
       {/* --- Navbar --- */}
       <Navbar />
 
       {/* --- Main Content --- */}
       <main className="pricing-hero flex flex-col items-center text-center flex-grow">
-        <div className="container space-y-6 max-w-5xl">
-          <header className="eyebrow">New features coming soon</header>
+  <div className="pricing-container space-y-6">
+    <header className="eyebrow">New features coming soon</header>
 
-          <h1 className="title">Pricing Plans</h1>
+    <h1 className="title">Pricing Plans</h1>
 
-          <p className="subtitle">
-            Designed for learners, built for clarity — transparent pricing coming soon.
-          </p>
+    <p className="subtitle">
+      Designed for learners, built for clarity — transparent pricing coming soon.
+    </p>
 
-          <form className="waitlist" onSubmit={onSubmit}>
-            <input
-              type="email"
-              name="email"
-              required
-              placeholder="Enter your email"
-              className="input"
-            />
-            <button type="submit" className="btn">
-              Notify Me
-            </button>
-          </form>
-        </div>
-      </main>
+    <form className="waitlist" onSubmit={onSubmit}>
+      <input
+        type="email"
+        name="email"
+        required
+        placeholder="Enter your email"
+        className="input"
+      />
+      <button type="submit" className="btn">
+        Notify Me
+      </button>
+    </form>
+  </div>
+</main>
+
 
       {/* --- Footer --- */}
       <Footer />
