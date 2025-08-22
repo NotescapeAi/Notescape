@@ -1,3 +1,4 @@
+
 /* ===== Design tokens (reused from your theme) ===== */
 :root{
   --bg:#f7f7fb;
@@ -25,6 +26,7 @@ body {
 }
 
 .container { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
+
 
 /* ===== AGR animated gradient text ===== */
 /* DARKER gradient text for Landing hero only */
@@ -538,3 +540,44 @@ body {
   }
 }
 
+
+/* ===== Footer ===== */
+.ns-footer{
+  margin-top: 0px;
+  background: #4E38B2;
+  border-top: none;
+  width: 100vw; /* Full viewport width */
+  margin-left: calc(-50vw + 50%); /* Center the full-width element */
+}
+
+.foot-grid{
+  display: grid; 
+  grid-template-columns: 1.6fr 1fr 1fr 1.4fr; 
+  gap: 48px;
+  padding: 80px 40px 40px;
+  max-width: 1350px;
+  margin: 0 auto;
+}
+
+.foot-bottom{
+  padding: 32px 40px;
+  color: rgb(160, 160, 160); 
+  font-size: 14px; 
+  text-align: center;
+  border-top: 1px solid rgba(255,255,255,.1);
+  max-width: 1350px; /* Keep content centered */
+  margin: 0 auto;
+}
+
+/* Remove the desktop padding override that was limiting footer width */
+@media (min-width: 1200px) {
+  .foot-grid {
+    padding: 100px 60px 50px; /* Keep this for content padding */
+    /* Remove any max-width restrictions here */
+  }
+  
+  .foot-bottom {
+    padding: 40px 60px; /* Keep this for content padding */
+    /* Remove any max-width restrictions here */
+  }
+}
