@@ -7,14 +7,14 @@ const Footer: React.FC = () => {
   };
 
   return (
-    <footer className="ns-footer">
+    <footer className="ns-footer relative w-full mt-auto">
       <div className="container foot-grid">
         <div>
           <div className="foot-brand">
             <img src="/logo1.png" alt="Notescape logo" />
             <strong className="agr-text">Notescape</strong>
           </div>
-          <p className="foot-note">The AI-first workspace for faster learning.</p>
+          <p className="foot-note">The first AI workspace for faster learning.</p>
         </div>
 
        <div>

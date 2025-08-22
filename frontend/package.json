@@ -12,6 +12,7 @@
       "test:watch": "vitest"
    },
    "dependencies": {
+      "@emailjs/browser": "4.4.1",
       "@fontsource/montserrat": "^5.2.6",
       "@vitejs/plugin-react-swc": "^4.0.0",
       "firebase": "^12.1.0",

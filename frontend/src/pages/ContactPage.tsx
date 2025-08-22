@@ -36,7 +36,7 @@ const ContactPage = () => {
     <div className="bg-gray-50 min-h-screen flex flex-col">
       <Navbar />
 
-      <main className="flex-1 w-full px-4 sm:px-6 lg:px-8 py-16">
+<main className="flex-1 w-full px-4 sm:px-6 lg:px-8 py-16 pb-32">
         <div className="max-w-4xl mx-auto">
           <h1 className="text-4xl font-bold text-purple-700 mb-4">Contact & Support</h1>
           <p className="text-gray-700 mb-10 text-lg">
