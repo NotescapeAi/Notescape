@@ -11,6 +11,7 @@ import "./landing.css";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
 import { Link } from "react-router-dom";
+import GetStartedLink from "../components/GetStartedLink";
 
 export default function LandingPage() {
   return (
@@ -29,7 +30,7 @@ export default function LandingPage() {
               clear up any concept on demand with an AI coach.
             </p>
             <div className="cta-row">
-              <Link to="/get-started" className="btn-primary">Get Started</Link>
+              <GetStartedLink className="btn btn-primary">Get started</GetStartedLink>
               <a className="btn-ghost" href="#how">Watch Demo</a>
             </div>
           </div>

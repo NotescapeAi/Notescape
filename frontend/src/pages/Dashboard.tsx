@@ -1,93 +1,73 @@
-import React, { useState } from "react";
+import DashboardShell from "../layouts/DashboardShell";
+import { Link } from "react-router-dom";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { auth } from "../firebase/firebase";
-import { signOut, deleteUser } from "firebase/auth";
-import "./NotescapeStartPage.css";
+import { logout as apiLogout, deleteAccount as apiDelete } from "../lib/api";
+
 
 export default function Dashboard() {
-  const navigate = useNavigate();
-  const [error, setError] = useState<string>("");
-  const [loading, setLoading] = useState<boolean>(false);
-
-  // Logout handler
-  const handleLogout = async (): Promise<void> => {
-    setError("");
-    setLoading(true);
-    try {
-      await signOut(auth);
-      navigate("/login");
-    } catch (err: unknown) {
-      console.error(
-        "Logout error:",
-        err instanceof Error ? err.message : String(err)
-      );
-      setError("Failed to logout. Try again.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Delete account handler
-  const handleDeleteAccount = async (): Promise<void> => {
-    setError("");
-    setLoading(true);
-    try {
-      const user = auth.currentUser;
-      if (!user) {
-        setError("No user found. Please log in again.");
-        return;
-      }
-
-      await deleteUser(user);
-      console.log("Account deleted successfully");
-      navigate("/signup");
-    } catch (err: unknown) {
-      console.error(
-        "Delete account error:",
-        err instanceof Error ? err.message : String(err)
-      );
-
-      if (
-        typeof err === "object" &&
-        err !== null &&
-        "code" in err &&
-        (err as { code: string }).code === "auth/requires-recent-login"
-      ) {
-        setError("Please log out and log in again before deleting your account.");
-      } else {
-        setError("Failed to delete account. Please try again.");
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
-    <main className="page">
-      <header className="logo">
-        <img src="/logo1.png" alt="Notescape logo" width={70} height={50} />
-        <h1>Dashboard</h1>
-      </header>
+    <DashboardShell>
+      {/* page title row */}
 
-      <div className="login-container">
-        {error && <p className="error">{error}</p>}
+<div className="flex items-center justify-end gap-3">
+  <input
+    className="h-10 w-[520px] max-w-[60vw] rounded-full border border-slate-200 bg-white px-4 text-[15px] shadow-sm"
+    placeholder="Search…"
+  />
+  <button className="h-10 rounded-full bg-violet-600 px-4 text-white font-semibold hover:bg-violet-700">
+    Create Flashcard Set
+  </button>
+</div>
 
-        <button
-          className="login-btn"
-          onClick={handleLogout}
-          disabled={loading}
-        >
-          {loading ? "Logging out..." : "Logout"}
-        </button>
+      {/* toolbar spacer */}
+      <div className="mt-6"></div>
 
-        <button
-          className="login-btn delete-btn"
-          onClick={handleDeleteAccount}
-          disabled={loading}
-        >
-          {loading ? "Deleting..." : "Delete Account"}
-        </button>
+      {/* Recent Flashcards */}
+      <section>
+        <h2 className="text-sm font-bold text-slate-600">Recent Flashcards</h2>
+        <div className="mt-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[0,1,2].map(i => (
+            <article key={i} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="text-lg font-extrabold">Mathematics</div>
+              <p className="mt-1 text-xs font-semibold text-slate-700">Calculus Derivatives</p>
+              <p className="mt-3 text-sm text-slate-500">
+                Master the rules and applications of derivatives in calculus.
+              </p>
+              <div className="mt-5 flex gap-3">
+                <button className="rounded-full bg-violet-600 text-white text-sm font-semibold px-4 py-1.5 hover:bg-violet-700">Study</button>
+                <button className="rounded-full border border-slate-300 text-sm font-semibold px-4 py-1.5 hover:bg-slate-50">Preview</button>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      {/* middle placeholders */}
+      <section className="mt-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="h-48 rounded-2xl border border-slate-200 bg-white/70 shadow-sm"></div>
+        <div className="h-48 rounded-2xl border border-slate-200 bg-white/70 shadow-sm"></div>
+        <div className="h-48 rounded-2xl border border-slate-200 bg-white/70 shadow-sm"></div>
+      </section>
+
+      {/* bottom row: streak + mastery */}
+      <section className="mt-8 grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 h-56 rounded-2xl border border-slate-200 bg-white/70 shadow-sm p-6">
+          <div className="text-sm font-bold text-slate-600">Weekly Streak</div>
+          {/* …add chart later… */}
+        </div>
+        <div className="h-56 rounded-2xl border border-slate-200 bg-white/70 shadow-sm p-6">
+          <div className="text-sm font-bold text-slate-600">Mastery Progress</div>
+          {/* …add bars later… */}
+        </div>
+      </section>
+
+      {/* quick access row (optional) */}
+      <div className="mt-10 text-center">
+        <Link to="/classes" className="text-violet-700 font-semibold hover:underline">
+          Go to My Classes →
+        </Link>
       </div>
-    </main>
+    </DashboardShell>
   );
 }
