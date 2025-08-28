@@ -42,9 +42,12 @@ export default function Classes() {
     try {
       const row = await uploadFile(selectedId, e.target.files[0]);
       setFiles((xs) => [row, ...xs]);
-    } catch (err: any) {
-      alert(err.message || "Upload failed");
-    } finally {
+    } 
+     catch (err: unknown) {
+  const msg = err instanceof Error ? err.message : "Upload failed";
+  alert(msg);
+}
+ finally {
       setBusy(false);
       e.target.value = "";
     }

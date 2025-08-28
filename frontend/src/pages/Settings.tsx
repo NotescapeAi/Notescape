@@ -26,11 +26,13 @@ export default function Settings() {
     try {
       await apiDelete();
       navigate("/signup", { replace: true });
-    } catch (e: any) {
-      alert(e.message || "Delete failed");
-    } finally {
-      setBusy(null);
-    }
+    } catch (e: unknown) {
+  const msg = e instanceof Error ? e.message : "Delete failed";
+  alert(msg);} 
+  finally {
+  setBusy(null);
+}
+
   }
 
   return (

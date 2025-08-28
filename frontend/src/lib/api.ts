@@ -43,7 +43,17 @@ export async function uploadFile(classId: number, file: File): Promise<FileRow> 
   const r = await fetch(`${API}/api/files/${classId}`, { method: "POST", body: fd });
   if (!r.ok) {
     let msg = "Upload failed";
-    try { const j = await r.json(); if (j?.error) msg = j.error; } catch {}
+    try {
+  const j: unknown = await r.json();
+  if (j && typeof j === "object" && "error" in (j as Record<string, unknown>)) {
+    const err = (j as { error?: unknown }).error;
+    if (typeof err === "string" && err.trim()) msg = err;
+  }
+} catch (e) {
+  // Not JSON; keep default message but log for debugging
+  console.debug("uploadFile(): non-JSON error body", e);
+}
+
     throw new Error(msg);
   }
   return r.json();
@@ -67,13 +77,14 @@ export async function postContact(form: ContactForm) {
 }
 
 
-// --- auth helpers ---
-export function isLoggedIn() {
-  return !!localStorage.getItem("auth_token"); // swap for real auth later
-}
 
 export async function logout() {
-  await fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+  try {
+    await fetch("/api/auth/logout", { method: "POST" });
+  } catch (err) {
+    // non-fatal: log and continue clearing local auth
+    console.debug("logout request failed (ignored)", err);
+  }
   localStorage.removeItem("auth_token");
 }
 
