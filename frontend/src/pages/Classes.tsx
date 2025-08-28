@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import ClassSidebar from "../components/ClassSidebar";
-import { Link } from "react-router-dom";
+
 
 import {
   listClasses, createClass, updateClass, deleteClass,

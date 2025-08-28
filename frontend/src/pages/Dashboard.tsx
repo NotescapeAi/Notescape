@@ -1,8 +1,5 @@
 import DashboardShell from "../layouts/DashboardShell";
 import { Link } from "react-router-dom";
-import { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { logout as apiLogout, deleteAccount as apiDelete } from "../lib/api";
 
 
 export default function Dashboard() {
