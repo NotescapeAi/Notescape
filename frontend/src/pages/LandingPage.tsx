@@ -8,10 +8,11 @@ import {
 } from "lucide-react";
 
 import "./landing.css";
-import Navbar from "../components/Navbar";
-import Footer from "../components/Footer";
+
 import { Link } from "react-router-dom";
 import GetStartedLink from "../components/GetStartedLink";
+import Navbar from "../components/Navbar";
+import Footer from "../components/Footer";
 
 export default function LandingPage() {
   return (

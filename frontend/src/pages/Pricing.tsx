@@ -13,7 +13,7 @@ export default function Pricing() {
   };
 
   return (
-    <div className="font-montserrat text-gray-900 flex flex-col min-h-screen">
+    <div >
       {/* --- Navbar --- */}
       <Navbar />
 

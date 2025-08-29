@@ -148,3 +148,90 @@
   .card{ padding:22px; }
 }  
 
+/* ===== Navbar Styles ===== */
+.ns-nav-wrap { 
+  position: fixed; 
+  top: 0px; 
+  z-index: 50; 
+  width: 100%;
+}
+
+.ns-nav {
+  display: flex; 
+  align-items: center; 
+  justify-content: space-between;
+  margin: 0 auto;
+  padding: 10px 10px;
+  max-width: 1200px;
+}
+
+.ns-logo { 
+  display: inline-flex; 
+  align-items: center; 
+  gap: 10px; 
+  text-decoration: none; 
+}
+
+.ns-logo img { 
+  height: 32px; 
+  width: 40px; 
+  border-radius: 8px; 
+}
+
+.ns-logo .ns-brand { 
+  font-weight: 610; 
+  letter-spacing: -0.3px; 
+  font-size: 20px; 
+  color: rgb(30, 30, 30);
+}
+
+.ns-nav-links { 
+  display: flex; 
+  align-items: center; 
+  gap: 20px; 
+}
+
+.ns-link {
+  color: rgb(124, 69, 133); 
+  text-decoration: none; 
+  font-weight: 600; 
+  font-size: 14px;
+  padding: 8px 10px; 
+  border-radius: 10px; 
+  transition: color .15s ease, background .15s ease;
+}
+
+.ns-link:hover { 
+  color: #4f46e5; 
+  background: rgba(79,70,229,.08); 
+}
+
+/* Mobile Navbar */
+.menu-toggle {
+  display: none;
+  cursor: pointer;
+  font-size: 24px;
+}
+
+@media (max-width: 768px) {
+  .ns-nav-links {
+    display: none;
+    flex-direction: column;
+    gap: 16px;
+    background: white;
+    position: absolute;
+    top: 60px;
+    right: 20px;
+    padding: 20px;
+    border-radius: 16px;
+    box-shadow: 0 12px 24px rgba(0,0,0,0.1);
+  }
+
+  .ns-nav-links.active {
+    display: flex;
+  }
+
+  .menu-toggle {
+    display: block;
+  }
+}
