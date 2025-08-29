@@ -63,9 +63,9 @@ export default function NotescapeStartPage() {
                 setError(
                   "This email is already linked with Google. Please continue with Google."
                 );
-              } else if (methods.includes("apple.com")) {
+              } else if (methods.includes("github.com")) {
                 setError(
-                  "This email is already linked with Apple. Please continue with Apple."
+                  "This email is already linked with Github. Please continue with Github."
                 );
               } else {
                 setError(
@@ -124,9 +124,9 @@ export default function NotescapeStartPage() {
               setError(
                 "This email is already linked with Google. Please continue with Google sign-in."
               );
-            } else if (methods.includes("apple.com")) {
+            } else if (methods.includes("github.com")) {
               setError(
-                "This email is already linked with Apple. Please continue with Apple sign-in."
+                "This email is already linked with Github. Please continue with Github sign-in."
               );
             } else {
               setError(
