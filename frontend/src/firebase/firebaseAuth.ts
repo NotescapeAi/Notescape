@@ -5,7 +5,7 @@ import {
   sendPasswordResetEmail,
   signOut,
   GoogleAuthProvider,
-  OAuthProvider,
+  GithubAuthProvider,
   signInWithPopup
 } from "firebase/auth";
 
@@ -25,6 +25,6 @@ export const logout = () => signOut(auth);
 const googleProvider = new GoogleAuthProvider();
 export const signInWithGoogle = () => signInWithPopup(auth, googleProvider);
 
-// Apple Sign-In
-const appleProvider = new OAuthProvider("apple.com");
-export const signInWithApple = () => signInWithPopup(auth, appleProvider);
+// GitHub Sign-In
+const githubProvider = new GithubAuthProvider();
+export const signInWithGithub = () => signInWithPopup(auth, githubProvider);

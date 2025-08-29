@@ -1,6 +1,6 @@
 import React, { useState, FormEvent, MouseEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { login, signInWithGoogle, signInWithApple } from "../firebase/firebaseAuth";
+import { login, signInWithGoogle, signInWithGithub } from "../firebase/firebaseAuth";
 
 export default function Login() {
   const navigate = useNavigate();
@@ -25,14 +25,14 @@ export default function Login() {
   };
 
   // Social login handler
-  const onSocial = async (provider: "Apple" | "Google", e: MouseEvent<HTMLButtonElement>) => {
+  const onSocial = async (provider: "Github" | "Google", e: MouseEvent<HTMLButtonElement>) => {
     addRipple(e);
     setError("");
     try {
       if (provider === "Google") {
         await signInWithGoogle();
-      } else if (provider === "Apple") {
-        await signInWithApple();
+      } else if (provider === "Github") {
+        await signInWithGithub();
       }
       navigate("/dashboard");
     } catch (err: unknown) {
@@ -81,10 +81,10 @@ export default function Login() {
       <div className="login-container">
         <h2 className="login-title">Log in</h2>
 
-        {/* Apple Sign In */}
-        <button type="button" className="social-btn" onClick={(e) => onSocial("Apple", e)}>
-          <img src="/apple.svg" alt="Apple logo" className="icon" width={18} height={18} />
-          CONTINUE WITH APPLE
+        {/* GitHub Sign In */}
+        <button type="button" className="social-btn" onClick={(e) => onSocial("Github", e)}>
+          <img src="/github-mark.png" alt="Github logo" className="icon" width={18} height={18} />
+          CONTINUE WITH GITHUB
         </button>
 
         {/* Google Sign In */}
