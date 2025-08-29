@@ -1,5 +1,6 @@
 // frontend/src/pages/Pricing.tsx
 import React from "react";
+import { motion } from "framer-motion"; // ✅ animation library
 import "@fontsource/montserrat/400.css";
 import "@fontsource/montserrat/700.css";
 import "./pricing.css";
@@ -13,22 +14,53 @@ export default function Pricing() {
   };
 
   return (
-    <div >
+    <div>
       {/* --- Navbar --- */}
       <Navbar />
 
       {/* --- Main Content --- */}
       <main className="pricing-hero flex flex-col items-center text-center flex-grow">
         <div className="container space-y-6 max-w-5xl">
-          <header className="eyebrow">New features coming soon</header>
+          {/* Eyebrow */}
+          <motion.header
+            className="eyebrow"
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6 }}
+          >
+            New features coming soon
+          </motion.header>
 
-          <h1 className="title">Pricing Plans</h1>
+          {/* Title */}
+          <motion.h1
+            className="title"
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.2 }}
+          >
+           <h1 className="text-[42px] font-bold text-purple-700 mb-6">
+  Pricing Plans
+</h1>
+          </motion.h1>
 
-          <p className="subtitle">
+          {/* Subtitle */}
+          <motion.p
+            className="subtitle"
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.4 }}
+          >
             Designed for learners, built for clarity — transparent pricing coming soon.
-          </p>
+          </motion.p>
 
-          <form className="waitlist" onSubmit={onSubmit}>
+          {/* Form */}
+          <motion.form
+            className="waitlist"
+            onSubmit={onSubmit}
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.7, delay: 0.6 }}
+          >
             <input
               type="email"
               name="email"
@@ -36,10 +68,13 @@ export default function Pricing() {
               placeholder="Enter your email"
               className="input"
             />
-            <button type="submit" className="btn">
+            <button
+              type="submit"
+              className="btn"
+            >
               Notify Me
             </button>
-          </form>
+          </motion.form>
         </div>
       </main>
 

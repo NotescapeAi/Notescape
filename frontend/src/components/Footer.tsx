@@ -19,17 +19,17 @@ const Footer: React.FC = () => {
 
        <div>
   <h4>Product</h4>
-  <Link to="/landing">Home</Link>
-  <a href="/landing#how">How It Works</a>
-  <a href="/landing#features">Features</a>
+  <Link to="/">Home</Link>
+  <a href="/#how">How It Works</a>
+  <a href="/#features">Features</a>
 </div>
 
 
         <div>
           <h4>Company</h4>
-          <Link to="/contact">Contact</Link>
+          <Link to="/support">Contact</Link>
           <Link to="/support">Support</Link>
-          <Link to="/privacy-policy">Privacy Policy</Link>
+          <Link to="/privacy">Privacy Policy</Link>
           <Link to="/terms">Terms of Use</Link>
         </div>
 

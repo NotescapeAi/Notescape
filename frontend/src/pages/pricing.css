@@ -1,237 +1,254 @@
-/* --- Notescape Pricing (standalone CSS) --- */
-:root{
-  --violet:#7B5FEF;
-  --pink:#EF5F8B;
-  --lime:#D3EF5F;
-  --mint:#5FEFC3;
-  --ink:#0B1221;        /* near-black */
-  --ink-2:#475569;      /* secondary text */
-  --paper:#ffffff;
-  --paper-2:#F8F9FF;
-  --ring:rgba(123,95,239,.35);
+/* ===== Pricing Page Styles ===== */
+:root {
+  --violet: #7B5FEF;
+  --ink: #0B1221;
+  --ink-2: #475569;
+  --paper: #ffffff;
+  --ring: rgba(123, 95, 239, .35);
 }
 
-.pricing-hero{
-  min-height:10vh;
-  width: 100%;        /* full width */
-  height: 80vh;      /* full height of viewport */
- 
-  color:var(--ink);
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  padding:8px 8px;
+/* Hero Section */
+.pricing-hero {
+  min-height: 90vh; /* take most of viewport */
+  width: 100%;
+  background: var(--paper);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 20px 60px; /* space below navbar */
+  box-sizing: border-box;
+  text-align: center;
 }
 
 .container {
-  width: 100%;
-  max-width: 100%;  /* remove restriction */
-  margin: 0;        /* reset */
-  padding: 0 2px;  /* optional padding for breathing space */
+  max-width: 700px;
+  margin: 0 auto;
 }
 
-
-.eyebrow{
-  display:inline-block;
-  background:#fff;
-  border:1px solid #E5E7EB;
-  color:var(--violet);
-  padding:6px 12px;
-  border-radius:999px;
-  font-weight:600;
-  font-size:14px;
-  box-shadow:0 6px 20px rgba(16,24,40,.06);
+/* Eyebrow label */
+.eyebrow {
+  display: inline-block;
+  background: #fff;
+  border: 1px solid #E5E7EB;
+  color: var(--violet);
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 14px;
+  box-shadow: 0 4px 12px rgba(16, 24, 40, .06);
+  margin-bottom: 20px;
 }
 
-.title{
-  margin:18px 0 8px;
-  font-size:44px;
-  line-height:1.1;
-  font-weight:700;
-  letter-spacing:-0.02em;
+/* Main Title */
+.title {
+  font-size: 42px;
+  font-weight: 700;
+  margin: 12px 0;
+  line-height: 1.2;
 }
 
-.subtitle{
-  color:var(--ink-2);
-  font-size:18px;
-  max-width:720px;
+/* Subtitle */
+.subtitle {
+  color: var(--ink-2);
+  font-size: 18px;
+  margin: 0 auto 24px;
+  max-width: 520px;
 }
 
-.card{
-  margin:28px 0 0;
-  background:#fff;
-  border:1px solid #E6E8EE;
-  border-radius:24px;
-  padding:28px;
-  box-shadow:
-    0 6px 30px rgba(20,18,31,.06),
-    0 1px 0 rgba(16,24,40,.04) inset;
+/* Waitlist Form */
+.waitlist {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 20px;
 }
 
-.card-title{
-  font-size:24px;
-  font-weight:700;
-  margin:0 0 6px;
+.input {
+  flex: 1;
+  min-width: 240px;
+  max-width: 320px;
+  height: 44px;
+  border: 1px solid #E2E8F0;
+  border-radius: 12px;
+  padding: 0 14px;
+  outline: none;
+  transition: border .2s, box-shadow .2s;
+  font-size: 15px;
 }
 
-.card-sub{
-  color:var(--ink-2);
-  margin:0 0 16px;
+.input:focus {
+  border-color: var(--violet);
+  box-shadow: 0 0 0 3px var(--ring);
 }
 
-.waitlist{
-  display:flex;
-  gap:10px;
-  flex-wrap:wrap;
-  align-items:center;
-  margin:10px 0 8px;
+.btn {
+  height: 44px;
+  padding: 0 20px;
+  border: none;
+  border-radius: 12px;
+  background: var(--violet);
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform .05s ease, filter .2s ease, box-shadow .2s ease;
+  box-shadow: 0 8px 20px rgba(123,95,239,.25);
 }
 
-.input{
-  flex:0 0 220px;
-  height:40px;                 /* a touch slimmer */
-  border:1px solid #E2E8F0;
-  border-radius:12px;
-  padding:0 14px;
-  outline:none;
-  transition:border .2s, box-shadow .2s;
-  font-size:14px;
+.btn:hover {
+  filter: brightness(.97);
 }
 
-
-
-
-.input:focus{
-  border-color:var(--violet);
-  box-shadow:0 0 0 4px var(--ring);
+.btn:active {
+  transform: translateY(1px);
 }
 
-.btn{
-  height:40px;                 /* match input */
-  padding:0 18px;
-  border:none;
-  border-radius:12px;
-  color:#fff !important;
-  background:var(--violet) !important;
-  font-weight:700;
-  cursor:pointer;
-  transition:transform .06s ease, filter .2s ease, box-shadow .2s ease;
-  box-shadow:0 10px 24px rgba(123,95,239,.28);
-}
-
-.btn:hover{ filter:brightness(.98); }
-.btn:active{ transform:translateY(1px); }
-.btn:focus-visible{ outline:0; box-shadow:0 0 0 4px var(--ring); }
-
-.teasers{
-  margin:14px 0 0;
-  padding-left:18px;
-  color:var(--ink-2);
-}
-
-.palette-bar{
-  display:grid;
-  grid-template-columns:repeat(4,1fr);
-  gap:10px;
-  margin:22px 0 0;
-}
-
-.palette-bar > span{
-  height:8px;
-  border-radius:999px;
-  box-shadow:inset 0 0 0 1px rgba(0,0,0,.06);
+.btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--ring);
 }
 
 /* Responsive */
-@media (max-width:640px){
-  .title{ font-size:34px; }
-  .card{ padding:22px; }
-}  
-
-/* ===== Navbar Styles ===== */
-.ns-nav-wrap { 
-  position: fixed; 
-  top: 0px; 
-  z-index: 50; 
-  width: 100%;
+@media (max-width: 640px) {
+  .title {
+    font-size: 32px;
+  }
+  .subtitle {
+    font-size: 16px;
+  }
 }
 
-.ns-nav {
-  display: flex; 
-  align-items: center; 
-  justify-content: space-between;
-  margin: 0 auto;
-  padding: 10px 10px;
+/* ===== Footer Base ===== */
+.ns-footer {
+  background:#7b5feff5; /* violet → pink gradient */
+  color: #fff;
+  padding: 3rem 1.5rem 2rem;
+  margin-top: 3rem;
+  font-family: "Montserrat", sans-serif;
+}
+
+.ns-footer .container {
   max-width: 1200px;
+  margin: 0 auto;
 }
 
-.ns-logo { 
-  display: inline-flex; 
-  align-items: center; 
-  gap: 10px; 
-  text-decoration: none; 
+/* ===== Grid Layout ===== */
+.foot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 2rem;
 }
 
-.ns-logo img { 
-  height: 32px; 
-  width: 40px; 
-  border-radius: 8px; 
+/* ===== Branding ===== */
+.foot-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 0.75rem;
 }
 
-.ns-logo .ns-brand { 
-  font-weight: 610; 
-  letter-spacing: -0.3px; 
-  font-size: 20px; 
-  color: rgb(30, 30, 30);
+.foot-brand img {
+  height: 38px;
+  width: auto;
+  border-radius: 8px;
 }
 
-.ns-nav-links { 
-  display: flex; 
-  align-items: center; 
-  gap: 20px; 
+.agr-text {
+  font-size: 1.3rem;
+  font-weight: 700;
 }
 
-.ns-link {
-  color: rgb(124, 69, 133); 
-  text-decoration: none; 
-  font-weight: 600; 
-  font-size: 14px;
-  padding: 8px 10px; 
-  border-radius: 10px; 
-  transition: color .15s ease, background .15s ease;
+.foot-note {
+  font-size: 0.9rem;
+  opacity: 0.85;
+  max-width: 250px;
 }
 
-.ns-link:hover { 
-  color: #4f46e5; 
-  background: rgba(79,70,229,.08); 
+/* ===== Headings ===== */
+.foot-grid h4 {
+  font-size: 1.1rem;
+  margin-bottom: 1rem;
+  font-weight: 600;
+  color: #fff;
 }
 
-/* Mobile Navbar */
-.menu-toggle {
-  display: none;
+/* ===== Links ===== */
+.foot-grid a {
+  display: block;
+  margin-bottom: 0.5rem;
+  text-decoration: none;
+  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.85);
+  transition: color 0.3s ease;
+}
+
+.foot-grid a:hover {
+  color: #fff;
+}
+
+/* ===== Subscribe Form ===== */
+.subscribe {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.subscribe input {
+  flex: 1;
+  min-width: 160px;
+  padding: 0.6rem 0.8rem;
+  border-radius: 8px;
+  border: none;
+  outline: none;
+  font-size: 0.9rem;
+}
+
+.subscribe button {
+  background: #0b1221;
+  color: #fff;
+  border: none;
+  padding: 0.6rem 1rem;
+  border-radius: 8px;
   cursor: pointer;
-  font-size: 24px;
+  font-weight: 600;
+  transition: background 0.3s ease, transform 0.2s ease;
 }
 
+.subscribe button:hover {
+  background: #1e293b;
+  transform: translateY(-2px);
+}
+
+/* ===== Footer Bottom ===== */
+.foot-bottom {
+  text-align: center;
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255,255,255,0.2);
+  font-size: 0.85rem;
+  opacity: 0.8;
+}
+
+/* ===== Responsive ===== */
 @media (max-width: 768px) {
-  .ns-nav-links {
-    display: none;
+  .ns-footer {
+    text-align: center;
+  }
+
+  .foot-brand {
+    justify-content: center;
+  }
+
+  .subscribe {
     flex-direction: column;
-    gap: 16px;
-    background: white;
-    position: absolute;
-    top: 60px;
-    right: 20px;
-    padding: 20px;
-    border-radius: 16px;
-    box-shadow: 0 12px 24px rgba(0,0,0,0.1);
+    align-items: center;
   }
 
-  .ns-nav-links.active {
-    display: flex;
+  .subscribe input {
+    width: 100%;
   }
 
-  .menu-toggle {
-    display: block;
+  .subscribe button {
+    width: 100%;
   }
 }
