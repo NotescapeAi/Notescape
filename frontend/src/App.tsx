@@ -3,9 +3,10 @@ import { Suspense, lazy } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import Settings from "./pages/Settings";
 import LogoutPage from "./pages/Logout";
+import LandingPage from "./pages/LandingPage";
 
 // ⬇️ lazy-load all your pages
-const LandingPage         = lazy(() => import("./pages/LandingPage"));
+
 const NotescapeStartPage  = lazy(() => import("./pages/NotescapeStartPage"));
 const Signup              = lazy(() => import("./pages/Signup"));          // make sure this file exists
 const Login               = lazy(() => import("./pages/Login"));
@@ -37,7 +38,7 @@ export default function App() {
         <Routes>
           {/* marketing / auth */}
           <Route path="/"               element={<LandingPage />} />
-          <Route path="landing"         element={<LandingPage />} />
+          
           <Route path="/start"          element={<NotescapeStartPage />} />
           <Route path="/get-started"    element={<GetStartedGate />} />
           <Route path="/signup"         element={<Signup />} />
@@ -57,8 +58,8 @@ export default function App() {
           <Route path="/pricing"        element={<Pricing />} />
           <Route path="/terms"          element={<TermsPage />} />
           <Route path="/privacy"        element={<PrivacyPolicy />} />
-          <Route path="/contact"        element={<ContactPage />} />
-          <Route path="/support"        element={<Navigate to="/contact" replace />} />
+          <Route path="/support"        element={<ContactPage />} />
+          {/*<Route path="/support"        element={<Navigate to="/contact" replace />} />
           {/* 404 */}
           <Route path="*"               element={<NotFound />} />
         </Routes>
