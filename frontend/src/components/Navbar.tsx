@@ -46,7 +46,7 @@ const Navbar: React.FC = () => {
       {isOpen && (
         <div className="md:hidden bg-white border-t shadow-md px-6 py-4 flex flex-col gap-3">
           <a
-            href="/landing"
+            href="/"
             className="ns-link hover:text-blue-600"
             onClick={() => setIsOpen(false)}
           >
