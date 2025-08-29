@@ -4,7 +4,7 @@ import { Link, useNavigate } from "react-router-dom";
 import {
   signup,
   signInWithGoogle,
-  signInWithApple,
+  signInWithGithub,
 } from "../firebase/firebaseAuth";
 import { auth } from "../firebase/firebase";
 import { fetchSignInMethodsForEmail } from "firebase/auth";
@@ -32,13 +32,13 @@ export default function NotescapeStartPage() {
   const normalizeEmail = (raw: string) => raw.trim().toLowerCase();
 
   // Social login handler
-  const onSocial = async (provider: "Apple" | "Google") => {
+  const onSocial = async (provider: "Github" | "Google") => {
     setError("");
     try {
       if (provider === "Google") {
         await signInWithGoogle();
-      } else if (provider === "Apple") {
-        await signInWithApple();
+      } else if (provider === "Github") {
+        await signInWithGithub();
       }
       navigate("/dashboard");
     } catch (err: unknown) {
@@ -165,17 +165,17 @@ export default function NotescapeStartPage() {
         {/* Social buttons */}
         <button
           className="social-btn"
-          onClick={() => onSocial("Apple")}
-          aria-label="Continue with Apple"
+          onClick={() => onSocial("Github")}
+          aria-label="Continue with Github"
         >
           <img
-            src="/apple.svg"
-            alt="Apple logo"
+            src="/github-mark.png"
+            alt="Github logo"
             className="icon"
             width={18}
             height={18}
           />
-          Continue with Apple
+          Continue with Github
         </button>
 
         <button
