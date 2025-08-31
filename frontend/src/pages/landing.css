@@ -21,7 +21,19 @@ body {
   background: white
 }
 
-.container { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
+/*.container { width: 100%;max-width: 100%; margin: 0 auto; padding: 0 16px; }*/
+.container {
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+@media (max-width: 768px) {
+  .container {
+    max-width: 100%;
+    padding: 0 10px;
+  }
+}
+
 
 /* ===== Animated Gradient Text ===== */
 .agr-hero{
@@ -187,13 +199,13 @@ body {
 }
 
 /* ===== Desktop-specific improvements ===== */
-@media (min-width: 1200px) {
+/*@media (min-width: 1200px) {
   .container { max-width: 1400px; padding: 0 60px; }
   .hero-grid { gap: 100px; }
   .features-grid { gap: 40px; }
   .how-grid { gap: 100px; }
   .cta-banner { padding: 60px 80px; }
-}
+}*/
 
 /* ===== Navbar Styles ===== */
 .ns-nav-wrap { position: fixed; top: 0; z-index: 50; width: 100%; }
@@ -412,7 +424,7 @@ body {
   transform: translateX(0);
 }
 /* ===== Container Enhancements ✨ ===== */
-.container {
+/*.container {
   max-width: 1120px;
   margin: 0 auto;
   padding: 0 16px;
@@ -432,7 +444,7 @@ body {
   transition: opacity 0.6s ease-in-out;
 }
 .container:hover::before { opacity: 0.2; }
-
+*/
 /* ===== Buttons Ripple ✨ ===== */
 .btn-primary {
   position: relative;
