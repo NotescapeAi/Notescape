@@ -87,13 +87,13 @@ export default function Login() {
           {/* GitHub Sign In */}
           <button type="button" className="social-btn" onClick={(e) => onSocial("Github", e)}>
             <img src="/github-mark.png" alt="Github logo" className="icon" width={18} height={18} />
-            CONTINUE WITH GITHUB
+            Continue with GitHub
           </button>
 
           {/* Google Sign In */}
           <button type="button" className="social-btn" onClick={(e) => onSocial("Google", e)}>
             <img src="/google.svg" alt="Google logo" className="icon" width={18} height={18} />
-            CONTINUE WITH GOOGLE
+            Continue with Google
           </button>
 
           <div className="divider" role="separator" aria-label="or">
