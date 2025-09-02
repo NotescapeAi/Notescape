@@ -11,14 +11,16 @@ export async function listClasses(): Promise<ClassRow[]> {
   if (!r.ok) throw new Error("Failed to fetch classes");
   return r.json();
 }
-export async function createClass(payload: { name: string; subject?: string }): Promise<ClassRow> {
-  const r = await fetch(`${API}/api/classes`, {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: payload.name.trim(), subject: (payload.subject ?? "").trim() }),
+export async function createClass(input: { name: string; subject?: string }) {
+  const res = await fetch("/api/classes", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: input.name, subject: input.subject ?? "General" }),
   });
-  if (!r.ok) throw new Error("Failed to create class");
-  return r.json();
+  if (!res.ok) throw new Error("Failed to create class");
+  return res.json();
 }
+
 export async function updateClass(id: number, payload: { name: string; subject?: string }): Promise<ClassRow> {
   const r = await fetch(`${API}/api/classes/${id}`, {
     method: "PUT", headers: { "Content-Type": "application/json" },
@@ -96,3 +98,35 @@ export async function deleteAccount() {
   }
   localStorage.removeItem("auth_token");
 }
+
+export async function deleteFile(fileId: string): Promise<{ok: boolean}> {
+  const r = await fetch(`/api/files/${fileId}`, { method: "DELETE" });
+  if (!r.ok) throw new Error("Failed to delete file");
+  return r.json();
+}
+
+export type ChunkPreview = {
+  file_id: string;
+  total_chunks: number;
+  previews: { idx: number; page_start: number | null; page_end: number | null; char_len: number; sample: string }[];
+};
+
+export async function createChunks(payload: {
+  file_ids: string[];
+  size?: number; overlap?: number; by?: "auto" | "page"; preview_limit_per_file?: number;
+}): Promise<ChunkPreview[]> {
+  const r = await fetch(`/api/chunks`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!r.ok) throw new Error("Chunking failed");
+  return r.json();
+}
+
+export async function listChunks(fileId: string, limit = 20, offset = 0) {
+  const r = await fetch(`/api/files/${fileId}/chunks?limit=${limit}&offset=${offset}`);
+  if (!r.ok) throw new Error("Failed to list chunks");
+  return r.json();
+}
+
