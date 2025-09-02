@@ -1,16 +1,20 @@
 # app/routers/chunks.py
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from pydantic import BaseModel
-from typing import List, Literal, Optional, Tuple
+from typing import List, Literal, Optional, Tuple, Dict, Any
 from pathlib import Path, PurePosixPath
+from urllib.parse import urlparse
 import regex as re
-from pypdf import PdfReader
 from uuid import UUID
+import logging
+
+from pypdf import PdfReader
 
 from app.core.db import db_conn
 from app.core.settings import settings
 
 router = APIRouter(prefix="/api", tags=["chunks"])
+log = logging.getLogger("uvicorn.error")
 
 # ---------- Models ----------
 
@@ -30,7 +34,7 @@ class ChunkPreview(BaseModel):
 # ---------- Helpers ----------
 
 def _normalize(s: str) -> str:
-    s = re.sub(r"\r\n?", "\n", s)
+    s = re.sub(r"\r\n?", "\n", s or "")
     s = re.sub(r"[ \t]+", " ", s)
     s = re.sub(r"\n{3,}", "\n\n", s)
     return s.strip()
@@ -39,64 +43,36 @@ def _read_pdf_pages(abs_pdf_path: Path) -> List[str]:
     if not abs_pdf_path.exists():
         return []
     reader = PdfReader(str(abs_pdf_path))
+    if getattr(reader, "is_encrypted", False):
+        try:
+            reader.decrypt("")  # empty password PDFs
+        except Exception:
+            pass
     out: List[str] = []
     for p in reader.pages:
-        out.append(_normalize(p.extract_text() or ""))
+        try:
+            out.append(_normalize(p.extract_text() or ""))
+        except Exception:
+            out.append("")
     return out
 
-def _chunk_chars(text: str, size: int, overlap: int) -> List[str]:
-    if size <= 0:
-        return [text] if text else []
-    chunks: List[str] = []
-    i = 0
-    n = len(text)
-    overlap = max(overlap, 0)
-    while i < n:
-        j = min(i + size, n)
-        chunks.append(text[i:j])
-        if j >= n:
-            break
-        i = max(j - overlap, 0)
-    return chunks
-
-def _chunk_text(text: str, size: int, overlap: int) -> List[str]:
+def _rel_from_storage_url(storage_url: str) -> PurePosixPath:
     """
-    Paragraph-aware chunking: packs paragraphs up to ~size, then overlaps by characters.
-    Falls back to raw char chunking for giant single paragraphs.
+    Accepts '/uploads/...', 'uploads/...', or a full URL. Returns a path relative to 'uploads'.
     """
-    text = text or ""
-    paras = [p.strip() for p in text.split("\n\n") if p.strip()]
-    if not paras:
-        return []
+    try:
+        parsed = urlparse(storage_url)
+        path_part = parsed.path if parsed.scheme else storage_url
+    except Exception:
+        path_part = storage_url
 
-    acc: List[str] = []
-    buf: List[str] = []
-    cur_len = 0
-    for p in paras:
-        extra = len(p) + (2 if buf else 0)  # +2 for "\n\n" join
-        if cur_len + extra <= size or not buf:
-            buf.append(p)
-            cur_len += extra
-        else:
-            acc.append("\n\n".join(buf))
-            if overlap > 0 and acc[-1]:
-                tail = acc[-1][-overlap:]
-                buf = [tail, p]
-                cur_len = len(tail) + 2 + len(p)
-            else:
-                buf = [p]
-                cur_len = len(p)
-    if buf:
-        acc.append("\n\n".join(buf))
-
-    # If any chunk is way too big (e.g., one massive paragraph), split by chars.
-    out: List[str] = []
-    for c in acc:
-        if len(c) > size * 1.5:
-            out.extend(_chunk_chars(c, size, overlap))
-        else:
-            out.append(c)
-    return out
+    p = PurePosixPath(path_part)
+    for head in ("/uploads", "uploads"):
+        try:
+            return p.relative_to(head)
+        except Exception:
+            pass
+    return p  # already relative like 'class_37/file.pdf'
 
 # ---------- Routes ----------
 
@@ -106,11 +82,7 @@ async def list_chunks(
     limit: int = 20,
     offset: int = 0,
     full: bool = False,
-):
-    """
-    Returns chunks for a file.
-    - When full=1, `sample` is the full content; otherwise it's trimmed to 400 chars.
-    """
+) -> List[Dict[str, Any]]:
     async with db_conn() as (conn, cur):
         select_sample = "content AS sample" if full else \
             "CASE WHEN length(content) > 400 THEN substr(content, 1, 400) || '…' ELSE content END AS sample"
@@ -129,15 +101,16 @@ async def list_chunks(
         return [dict(zip(cols, r)) for r in rows]
 
 @router.post("/chunks", response_model=List[ChunkPreview])
-async def create_chunks(payload: ChunkRequest):
+async def create_chunks(payload: ChunkRequest, request: Request) -> List[ChunkPreview]:
     """
     Creates chunks for each file id.
-    - by="page": size=pages per chunk, overlap=page overlap
-    - by="chars": size=chars per chunk, overlap=char overlap (no page ranges)
-    - by="auto": paragraph-aware char chunking on the full document
-    Returns a small preview list with **full** chunk text for the first N chunks.
+    Uses the SAME uploads folder mounted in main.py (request.app.state.uploads_root).
     """
-    uploads_root = Path(settings.upload_root) if settings.upload_root else Path(__file__).resolve().parents[2] / "uploads"
+    # Use the exact folder mounted by main.py; fall back to settings or ../uploads
+    default_root = Path(settings.upload_root) if settings.upload_root else Path(__file__).resolve().parents[3] / "uploads"
+    uploads_root = Path(getattr(request.app.state, "uploads_root", default_root))
+    log.info(f"[chunks] uploads_root = {uploads_root}")
+
     results: List[ChunkPreview] = []
 
     for fid_str in payload.file_ids:
@@ -148,23 +121,34 @@ async def create_chunks(payload: ChunkRequest):
             results.append(ChunkPreview(file_id=fid_str, total_chunks=0, previews=[], note="Invalid file id"))
             continue
 
-        # Fetch storage_url
+        # Fetch storage_url (and filename if available)
         async with db_conn() as (conn, cur):
+            # If your 'files' table has filename/class_id, grab them too; otherwise this still works.
             await cur.execute("SELECT storage_url FROM files WHERE id=%s", (fid,))
             row = await cur.fetchone()
 
         if not row:
-            results.append(ChunkPreview(file_id=fid_str, total_chunks=0, previews=[], note="File not found"))
+            results.append(ChunkPreview(file_id=fid_str, total_chunks=0, previews=[], note="File not found in DB"))
             continue
 
         storage_url: str = row[0]
-        try:
-            rel = PurePosixPath(storage_url).relative_to("/uploads")
-        except Exception:
-            results.append(ChunkPreview(file_id=fid_str, total_chunks=0, previews=[], note="Bad storage path"))
-            continue
+        rel = _rel_from_storage_url(storage_url)
 
-        abs_path = uploads_root / rel
+        # Candidate paths (first one should usually exist)
+        candidates = [
+            (uploads_root / Path(rel.as_posix())).resolve(),
+            (uploads_root / rel.name).resolve(),  # just the filename as a fallback
+        ]
+
+        abs_path = next((p for p in candidates if p.exists()), None)
+        if not abs_path:
+            tried = " | ".join(str(c) for c in candidates)
+            log.warning(f"[chunks] no file on disk for {fid_str}. Tried: {tried}")
+            results.append(ChunkPreview(
+                file_id=fid_str, total_chunks=0, previews=[],
+                note=f"File not found on disk. Tried: {tried}"
+            ))
+            continue
 
         # Extract page texts
         pages = _read_pdf_pages(abs_path)
@@ -174,7 +158,6 @@ async def create_chunks(payload: ChunkRequest):
         ranges: List[Tuple[Optional[int], Optional[int]]] = []
 
         if payload.by == "page":
-            # 1 chunk = N pages
             pages_per_chunk = max(payload.size, 1)
             page_overlap = max(payload.overlap, 0)
             i = 0
@@ -209,18 +192,18 @@ async def create_chunks(payload: ChunkRequest):
                 )
             await conn.commit()
 
-        # Build previews (FULL text in sample)
+        # Previews (FULL text in sample)
         previews = [{
             "idx": i,
             "page_start": ranges[i][0],
             "page_end": ranges[i][1],
             "char_len": len(c),
-            "sample": c,  # full chunk so you can see the whole page/chunk
+            "sample": c,
         } for i, c in enumerate(chunks[: payload.preview_limit_per_file])]
 
         note = None
-        if not any(pages):
-            note = "No text extracted. This PDF may be scanned (image-only)."
+        if sum(len(t.strip()) for t in pages) == 0:
+            note = "No text extracted. If this is a digital PDF, try re-saving it or run OCR once."
 
         results.append(ChunkPreview(
             file_id=fid_str,

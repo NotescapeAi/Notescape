@@ -1,15 +1,119 @@
 # backend/app/lib/chunking.py
 from typing import List, Dict
+from pathlib import Path
+import logging
+import regex as re
+
 from pypdf import PdfReader
 
-def extract_page_texts(pdf_path: str) -> List[str]:
-    """Return plain text for each page (empty string when no text)."""
-    reader = PdfReader(pdf_path)
+# Optional backends
+try:
+    from pdfminer.high_level import extract_pages as pdfminer_extract_pages
+    from pdfminer.layout import LTTextContainer
+except Exception:
+    pdfminer_extract_pages = None
+
+try:
+    import fitz  # PyMuPDF
+except Exception:
+    fitz = None
+
+log = logging.getLogger("uvicorn.error")
+
+
+def _normalize(s: str) -> str:
+    s = re.sub(r"\r\n?", "\n", s or "")
+    s = re.sub(r"[ \t]+", " ", s)
+    s = re.sub(r"\n{3,}", "\n\n", s)
+    return s.strip()
+
+
+def _extract_with_pdfminer(pdf_path: Path) -> List[str]:
+    if pdfminer_extract_pages is None:
+        raise RuntimeError("pdfminer.six not installed")
+    pages: List[str] = []
+    for layout in pdfminer_extract_pages(str(pdf_path)):
+        buf = []
+        for el in layout:
+            if isinstance(el, LTTextContainer):
+                buf.append(el.get_text())
+        pages.append(_normalize("".join(buf)))
+    return pages
+
+
+def _extract_with_pymupdf(pdf_path: Path) -> List[str]:
+    if fitz is None:
+        raise RuntimeError("PyMuPDF not installed")
+    out: List[str] = []
+    with fitz.open(pdf_path) as doc:
+        for page in doc:
+            t = page.get_text("text") or ""
+            if len(t) < 5:
+                # fallback: join text blocks if plain text is oddly short
+                blocks = page.get_text("blocks") or []
+                t2 = "\n".join(b[4] for b in blocks if len(b) >= 5 and isinstance(b[4], str))
+                if len(t2) > len(t):
+                    t = t2
+            out.append(_normalize(t))
+    return out
+
+
+def _extract_with_pypdf(pdf_path: Path) -> List[str]:
+    reader = PdfReader(str(pdf_path))
+    if getattr(reader, "is_encrypted", False):
+        try:
+            reader.decrypt("")  # some PDFs are empty-password encrypted
+        except Exception:
+            pass
     out: List[str] = []
     for p in reader.pages:
-        txt = p.extract_text() or ""
-        out.append(txt.strip())
+        try:
+            txt = p.extract_text() or ""
+        except Exception:
+            txt = ""
+        out.append(_normalize(txt))
     return out
+
+
+def extract_page_texts(pdf_path: str) -> List[str]:
+    """
+    Return plain text for each page (empty string when truly none).
+    Tries: pdfminer -> PyMuPDF -> pypdf.
+    """
+    p = Path(pdf_path)
+    if not p.exists():
+        return []
+
+    errors = []
+
+    # 1) pdfminer (best for weird encodings)
+    try:
+        pages = _extract_with_pdfminer(p)
+        if any(x.strip() for x in pages):
+            log.info(f"[lib.chunking] extracted via pdfminer: {p.name}")
+            return pages
+    except Exception as e:
+        errors.append(f"pdfminer: {e}")
+
+    # 2) PyMuPDF (fast & robust)
+    try:
+        pages = _extract_with_pymupdf(p)
+        if any(x.strip() for x in pages):
+            log.info(f"[lib.chunking] extracted via pymupdf: {p.name}")
+            return pages
+    except Exception as e:
+        errors.append(f"pymupdf: {e}")
+
+    # 3) pypdf (fallback)
+    try:
+        pages = _extract_with_pypdf(p)
+        log.info(f"[lib.chunking] extracted via pypdf: {p.name}")
+        return pages
+    except Exception as e:
+        errors.append(f"pypdf: {e}")
+        log.warning(f"[lib.chunking] all extractors failed for {p.name}: {' | '.join(errors)}")
+        return []
+
 
 def chunk_by_pages(page_texts: List[str], pages_per_chunk: int = 1, overlap_pages: int = 0) -> List[Dict]:
     """
@@ -42,6 +146,7 @@ def chunk_by_pages(page_texts: List[str], pages_per_chunk: int = 1, overlap_page
         i += step
 
     return chunks
+
 
 def chunk_by_chars(text: str, size_chars: int = 1200, overlap_chars: int = 200) -> List[Dict]:
     """Simple char-based chunking (no tokens needed)."""
