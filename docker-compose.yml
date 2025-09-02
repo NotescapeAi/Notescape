@@ -1,0 +1,40 @@
+version: "3.9"
+
+services:
+  backend:
+    build: ./backend
+    container_name: notescape-backend
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://notescape:notescape@db:5432/notescape
+      UPLOAD_ROOT: /uploads
+      CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000
+    volumes:
+      - ./uploads:/uploads
+    depends_on:
+      - db
+
+  frontend:
+    build: ./frontend
+    container_name: notescape-frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+
+  db:
+    image: postgres:15
+    container_name: notescape-db
+    restart: always
+    environment:
+      POSTGRES_USER: notescape
+      POSTGRES_PASSWORD: notescape
+      POSTGRES_DB: notescape
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+volumes:
+  postgres_data:
