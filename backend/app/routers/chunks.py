@@ -38,6 +38,62 @@ def _normalize(s: str) -> str:
     s = re.sub(r"[ \t]+", " ", s)
     s = re.sub(r"\n{3,}", "\n\n", s)
     return s.strip()
+def _chunk_chars(text: str, size: int, overlap: int) -> List[str]:
+    """Simple char-based chunking with overlap."""
+    text = text or ""
+    if size <= 0:
+        return [text] if text else []
+    chunks: List[str] = []
+    i = 0
+    n = len(text)
+    overlap = max(overlap, 0)
+    while i < n:
+        j = min(i + size, n)
+        chunks.append(text[i:j])
+        if j >= n:
+            break
+        i = max(j - overlap, 0)
+    return chunks
+
+def _chunk_text(text: str, size: int, overlap: int) -> List[str]:
+    """
+    Paragraph-aware chunking: packs paragraphs up to ~size, then overlaps by characters.
+    Falls back to raw char chunking for huge single paragraphs.
+    """
+    text = text or ""
+    paras = [p.strip() for p in text.split("\n\n") if p.strip()]
+    if not paras:
+        return []
+
+    acc: List[str] = []
+    buf: List[str] = []
+    cur_len = 0
+    for p in paras:
+        extra = len(p) + (2 if buf else 0)  # +2 for "\n\n" join
+        if cur_len + extra <= size or not buf:
+            buf.append(p)
+            cur_len += extra
+        else:
+            acc.append("\n\n".join(buf))
+            if overlap > 0 and acc[-1]:
+                tail = acc[-1][-overlap:]
+                buf = [tail, p]
+                cur_len = len(tail) + 2 + len(p)
+            else:
+                buf = [p]
+                cur_len = len(p)
+    if buf:
+        acc.append("\n\n".join(buf))
+
+    # If any chunk is way too big (e.g., one massive paragraph), split by chars.
+    out: List[str] = []
+    for c in acc:
+        if len(c) > size * 1.5:
+            out.extend(_chunk_chars(c, size, overlap))
+        else:
+            out.append(c)
+    return out
+
 
 def _read_pdf_pages(abs_pdf_path: Path) -> List[str]:
     if not abs_pdf_path.exists():

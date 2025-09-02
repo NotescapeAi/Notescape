@@ -9,7 +9,6 @@ from app.routers.contact import router as contact_router
 from app.routers.chunks import router as chunks_router
 from fastapi.routing import APIRoute
 import logging
-from fastapi.staticfiles import StaticFiles
 
 
 app = FastAPI(title=settings.api_title)

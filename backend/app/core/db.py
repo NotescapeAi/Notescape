@@ -1,37 +1,25 @@
 # app/core/db.py
-import os
-from typing import Optional
 from contextlib import asynccontextmanager
+from typing import Optional
 from psycopg_pool import AsyncConnectionPool
-
-def _normalize_dsn(url: str) -> str:
-    # Allow SQLAlchemy-style DSNs in env (postgresql+psycopg2://...)
-    if url.startswith("postgresql+psycopg2://"):
-        return url.replace("postgresql+psycopg2://", "postgresql://", 1)
-    return url
-
-DATABASE_URL = _normalize_dsn(
-    os.getenv("DATABASE_URL", "postgresql://postgres@localhost:5432/notescape")
-)
+from app.core.settings import settings
 
 _pool: Optional[AsyncConnectionPool] = None
 
+def _normalize_conninfo(url: str) -> str:
+    # SQLAlchemy-style URL won't work for psycopg_pool; normalize it.
+    # e.g. postgresql+psycopg2://...  ->  postgresql://...
+    if url.startswith("postgresql+psycopg2://"):
+        return "postgresql://" + url.split("://", 1)[1]
+    return url
+
 async def get_pool() -> AsyncConnectionPool:
-    """
-    Lazily create and open the pool the first time it is needed,
-    *inside* an async context where a loop exists.
-    """
     global _pool
     if _pool is None:
-        # Don't open on init; opening requires a running loop.
-        _pool = AsyncConnectionPool(
-            DATABASE_URL,
-            min_size=1,
-            max_size=5,
-            open=False,
-        )
-    if not _pool.is_open:
-        await _pool.open()
+        conninfo = _normalize_conninfo(settings.database_url)
+        # Open explicitly; don't rely on implicit open or non-existent flags.
+        _pool = AsyncConnectionPool(conninfo, min_size=1, max_size=10, open=False)
+        await _pool.open(wait=True)  # wait until min_size connections are ready
     return _pool
 
 @asynccontextmanager
@@ -43,5 +31,6 @@ async def db_conn():
 
 async def close_pool():
     global _pool
-    if _pool and _pool.is_open:
+    if _pool is not None:
         await _pool.close()
+        _pool = None
