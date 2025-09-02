@@ -7,13 +7,13 @@ import {
   LineChart
 } from "lucide-react";
 
-import "./landing.css";
+
 import { Link } from "react-router-dom";
 import { useEffect } from "react";
 import GetStartedLink from "../components/GetStartedLink";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
-
+import "./landing.css";
 export default function LandingPage() {
   //  Scroll animations trigger
   useEffect(() => {

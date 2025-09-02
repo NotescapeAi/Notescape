@@ -1,106 +1,105 @@
 /* ===== Pricing Page Styles ===== */
 :root {
   --violet: #7B5FEF;
+  --violet-dark: #5A3FD6;
   --ink: #0B1221;
   --ink-2: #475569;
   --paper: #ffffff;
-  --ring: rgba(123, 95, 239, .35);
+  --ring: rgba(123, 95, 239, 0.35);
+  --bg-gradient: linear-gradient(135deg, #F9FAFB 0%, #EEF2FF 100%);
 }
 
 /* Hero Section */
 .pricing-hero {
-  min-height: 90vh; /* take most of viewport */
+  min-height: 100vh;
   width: 100%;
-  background: var(--paper);
+  background: var(--bg-gradient);
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 80px 20px 60px; /* space below navbar */
+  padding: 120px 20px 80px; /* space for navbar + footer */
   box-sizing: border-box;
   text-align: center;
 }
 
 .container {
-  max-width: 700px;
+  max-width: 760px;
   margin: 0 auto;
+  padding: 0 1.5rem;
 }
 
-/* Eyebrow label */
+/* Eyebrow Label */
 .eyebrow {
   display: inline-block;
   background: #fff;
   border: 1px solid #E5E7EB;
   color: var(--violet);
-  padding: 6px 14px;
+  padding: 6px 18px;
   border-radius: 999px;
   font-weight: 600;
   font-size: 14px;
-  box-shadow: 0 4px 12px rgba(16, 24, 40, .06);
-  margin-bottom: 20px;
+  box-shadow: 0 4px 12px rgba(16, 24, 40, 0.06);
+  margin-bottom: 22px;
+  transition: transform 0.2s ease;
+}
+
+.eyebrow:hover {
+  transform: scale(1.05);
 }
 
 /* Main Title */
 .title {
-  font-size: 42px;
+  font-size: clamp(28px, 5vw, 44px);
   font-weight: 700;
-  margin: 12px 0;
-  line-height: 1.2;
+  margin: 16px 0;
+  line-height: 1.25;
+  color: var(--ink);
 }
 
 /* Subtitle */
 .subtitle {
   color: var(--ink-2);
-  font-size: 18px;
-  margin: 0 auto 24px;
-  max-width: 520px;
+  font-size: clamp(15px, 2.8vw, 19px);
+  margin: 0 auto 28px;
+  max-width: 540px;
+  line-height: 1.6;
 }
 
 /* Waitlist Form */
 .waitlist {
   display: flex;
-  gap: 12px;
+  gap: 14px;
   flex-wrap: wrap;
   justify-content: center;
-  margin-top: 20px;
+  margin-top: 28px;
 }
 
-.input {
-  flex: 1;
-  min-width: 240px;
-  max-width: 320px;
-  height: 44px;
-  border: 1px solid #E2E8F0;
-  border-radius: 12px;
-  padding: 0 14px;
-  outline: none;
-  transition: border .2s, box-shadow .2s;
-  font-size: 15px;
-}
 
-.input:focus {
-  border-color: var(--violet);
-  box-shadow: 0 0 0 3px var(--ring);
-}
 
+/* Button */
 .btn {
-  height: 44px;
-  padding: 0 20px;
+  height: 46px;
+  padding: 0 22px;
   border: none;
-  border-radius: 12px;
+  border-radius: 14px;
   background: var(--violet);
   color: #fff;
   font-weight: 600;
+  font-size: 15px;
   cursor: pointer;
-  transition: transform .05s ease, filter .2s ease, box-shadow .2s ease;
-  box-shadow: 0 8px 20px rgba(123,95,239,.25);
+  transition: transform 0.08s ease, filter 0.25s ease, box-shadow 0.25s ease;
+  box-shadow: 0 8px 22px rgba(123, 95, 239, 0.25);
+  white-space: nowrap;
 }
 
 .btn:hover {
-  filter: brightness(.97);
+  filter: brightness(1.03);
+  background: var(--violet-dark);
+  box-shadow: 0 10px 28px rgba(123, 95, 239, 0.35);
 }
 
 .btn:active {
-  transform: translateY(1px);
+  transform: translateY(1px) scale(0.98);
 }
 
 .btn:focus-visible {
@@ -109,12 +108,72 @@
 }
 
 /* Responsive */
-@media (max-width: 640px) {
+@media (max-width: 768px) {
+  .container {
+    padding: 0 1rem;
+  }
   .title {
-    font-size: 32px;
+    font-size: clamp(26px, 6vw, 36px);
   }
   .subtitle {
-    font-size: 16px;
+    font-size: 15px;
   }
 }
 
+@media (max-width: 640px) {
+  .waitlist {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .btn {
+    width: 100%;
+  }
+}
+/* Input */
+.input {
+  flex: 1 1 auto; /* flex-grow and shrink but no overflow */
+  min-width: 220px;
+  max-width: 100%; /* allow full width if needed */
+  height: 46px;
+  border: 1px solid #E2E8F0;
+  border-radius: 14px;
+  padding: 0 16px;
+  outline: none;
+  font-size: 15px;
+  background: #fff;
+  transition: border 0.2s, box-shadow 0.2s, transform 0.1s;
+  box-sizing: border-box;
+}
+
+/* Placeholder Styling */
+.input::placeholder {
+  color: #94A3B8;   /* soft gray */
+  opacity: 1;       /* ensures consistent visibility */
+  font-size: 15px;  /* fixed size across breakpoints */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis; /* truncate instead of breaking */
+}
+
+/* Input focus */
+.input:focus {
+  border-color: var(--violet);
+  box-shadow: 0 0 0 3px var(--ring);
+  transform: scale(1.01);
+}
+
+/* Medium screens fix */
+@media (max-width: 900px) {
+  .waitlist {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .input {
+    width: 100%;
+    max-width: 100%;
+  }
+  .btn {
+    width: 100%;
+  }
+}

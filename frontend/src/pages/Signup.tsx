@@ -9,9 +9,9 @@ import {
 import { auth } from "../firebase/firebase";
 import { fetchSignInMethodsForEmail } from "firebase/auth";
 import { FirebaseError } from "firebase/app";
-import "./Signup.css";
+import "./NotescapeStartPage.css";
 
-export default function NotescapeStartPage() {
+export default function Signup() {
   const navigate = useNavigate();
 
   const [showEmailForm, setShowEmailForm] = useState(false);
@@ -149,7 +149,8 @@ export default function NotescapeStartPage() {
   };
 
   return (
-    <main className="page">
+    <main className="signup-page page">
+
       <header className="logo">
         <img src="/logo1.png" alt="Notescape logo" width={70} height={50} />
         <h1>Notescape</h1>

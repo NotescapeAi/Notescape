@@ -1,6 +1,8 @@
+// src/pages/Login.tsx
 import React, { useState, FormEvent, MouseEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { login, signInWithGoogle, signInWithGithub } from "../firebase/firebaseAuth";
+import "./NotescapeStartPage.css"
 
 export default function Login() {
   const navigate = useNavigate();
@@ -78,69 +80,71 @@ export default function Login() {
         <h1>Notescape</h1>
       </header>
 
-      <div className="login-container">
-        <h2 className="login-title">Log in</h2>
+      <div className="auth-page">
+        <div className="login-container">
+          <h2 className="login-title">Log in</h2>
 
-        {/* GitHub Sign In */}
-        <button type="button" className="social-btn" onClick={(e) => onSocial("Github", e)}>
-          <img src="/github-mark.png" alt="Github logo" className="icon" width={18} height={18} />
-          CONTINUE WITH GITHUB
-        </button>
-
-        {/* Google Sign In */}
-        <button type="button" className="social-btn" onClick={(e) => onSocial("Google", e)}>
-          <img src="/google.svg" alt="Google logo" className="icon" width={18} height={18} />
-          CONTINUE WITH GOOGLE
-        </button>
-
-        <div className="divider" role="separator" aria-label="or">
-          <span />
-          <p>OR</p>
-          <span />
-        </div>
-
-        {error && <p className="error" role="status">{error}</p>}
-
-        <form onSubmit={onSubmit} noValidate>
-          <div className="form-field">
-            <input
-              type="email"
-              placeholder="Email"
-              value={email}
-              onChange={(ev) => setEmail(ev.target.value)}
-              required
-              aria-label="Email"
-            />
-          </div>
-
-          <div className="form-field">
-            <input
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={(ev) => setPassword(ev.target.value)}
-              required
-              aria-label="Password"
-            />
-          </div>
-
-          <button
-            type="submit"
-            className="login-btn"
-            onClick={(e) => addRipple(e)}
-            disabled={submitting}
-          >
-            {!submitting ? "LOG IN" : <span className="spinner" aria-hidden />}
+          {/* GitHub Sign In */}
+          <button type="button" className="social-btn" onClick={(e) => onSocial("Github", e)}>
+            <img src="/github-mark.png" alt="Github logo" className="icon" width={18} height={18} />
+            CONTINUE WITH GITHUB
           </button>
-        </form>
 
-        <div className="links2">
-          <Link to="/get-started" className="ghost-btn">
-            Create account
-          </Link>
-          <Link to="/forgot-password" className="ghost-btn">
-            Forgot password?
-          </Link>
+          {/* Google Sign In */}
+          <button type="button" className="social-btn" onClick={(e) => onSocial("Google", e)}>
+            <img src="/google.svg" alt="Google logo" className="icon" width={18} height={18} />
+            CONTINUE WITH GOOGLE
+          </button>
+
+          <div className="divider" role="separator" aria-label="or">
+            <span />
+            <p>OR</p>
+            <span />
+          </div>
+
+          {error && <p className="error" role="status">{error}</p>}
+
+          <form onSubmit={onSubmit} noValidate>
+            <div className="form-field">
+              <input
+                type="email"
+                placeholder="Email"
+                value={email}
+                onChange={(ev) => setEmail(ev.target.value)}
+                required
+                aria-label="Email"
+              />
+            </div>
+
+            <div className="form-field">
+              <input
+                type="password"
+                placeholder="Password"
+                value={password}
+                onChange={(ev) => setPassword(ev.target.value)}
+                required
+                aria-label="Password"
+              />
+            </div>
+
+            <button
+              type="submit"
+              className="login-btn"
+              onClick={(e) => addRipple(e)}
+              disabled={submitting}
+            >
+              {!submitting ? "LOG IN" : <span className="spinner" aria-hidden />}
+            </button>
+          </form>
+
+          <div className="links2">
+            <Link to="/get-started" className="ghost-btn">
+              Create account
+            </Link>
+            <Link to="/forgot-password" className="ghost-btn">
+              Forgot password?
+            </Link>
+          </div>
         </div>
       </div>
     </main>

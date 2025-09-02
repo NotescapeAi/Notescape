@@ -1,0 +1,135 @@
+/* ===== Footer Base ===== */
+.ns-footer {
+  background: #7b5feff5;
+  color: #fff;
+  padding: 3rem 1.5rem 2rem;
+  margin-top: 3rem;
+  font-family: "Montserrat", sans-serif;
+}
+.ns-footer .container {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+/* ===== Grid Layout ===== */
+.foot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 2rem;
+}
+
+/* ===== Branding ===== */
+.foot-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 0.75rem;
+}
+.foot-brand img {
+  height: 38px;
+  width: auto;
+  border-radius: 8px;
+}
+.agr-text {
+  font-size: 1.3rem;
+  font-weight: 700;
+}
+.foot-note {
+  font-size: 0.9rem;
+  opacity: 0.85;
+  max-width: 250px;
+}
+
+/* ===== Headings ===== */
+.foot-grid h4 {
+  font-size: 1.1rem;
+  margin-bottom: 1rem;
+  font-weight: 600;
+  color: #fff;
+}
+
+/* ===== Links ===== */
+.foot-grid a {
+  display: block;
+  margin-bottom: 0.5rem;
+  text-decoration: none;
+  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.85);
+  transition: color 0.3s ease;
+}
+.foot-grid a:hover {
+  color: #fff;
+}
+/* Footer link glow */
+.foot-grid a {
+  position: relative;
+}
+.foot-grid a::after {
+  content: "";
+  position: absolute;
+  left: 0; bottom: -2px;
+  width: 0; height: 2px;
+  background: linear-gradient(90deg, #fff, #ddd);
+  transition: width .3s ease;
+}
+.foot-grid a:hover::after {
+  width: 100%;
+}
+
+/* ===== Subscribe Form ===== */
+.subscribe {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.subscribe input {
+  flex: 1;
+  min-width: 160px;
+  padding: 0.6rem 0.8rem;
+  border-radius: 8px;
+  border: none;
+  outline: none;
+  font-size: 0.9rem;
+}
+.subscribe button {
+  background: #0b1221;
+  color: #fff;
+  border: none;
+  padding: 0.6rem 1rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: background 0.3s ease, transform 0.2s ease;
+}
+.subscribe button:hover {
+  background: #1e293b;
+  transform: translateY(-2px);
+}
+
+/* ===== Footer Bottom ===== */
+.foot-bottom {
+  text-align: center;
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(255,255,255,0.2);
+  font-size: 0.85rem;
+  opacity: 0.8;
+}
+
+/* ===== Responsive ===== */
+@media (max-width: 768px) {
+  .ns-footer {
+    text-align: center;
+  }
+  .foot-brand {
+    justify-content: center;
+  }
+  .subscribe {
+    flex-direction: column;
+    align-items: center;
+  }
+  .subscribe input,
+  .subscribe button {
+    width: 100%;
+  }
+}

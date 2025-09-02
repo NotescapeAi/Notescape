@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, NavLink } from "react-router-dom";
 import { Menu, X } from "lucide-react";
 
+import "./navbar.css";
 const Navbar: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
 
