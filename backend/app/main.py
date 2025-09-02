@@ -8,7 +8,8 @@ from app.routers.files import router as files_router
 from app.routers.contact import router as contact_router
 from app.routers.chunks import router as chunks_router
 from app.routers import classes
-
+from contextlib import asynccontextmanager
+from app.core.db import close_pool
 
 
 app = FastAPI(title=settings.api_title)
@@ -36,3 +37,16 @@ app.include_router(files_router)
 app.include_router(contact_router)
 app.include_router(chunks_router)
 app.include_router(classes.router)
+
+
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Don't open the pool here; open lazily on first use.
+    yield
+    # Ensure clean shutdown when tests/actions finish
+    await close_pool()
+
+app = FastAPI(lifespan=lifespan)
+
