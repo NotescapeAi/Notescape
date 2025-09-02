@@ -45,7 +45,8 @@ async def create_class(payload: ClassCreate):
 async def update_class(class_id: int, payload: ClassUpdate):
     fields, values = [], []
     if payload.name is not None:
-        fields.append("name=%s"); values.append(payload.name)
+        fields.append("name=%s")
+        values.append(payload.name)
     if payload.subject is not None:
         values.append((payload.subject or "").strip() or "General")
         fields.append("subject=%s")
