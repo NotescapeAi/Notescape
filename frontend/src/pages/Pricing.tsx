@@ -1,11 +1,12 @@
 // frontend/src/pages/Pricing.tsx
 import React from "react";
-import { motion } from "framer-motion"; // ✅ animation library
+import { motion } from "framer-motion"; 
 import "@fontsource/montserrat/400.css";
 import "@fontsource/montserrat/700.css";
 import "./pricing.css";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
+
 
 export default function Pricing() {
   const onSubmit: React.FormEventHandler<HTMLFormElement> = (e) => {
@@ -15,12 +16,10 @@ export default function Pricing() {
 
   return (
     <div>
-      {/* --- Navbar --- */}
       <Navbar />
 
-      {/* --- Main Content --- */}
-      <main className="pricing-hero flex flex-col items-center text-center flex-grow">
-        <div className="container space-y-6 max-w-5xl">
+      <main className="pricing-hero">
+        <div className="container">
           {/* Eyebrow */}
           <motion.header
             className="eyebrow"
@@ -33,14 +32,12 @@ export default function Pricing() {
 
           {/* Title */}
           <motion.h1
-            className="title"
+            className="title text-purple-700"
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8, delay: 0.2 }}
           >
-           <h1 className="text-[42px] font-bold text-purple-700 mb-6">
-  Pricing Plans
-</h1>
+            Pricing Plans
           </motion.h1>
 
           {/* Subtitle */}
@@ -68,17 +65,13 @@ export default function Pricing() {
               placeholder="Enter your email"
               className="input"
             />
-            <button
-              type="submit"
-              className="btn"
-            >
+            <button type="submit" className="btn">
               Notify Me
             </button>
           </motion.form>
         </div>
       </main>
 
-      {/* --- Footer --- */}
       <Footer />
     </div>
   );

@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { FormEvent } from "react";
-
+import './footer.css';
 const Footer: React.FC = () => {
   const handleSubscribe = (e: FormEvent) => {
     e.preventDefault();

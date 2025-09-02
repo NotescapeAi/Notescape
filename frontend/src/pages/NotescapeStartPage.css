@@ -14,31 +14,15 @@
   --easing:cubic-bezier(.2,.8,.2,1);
 }
 
-*{box-sizing:border-box}
-html,body{height:100%}
-body{
-  margin:0;
-  font-family:Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial;
-  color:var(--ink);
-  background:
-    radial-gradient(1200px 800px at 5% -10%, rgba(139,92,246,.14), transparent 60%),
-    radial-gradient(1000px 700px at 95% 110%, rgba(236,72,153,.12), transparent 60%),
-    linear-gradient(180deg, #fafaff 0%, #f3f3fb 100%);
-  background-attachment: fixed;
-  display:flex; justify-content:center; align-items:flex-start;
-  padding:35px 25px 45px;
-  overflow-x:hidden;
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
 }
-
-/* gentle floating ambient */
-body::before{
-  content:"";
-  position:fixed; inset:-20vmax; z-index:-1; pointer-events:none;
-  background:
-    radial-gradient(60vmax 60vmax at 20% 10%, rgba(139,92,246,.18), transparent 60%),
-    radial-gradient(60vmax 60vmax at 80% 90%, rgba(236,72,153,.16), transparent 60%);
-  filter: blur(40px) saturate(115%);
-  animation: floatGlow 22s var(--easing) infinite alternate;
+body {
+  font-family: "Inter", sans-serif;
+  background: #f9f9f9;
+  color: #333;
 }
 @keyframes floatGlow{
   0%   { transform: translate3d(-1%, -1%, 0) scale(1.02); }
@@ -47,8 +31,17 @@ body::before{
 }
 
 /* ---------- Layout ---------- */
-.page{ width:100%; max-width:760px; display:flex; flex-direction:column; align-items:center }
-
+/*.page{ width:100%; max-width:760px; display:flex; 
+  flex-direction:column; align-items:center }
+*/
+.page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 2rem 1rem;
+}
 /* ---------- Logo ---------- */
 .logo{
   display:flex; align-items:center;
@@ -79,6 +72,13 @@ body::before{
   background: linear-gradient(180deg, #ffffff 0%, #fafaff 100%);
   box-shadow: 0 24px 60px rgba(15,23,36,.10), 0 2px 0 rgba(255,255,255,.6) inset;
   animation: fadeUp .9s var(--easing) both;
+ 
+ 
+  
+  
+ 
+  
+  
 }
 
 @keyframes fadeUp{
@@ -348,3 +348,4 @@ input:focus {
   color: white;
   margin-top: 10px;
 }
+
