@@ -1,5 +1,6 @@
 import os
 import time
+import uuid
 from uuid import UUID
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from app.core.db import db_conn
