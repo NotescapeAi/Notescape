@@ -1,4 +1,6 @@
-import os, time, uuid
+import os
+import time
+from uuid import UUID
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from app.core.db import db_conn
 from pathlib import Path, PurePosixPath
@@ -65,7 +67,7 @@ async def upload_file(class_id: int, file: UploadFile = File(...)):
     }
 
 
-from uuid import UUID
+
 @router.delete("/{file_id:uuid}")   # ⬅ uuid
 async def delete_file(file_id: UUID):
     # 1) find file row

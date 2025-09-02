@@ -68,7 +68,7 @@ export default function Classes() {
     try {
       await deleteFile(fileId);
       setFiles(xs => xs.filter(f => f.id !== fileId));
-      setSel(({ [fileId]: _, ...rest }) => rest);
+
     } catch {
       alert("Failed to delete file");
     }

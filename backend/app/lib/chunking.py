@@ -1,5 +1,5 @@
 # backend/app/lib/chunking.py
-from typing import List, Dict, Optional
+from typing import List, Dict
 from pypdf import PdfReader
 
 def extract_page_texts(pdf_path: str) -> List[str]:
