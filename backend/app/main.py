@@ -1,3 +1,4 @@
+# app/main.py
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,8 +9,14 @@ from app.routers.files import router as files_router
 from app.routers.contact import router as contact_router
 from app.routers.chunks import router as chunks_router
 from fastapi.routing import APIRoute
+from app.routers.embeddings import router as embeddings_router
+from app.routers.flashcards import router as flashcards_router
+
 import logging
 
+# NEW: import DB pool lifecycle and health router
+from app.core.db import get_pool, close_pool
+from app.routers.health import router as health_router
 
 app = FastAPI(title=settings.api_title)
 
@@ -20,7 +27,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
 
 # --- Pick the project root that contains both backend/ and frontend/ ---
 # __file__ = .../backend/app/main.py
@@ -36,23 +42,32 @@ app.state.uploads_root = uploads_dir  # <-- share with routers
 
 logging.getLogger("uvicorn.error").info(f"[main] uploads_root = {uploads_dir}")
 
-
 @app.get("/health")
 async def health():
     return {"status": "ok"}
 
+# Routers
 app.include_router(classes_router)
 app.include_router(files_router)
 app.include_router(contact_router)
 app.include_router(chunks_router)
+app.include_router(embeddings_router)
+app.include_router(flashcards_router)
+# NEW: add the health router with /health and /health/db
+app.include_router(health_router)
 
-
+# On startup, warm up the pool, then log routes
 @app.on_event("startup")
-async def show_routes():
+async def on_startup():
+    await get_pool()  # ensure connections are ready before first request
     log = logging.getLogger("uvicorn.error")
     for r in app.routes:
         if isinstance(r, APIRoute):
             log.info(f"ROUTE: {','.join(sorted(r.methods))} {r.path}")
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    await close_pool()
 
 @app.get("/__routes")
 async def __routes():

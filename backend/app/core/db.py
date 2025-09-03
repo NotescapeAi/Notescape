@@ -7,8 +7,7 @@ from app.core.settings import settings
 _pool: Optional[AsyncConnectionPool] = None
 
 def _normalize_conninfo(url: str) -> str:
-    # SQLAlchemy-style URL won't work for psycopg_pool; normalize it.
-    # e.g. postgresql+psycopg2://...  ->  postgresql://...
+    # Ensure we don't pass SQLAlchemy style URL to psycopg
     if url.startswith("postgresql+psycopg2://"):
         return "postgresql://" + url.split("://", 1)[1]
     return url
@@ -17,9 +16,8 @@ async def get_pool() -> AsyncConnectionPool:
     global _pool
     if _pool is None:
         conninfo = _normalize_conninfo(settings.database_url)
-        # Open explicitly; don't rely on implicit open or non-existent flags.
         _pool = AsyncConnectionPool(conninfo, min_size=1, max_size=10, open=False)
-        await _pool.open(wait=True)  # wait until min_size connections are ready
+        await _pool.open(wait=True)
     return _pool
 
 @asynccontextmanager
