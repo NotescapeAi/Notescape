@@ -1,29 +1,19 @@
-# For FastAPI app
 fastapi==0.115.0
 uvicorn[standard]==0.30.0
-
-# Config & validation
 pydantic==2.9.2
 pydantic-settings==2.6.1
 email-validator>=2.0.0
 
-# HTTP client (used in testing)
 httpx==0.27.2
-
-# File uploads
 python-multipart==0.0.9
 
-# Database
 sqlalchemy==2.0.35
 psycopg[binary]==3.2.9
 psycopg_pool==3.2.6
 
-# Utils
 pypdf==4.3.1
 regex==2024.5.15
 
-# Testing
+openai>=1.40.0      # only used if LLM_PROVIDER=openai
 pytest==8.3.3
-openai>=1.40.0
-
-numpy==1.26.4
+sentence-transformers==2.7.0

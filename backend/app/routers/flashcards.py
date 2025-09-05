@@ -1,37 +1,12 @@
-import os, json
-from typing import Optional, List, Tuple
-from dataclasses import dataclass
-from fastapi import APIRouter, HTTPException
+from typing import Optional, List, Tuple, Dict
+from fastapi import APIRouter, HTTPException, Path
 from pydantic import BaseModel, Field
 from app.core.db import db_conn
+from app.core.llm import get_embedder, get_card_generator, EMBED_DIM
 
 router = APIRouter(prefix="/flashcards", tags=["flashcards"])
 
-EMBED_MODEL = "text-embedding-3-small"
-EMBED_DIM = 1536
-
-def _vec_literal(vec: List[float]) -> str:
-    return "[" + ",".join(str(float(x)) for x in vec) + "]"
-
-def _use_fake() -> bool:
-    return os.getenv("LLM_PROVIDER", "openai").lower() == "fake"
-
-def _fake_embed_text(text: str) -> List[float]:
-    bins = [0.0] * 256
-    for ch in text:
-        bins[ord(ch) % 256] += 1.0
-    s = sum(bins) or 1.0
-    bins = [b / s for b in bins]
-    return (bins * (EMBED_DIM // 256))[:EMBED_DIM]
-
-async def _embed_texts(texts: List[str]) -> List[List[float]]:
-    if _use_fake():
-        return [_fake_embed_text(t) for t in texts]
-    else:
-        from openai import OpenAI
-        client = OpenAI()
-        resp = client.embeddings.create(model=EMBED_MODEL, input=texts)
-        return [d.embedding for d in resp.data]
+# ---------- Schemas ----------
 
 class EnsureEmbeddingsReq(BaseModel):
     limit: Optional[int] = Field(default=500)
@@ -52,33 +27,41 @@ class FlashcardOut(BaseModel):
     difficulty: Optional[str] = "medium"
     tags: List[str] = []
 
+# ---------- Utils ----------
+
+def _vec_literal(vec: List[float]) -> str:
+    # pgvector literal like: [0.1,0.2,...]
+    return "[" + ",".join(str(x) for x in vec) + "]"
+
+# ---------- Health ----------
+
 @router.get("/ping")
 async def ping():
     return {"status": "ok", "router": "flashcards"}
 
-@router.post("/ensure-embeddings")
-async def ensure_embeddings(body: EnsureEmbeddingsReq):
-    # Keep this simple: fill any global missing embeddings
+# ---------- Embeddings helpers ----------
+
+async def _fetch_missing_chunks(limit: Optional[int]) -> List[Tuple[int, str]]:
+    q = """
+        SELECT c.id, c.content
+        FROM chunks c
+        LEFT JOIN embeddings e ON e.chunk_id = c.id
+        WHERE e.chunk_id IS NULL
+        ORDER BY c.id
+    """
+    params = ()
+    if limit:
+        q += " LIMIT %s"
+        params = (limit,)
     async with db_conn() as (conn, cur):
-        await cur.execute(
-            """
-            SELECT c.id, c.content
-            FROM chunks c
-            LEFT JOIN embeddings e ON e.chunk_id = c.id
-            WHERE e.chunk_id IS NULL
-            ORDER BY c.id
-            LIMIT %s
-            """,
-            (body.limit or 500,),
-        )
-        rows = await cur.fetchall()
-    if not rows:
-        return {"inserted": 0, "message": "No missing embeddings."}
-    ids = [r[0] for r in rows]
-    texts = [r[1] for r in rows]
-    vecs = await _embed_texts(texts)
+        await cur.execute(q, params)
+        return await cur.fetchall()
+
+async def _insert_embeddings(pairs: List[Tuple[int, List[float]]]):
+    if not pairs:
+        return
     async with db_conn() as (conn, cur):
-        for cid, vec in zip(ids, vecs):
+        for chunk_id, vec in pairs:
             await cur.execute(
                 """
                 INSERT INTO embeddings (chunk_id, model, dim, vec)
@@ -86,12 +69,12 @@ async def ensure_embeddings(body: EnsureEmbeddingsReq):
                 ON CONFLICT (chunk_id)
                 DO UPDATE SET model=EXCLUDED.model, dim=EXCLUDED.dim, vec=EXCLUDED.vec
                 """,
-                (cid, EMBED_MODEL, EMBED_DIM, _vec_literal(vec)),
+                (chunk_id, "auto", EMBED_DIM, _vec_literal(vec)),
             )
         await conn.commit()
-    return {"inserted": len(ids)}
 
 async def _pick_relevant_chunks(class_id: int, query_vec: List[float], top_k: int) -> List[Tuple[int, str]]:
+    vec_lit = _vec_literal(query_vec)
     q = """
         SELECT c.id, c.content
         FROM embeddings e
@@ -102,89 +85,80 @@ async def _pick_relevant_chunks(class_id: int, query_vec: List[float], top_k: in
         LIMIT %s
     """
     async with db_conn() as (conn, cur):
-        await cur.execute(q, (class_id, _vec_literal(query_vec), top_k))
+        await cur.execute(q, (class_id, vec_lit, top_k))
         return await cur.fetchall()
 
-async def _insert_flashcards(class_id: int, cards: List[dict], source_chunk_id: Optional[int]) -> List[str]:
-    ids = []
+async def _insert_flashcards(class_id: int, cards: List[Dict], source_chunk_id: Optional[int]) -> List[str]:
+    out_ids: List[str] = []
     async with db_conn() as (conn, cur):
         for c in cards:
-            question = (c.get("question") or "").strip()
-            answer = (c.get("answer") or "").strip()
-            if not question or not answer:
+            q = (c.get("question") or "").strip()
+            a = (c.get("answer") or "").strip()
+            if not q or not a:
                 continue
-            hint = (c.get("hint") or None)
-            difficulty = (c.get("difficulty") or "medium")
+            hint = c.get("hint")
+            diff = c.get("difficulty") or "medium"
             tags = c.get("tags") or []
             await cur.execute(
                 """
-                INSERT INTO flashcards
-                  (class_id, source_chunk_id, question, answer, hint, difficulty, tags, created_by)
+                INSERT INTO flashcards (class_id, source_chunk_id, question, answer, hint, difficulty, tags, created_by)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, 'llm')
                 RETURNING id::text
                 """,
-                (class_id, source_chunk_id, question, answer, hint, difficulty, tags),
+                (class_id, source_chunk_id, q, a, hint, diff, tags),
             )
             row = await cur.fetchone()
-            ids.append(row[0])
+            out_ids.append(row[0])
         await conn.commit()
-    return ids
+    return out_ids
+
+# ---------- Routes ----------
+
+@router.post("/ensure-embeddings")
+async def ensure_embeddings(body: EnsureEmbeddingsReq):
+    rows = await _fetch_missing_chunks(body.limit)
+    if not rows:
+        return {"inserted": 0, "message": "No missing embeddings."}
+    ids = [cid for cid, _ in rows]
+    txts = [t for _, t in rows]
+
+    embedder = get_embedder()
+    B = 64
+    inserted = 0
+    for i in range(0, len(txts), B):
+        sub_ids = ids[i:i+B]
+        sub_txts = txts[i:i+B]
+        vecs = await embedder.embed_texts(sub_txts)
+        await _insert_embeddings(list(zip(sub_ids, vecs)))
+        inserted += len(sub_ids)
+
+    return {"inserted": inserted}
 
 @router.post("/generate", response_model=List[FlashcardOut])
 async def generate(req: GenerateReq):
+    embedder = get_embedder()
+    generator = get_card_generator()
+
+    # Vectorize the topic/query for retrieval
     qtext = req.topic or "Create high-yield study flashcards for this class content."
-    qvec = (await _embed_texts([qtext]))[0]
+    qvec = (await embedder.embed_texts([qtext]))[0]
+
+    # Top-k relevant chunks
     hits = await _pick_relevant_chunks(req.class_id, qvec, req.top_k)
     if not hits:
         raise HTTPException(status_code=404, detail="No chunks found for this class. Upload content first.")
 
-    # If using fake mode, synthesize cards locally (no paid API)
-    cards: List[dict] = []
-    if _use_fake():
-        for i, (_, content) in enumerate(hits[:req.n_cards]):
-            snippet = content.strip().replace("\n", " ")
-            snippet = (snippet[:220] + "…") if len(snippet) > 220 else snippet
-            cards.append({
-                "question": f"Q{i+1}: What is the main idea?",
-                "answer": snippet or "N/A",
-                "hint": "Focus on key terms and relationships.",
-                "difficulty": "medium",
-                "tags": ["auto", "fake-mode"]
-            })
-    else:
-        # Real LLM call (requires paid key)
-        from openai import OpenAI
-        client = OpenAI()
-        joined = "\n\n".join("• " + c[:1000] for _, c in hits)
-        system = (
-            "You create concise, exam-style flashcards. "
-            "Output ONLY valid JSON: {\"cards\": [{\"question\": \"...\", \"answer\": \"...\", "
-            "\"hint\": \"optional\", \"difficulty\": \"easy|medium|hard\", \"tags\": [\"...\"]}, ...]}"
-        )
-        user = (
-            "Context:\n" + joined + "\n\n"
-            f"Make exactly {req.n_cards} flashcards. Be precise and avoid fluff."
-        )
-        completion = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "system", "content": system},
-                      {"role": "user", "content": user}],
-            temperature=0.2,
-        )
-        content = completion.choices[0].message.content.strip()
-        try:
-            data = json.loads(content)
-            cards = data.get("cards", [])
-            if not isinstance(cards, list):
-                cards = []
-        except Exception:
-            # fallback: one card
-            cards = [{"question": "Summarize the main idea.", "answer": content, "difficulty": "medium", "tags": []}]
+    # Compact context to keep prompt tight
+    joined = "\n".join("• " + c[:1000] for _, c in hits)
 
+    # Ask the generator for cards
+    cards = await generator.generate(joined, req.n_cards)
+
+    # Persist and return
     source_chunk_id = hits[0][0] if hits else None
     ids = await _insert_flashcards(req.class_id, cards, source_chunk_id)
 
-    out = []
+    out: List[FlashcardOut] = []
     for i, c in zip(ids, cards):
         out.append(
             FlashcardOut(
@@ -199,3 +173,38 @@ async def generate(req: GenerateReq):
             )
         )
     return out
+
+@router.get("/list", response_model=List[FlashcardOut])
+async def list_flashcards_query(class_id: int, limit: int = 200):
+    async with db_conn() as (conn, cur):
+        await cur.execute(
+            """
+            SELECT id::text, class_id, source_chunk_id, question, answer, hint, difficulty, tags
+            FROM flashcards
+            WHERE class_id = %s
+            ORDER BY created_at DESC
+            LIMIT %s
+            """,
+            (class_id, limit),
+        )
+        rows = await cur.fetchall()
+    return [
+        FlashcardOut(
+            id=r[0],
+            class_id=r[1],
+            source_chunk_id=r[2],
+            question=r[3],
+            answer=r[4],
+            hint=r[5],
+            difficulty=r[6] or "medium",
+            tags=r[7] or [],
+        )
+        for r in rows
+    ]
+
+@router.delete("/{card_id}", status_code=204)
+async def delete_flashcard(card_id: str = Path(..., description="flashcards.id (UUID)")):
+    async with db_conn() as (conn, cur):
+        await cur.execute("DELETE FROM flashcards WHERE id::text=%s", (card_id,))
+        await conn.commit()
+    return

@@ -7,7 +7,7 @@ from app.core.settings import settings
 _pool: Optional[AsyncConnectionPool] = None
 
 def _normalize_conninfo(url: str) -> str:
-    # Ensure we don't pass SQLAlchemy style URL to psycopg
+    # psycopg/psycopg_pool wants a plain postgresql:// URL
     if url.startswith("postgresql+psycopg2://"):
         return "postgresql://" + url.split("://", 1)[1]
     return url

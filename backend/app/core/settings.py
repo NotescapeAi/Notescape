@@ -1,7 +1,7 @@
 # app/core/settings.py
-from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
+from typing import Optional
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -19,11 +19,13 @@ class Settings(BaseSettings):
         alias="DATABASE_URL",
     )
 
+    # Where uploaded files live; if unset we use <project-root>/uploads
     upload_root: Optional[str] = Field(default=None, alias="UPLOAD_ROOT")
 
-    # LLM
+    # LLM provider: "fake" (free dev) or "openai"
     llm_provider: str = Field(default="fake", alias="LLM_PROVIDER")
-    openai_chat_model: str = Field(default="gpt-4o-mini", alias="OPENAI_CHAT_MODEL")
-    openai_embed_model: str = Field(default="text-embedding-3-small", alias="OPENAI_EMBED_MODEL")
+
+    # OpenAI API key (only needed if provider=openai)
+    openai_api_key: Optional[str] = Field(default=None, alias="OPENAI_API_KEY")
 
 settings = Settings()
