@@ -1,73 +1,60 @@
 # app/routers/classes.py
+from typing import Optional, List
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
-from typing import Optional, List, Dict, Any
-import logging
+from pydantic import BaseModel, Field
 from app.core.db import db_conn
 
-logging.getLogger("uvicorn.error").info(f"Loaded classes router from {__file__}")
-
-router = APIRouter(prefix="/api/classes", tags=["classes"])
+router = APIRouter(prefix="/api", tags=["classes"])
 
 class ClassCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    description: Optional[str] = None
+
+class ClassOut(BaseModel):
+    id: int
     name: str
-    subject: Optional[str] = None
+    description: Optional[str] = None
 
-class ClassUpdate(BaseModel):
-    name: Optional[str] = None
-    subject: Optional[str] = None
-
-@router.get("")  # GET /api/classes
-async def list_classes() -> List[Dict[str, Any]]:
+@router.get("/classes", response_model=List[ClassOut])
+async def list_classes():
     async with db_conn() as (conn, cur):
-        await cur.execute(
-            "SELECT id, name, subject, created_at FROM classes ORDER BY created_at DESC"
-        )
+        await cur.execute("SELECT id, name, description FROM classes ORDER BY id")
         rows = await cur.fetchall()
-        cols = [d[0] for d in cur.description]
-        return [dict(zip(cols, r)) for r in rows]
+    return [{"id": r[0], "name": r[1], "description": r[2]} for r in rows]
 
-@router.post("")  # POST /api/classes
-async def create_class(payload: ClassCreate):
-    subject = (payload.subject or "").strip() or "General"
+@router.post("/classes", response_model=ClassOut, status_code=201)
+async def create_class(body: ClassCreate):
+    name = body.name.strip()
+    desc = body.description.strip() if body.description else None
+    if not name:
+        raise HTTPException(status_code=422, detail="name cannot be empty")
     async with db_conn() as (conn, cur):
         await cur.execute(
-            "INSERT INTO classes (name, subject) VALUES (%s, %s) "
-            "RETURNING id, name, subject, created_at",
-            (payload.name, subject),
+            "INSERT INTO classes (name, description) VALUES (%s, %s) RETURNING id",
+            (name, desc),
         )
         row = await cur.fetchone()
         await conn.commit()
-    cols = ["id", "name", "subject", "created_at"]
-    return dict(zip(cols, row))
+    return {"id": row[0], "name": name, "description": desc}
 
-@router.put("/{class_id}")  # PUT /api/classes/{class_id}
-async def update_class(class_id: int, payload: ClassUpdate):
-    fields, values = [], []
-    if payload.name is not None:
-        fields.append("name=%s")
-        values.append(payload.name)
-    if payload.subject is not None:
-        values.append((payload.subject or "").strip() or "General")
-        fields.append("subject=%s")
-    if not fields:
-        raise HTTPException(status_code=400, detail="No fields to update")
-
-    values.append(class_id)
+@router.put("/classes/{class_id}", response_model=ClassOut)
+async def update_class(class_id: int, body: ClassCreate):
+    name = body.name.strip()
+    desc = body.description.strip() if body.description else None
+    if not name:
+        raise HTTPException(status_code=422, detail="name cannot be empty")
     async with db_conn() as (conn, cur):
         await cur.execute(
-            f"UPDATE classes SET {', '.join(fields)} "
-            "WHERE id=%s RETURNING id, name, subject, created_at",
-            tuple(values),
+            "UPDATE classes SET name=%s, description=%s WHERE id=%s RETURNING id, name, description",
+            (name, desc, class_id),
         )
         row = await cur.fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="Class not found")
         await conn.commit()
-    cols = ["id", "name", "subject", "created_at"]
-    return dict(zip(cols, row))
+    if not row:
+        raise HTTPException(status_code=404, detail="class not found")
+    return {"id": row[0], "name": row[1], "description": row[2]}
 
-@router.delete("/{class_id}", status_code=204)  # DELETE /api/classes/{class_id}
+@router.delete("/classes/{class_id}", status_code=204)
 async def delete_class(class_id: int):
     async with db_conn() as (conn, cur):
         await cur.execute("DELETE FROM classes WHERE id=%s", (class_id,))

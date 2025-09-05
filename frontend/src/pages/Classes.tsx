@@ -4,8 +4,8 @@ import {
   listClasses, createClass, updateClass, deleteClass,
   listFiles, uploadFile,
   deleteFile, createChunks, FileRow, ClassRow, ChunkPreview
-} from "../lib/api"; // <-- make sure these exist (from earlier message)
-
+} from "../lib/api";
+import FlashcardsPanel from "../components/FlashcardsPanel";
 
 export default function Classes() {
   const [classes, setClasses] = useState<ClassRow[]>([]);
@@ -32,17 +32,18 @@ export default function Classes() {
   }, [selectedId]);
 
   const selectedClass = classes.find(c => c.id === selectedId) || null;
-  const API = ""; // Vite proxy for /api and /uploads
 
- async function handleCreate(name: string) {
-  const row = await createClass({ name, subject: "General" }); // or a real subject
-  setClasses(xs => [...xs, row]);
-}
+  async function handleCreate(name: string) {
+    const row = await createClass({ name });
+    setClasses(xs => [...xs, row]);
+    setSelectedId(row.id);
+  }
 
   async function handleRename(id: number, name: string) {
-    const row = await updateClass(id, { name });
+    const row = await updateClass(id, { name }); // description optional
     setClasses(xs => xs.map(c => (c.id === id ? row : c)));
   }
+
   async function handleDeleteClass(id: number) {
     await deleteClass(id);
     setClasses(xs => xs.filter(c => c.id !== id));
@@ -68,30 +69,30 @@ export default function Classes() {
     try {
       await deleteFile(fileId);
       setFiles(xs => xs.filter(f => f.id !== fileId));
-
     } catch {
       alert("Failed to delete file");
     }
   }
 
-async function onCreateChunks() {
-  if (selectedIds.length === 0) return;
-  setBusyChunk(true);
-  try {
-    const res: ChunkPreview[] = await createChunks({
-      file_ids: selectedIds,
-      by: "page",       // per-page chunking
-      size: 1,          // 1 page per chunk
-      overlap: 0,       // or 1 for one-page overlap
-      preview_limit_per_file: 3,
-    });
-    setPreview(res);
-  } catch {
-    alert("Chunking failed");
-  } finally {
-    setBusyChunk(false);
+  async function onCreateChunks() {
+    if (selectedIds.length === 0) return;
+    setBusyChunk(true);
+    try {
+      // Backend shape: { file_ids, chunk_size, chunk_overlap }
+      // If you upgraded to per-page chunking, your createChunks() wrapper can adapt.
+      const res: ChunkPreview[] = await createChunks({
+        file_ids: selectedIds,
+        size: 1200,
+        overlap: 150,
+        preview_limit_per_file: 3,
+      });
+      setPreview(res);
+    } catch {
+      alert("Chunking failed");
+    } finally {
+      setBusyChunk(false);
+    }
   }
-}
 
   function toggleAll(checked: boolean) {
     const m: Record<string, boolean> = {};
@@ -180,8 +181,8 @@ async function onCreateChunks() {
                     </td>
                     <td>{f.filename}</td>
                     <td>{(f.size_bytes/1024/1024).toFixed(2)} MB</td>
-                    <td>{f.uploaded_at ? new Date(f.uploaded_at).toLocaleString() : "—"}</td>
-                    <td><a href={`${API}${f.storage_url}`} target="_blank" rel="noreferrer">view</a></td>
+                    <td>{(f as any).uploaded_at ? new Date((f as any).uploaded_at).toLocaleString() : "—"}</td>
+                    <td><a href={f.storage_url} target="_blank" rel="noreferrer">view</a></td>
                     <td>
                       <button
                         onClick={() => onDeleteFile(f.id, f.filename)}
@@ -204,6 +205,13 @@ async function onCreateChunks() {
                 )}
               </tbody>
             </table>
+
+            {/* Flashcards panel */}
+            {selectedClass && (
+              <div style={{ marginTop: 24 }}>
+                <FlashcardsPanel classId={selectedClass.id} />
+              </div>
+            )}
 
             {/* Chunk preview drawer */}
             {preview && (
@@ -241,17 +249,26 @@ async function onCreateChunks() {
                           </div>
                         ) : (
                           <div style={{ display: "grid", gap: 10 }}>
-                            {p.previews.map(pr => (
-                              <div key={pr.idx} style={{ border: "1px solid #E4E7EC", borderRadius: 12, padding: 12 }}>
-                                <div style={{ fontWeight: 700, marginBottom: 6 }}>
-                                  Chunk #{pr.idx} {pr.page_start ? `(pages ${pr.page_start}–${pr.page_end})` : ""}
-                                  <span style={{ fontWeight: 400, color: "#475467", marginLeft: 6 }}>· {pr.char_len} chars</span>
+                            {p.previews.map((pr: any) => {
+                              const idLabel = pr.idx ?? pr.chunk_id ?? "?";
+                              const sample = pr.sample ?? pr.preview ?? "";
+                              const chars = pr.char_len ?? (sample ? sample.length : 0);
+                              const pages =
+                                pr.page_start && pr.page_end
+                                  ? ` (pages ${pr.page_start}–${pr.page_end})`
+                                  : "";
+                              return (
+                                <div key={idLabel} style={{ border: "1px solid #E4E7EC", borderRadius: 12, padding: 12 }}>
+                                  <div style={{ fontWeight: 700, marginBottom: 6 }}>
+                                    Chunk #{idLabel}{pages}
+                                    <span style={{ fontWeight: 400, color: "#475467", marginLeft: 6 }}>· {chars} chars</span>
+                                  </div>
+                                  <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 13, lineHeight: 1.45 }}>
+                                    {sample}
+                                  </pre>
                                 </div>
-                                <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 13, lineHeight: 1.45 }}>
-                                  {pr.sample}
-                                </pre>
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         )}
                       </div>
