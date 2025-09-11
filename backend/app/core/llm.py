@@ -126,12 +126,24 @@ class CardGenerator:
             cards = [{"question": "Summarize the main idea.", "answer": raw, "difficulty": "medium", "tags": []}]
         return cards
 
-def get_card_generator() -> CardGenerator:
+def get_card_generator() -> "CardGenerator":
     if LLM_PROVIDER == "groq":
-        from groq import Groq
-        client = Groq(api_key=os.getenv("GROQ_API_KEY"))  # ← read from env var
-        model = os.getenv("GEN_MODEL", "llama-3.1-8b-instant")
-        temperature = float(os.getenv("GEN_T", "0.2"))
+        try:
+            from groq import Groq
+        except ImportError as e:
+            raise ImportError(
+                "Missing dependency 'groq'. Add `groq>=0.31.0` to requirements.txt and reinstall."
+            ) from e
+
+        api_key = os.getenv("GROQ_API_KEY")
+        if not api_key:
+            raise RuntimeError(
+                "GROQ_API_KEY is not set. Put it in your environment or .env file (do NOT hardcode it)."
+            )
+
+        client = Groq(api_key=api_key)
+        model = GEN_MODEL
+        temperature = GEN_T
 
         async def _chat(system: str, user: str) -> str:
             r = client.chat.completions.create(
