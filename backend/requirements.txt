@@ -8,5 +8,8 @@ psycopg_pool==3.2.6
 pypdf==4.3.1
 regex==2024.5.15
 
+groq>=0.31.0
 
+openai>=1.0.0
+sentence-transformers==2.7.0
 email-validator>=2.0.0
