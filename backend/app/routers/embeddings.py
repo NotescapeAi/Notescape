@@ -2,7 +2,7 @@
 from typing import Optional, List, Tuple
 from fastapi import APIRouter, Query
 from app.core.db import db_conn
-from app.core.llm import get_embedder, EMBED_DIM
+from app.core.llm import get_embedder
 
 router = APIRouter(prefix="/api/embeddings", tags=["embeddings"])
 
