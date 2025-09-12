@@ -53,7 +53,7 @@ def get_embedder() -> Embedder:
             ) from e
 
         model = SentenceTransformer(EMBED_MODEL)
-        native_dim = model.get_sentence_embedding_dimension()
+      
 
         async def _embed(texts: List[str]) -> List[List[float]]:
             vecs = model.encode(texts, normalize_embeddings=True).tolist()
