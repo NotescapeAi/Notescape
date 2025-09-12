@@ -1,6 +1,6 @@
 # app/core/llm.py
 import os
-from typing import List, Tuple, Callable, Dict, Any
+from typing import List, Callable, Dict, Any
 
 # -----------------------
 # Env & defaults
