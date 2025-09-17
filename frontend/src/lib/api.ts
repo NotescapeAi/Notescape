@@ -130,19 +130,33 @@ export async function listChunks(fileId: string, limit = 20, offset = 0) {
   return r.json();
 }
 
- export type Flashcard = {
-  id: string; class_id: number; source_chunk_id?: number | null;
-  question: string; answer: string; hint?: string | null;
-  difficulty: "easy" | "medium" | "hard"; tags: string[];
+
+export type Flashcard = {
+  id: string;
+  class_id: number;
+  source_chunk_id?: number | null;
+  question: string;
+  answer: string;
+  hint?: string | null;
+  difficulty: "easy" | "medium" | "hard";
+  tags: string[];
 };
 
 export async function buildEmbeddings(classId: number, limit = 1000) {
-  const r = await fetch(`/api/embeddings/build?class_id=${classId}&limit=${limit}`);
+  const r = await fetch(`/api/embeddings/build?class_id=${classId}&limit=${limit}`, {
+    method: "POST",            // ← was GET, must be POST
+  });
   if (!r.ok) throw new Error("Embedding build failed");
   return r.json();
 }
 
-export async function generateFlashcards(payload: { class_id: number; n_cards?: number; top_k?: number; ensure_embeddings?: boolean; ensure_limit?: number; }): Promise<Flashcard[]> {
+export async function generateFlashcards(payload: {
+  class_id: number;
+  n_cards?: number;
+  top_k?: number;
+  ensure_embeddings?: boolean;
+  ensure_limit?: number;
+}): Promise<Flashcard[]> {
   const r = await fetch(`/api/flashcards/generate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -152,8 +166,9 @@ export async function generateFlashcards(payload: { class_id: number; n_cards?: 
   return r.json();
 }
 
+// Your backend exposes GET /api/flashcards/{class_id}
 export async function listFlashcards(classId: number): Promise<Flashcard[]> {
-  const r = await fetch(`/api/flashcards?class_id=${classId}`);
+  const r = await fetch(`/api/flashcards/${classId}`);
   if (!r.ok) throw new Error("Failed to fetch flashcards");
   return r.json();
 }

@@ -1,38 +1,22 @@
 import { useEffect, useMemo, useState } from "react";
 import ClassSidebar from "../components/ClassSidebar";
 import {
-  // classes + files
   listClasses, createClass, updateClass, deleteClass,
   listFiles, uploadFile, deleteFile,
-  // chunking
   createChunks, FileRow, ClassRow, ChunkPreview,
-  // embeddings + flashcards
   buildEmbeddings, generateFlashcards, listFlashcards, Flashcard,
 } from "../lib/api";
 
-/**
- * Classes page
- * - Drag & drop uploads (pdf/png/jpg)
- * - Create chunks for selected files
- * - Generate flashcards (ensures embeddings)
- * - One-click: Chunks → Flashcards
- */
 export default function Classes() {
   const [classes, setClasses] = useState<ClassRow[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
   const [files, setFiles] = useState<FileRow[]>([]);
   const [sel, setSel] = useState<Record<string, boolean>>({});
-  const selectedIds = useMemo(
-    () => files.filter(f => sel[f.id]).map(f => f.id),
-    [files, sel]
-  );
+  const selectedIds = useMemo(() => files.filter(f => sel[f.id]).map(f => f.id), [files, sel]);
 
   const [busyUpload, setBusyUpload] = useState(false);
-  const [busyChunk, setBusyChunk] = useState(false);
-  const [busyCards, setBusyCards] = useState(false);
-  const [busyAll, setBusyAll] = useState(false);
-
+  const [busyFlow, setBusyFlow] = useState(false);
   const [dropping, setDropping] = useState(false);
 
   const [preview, setPreview] = useState<ChunkPreview[] | null>(null);
@@ -41,21 +25,20 @@ export default function Classes() {
   // load classes once
   useEffect(() => { (async () => setClasses(await listClasses()))(); }, []);
 
-  // load files (+ existing cards) when class changes
+  // load files + cards on class change
   useEffect(() => {
     if (selectedId == null) { setFiles([]); setSel({}); setCards([]); return; }
     (async () => {
       const fs = await listFiles(selectedId);
       setFiles(fs);
       setSel({});
-      try { setCards(await listFlashcards(selectedId)); } catch { /* ok if endpoint absent */ }
+      try { setCards(await listFlashcards(selectedId)); } catch { /* ok if empty */ }
     })();
   }, [selectedId]);
 
-  const selectedClass = classes.find(c => c.id === selectedId) || null;
   const API = ""; // Vite proxy handles /api and /uploads
 
-  // --------- class CRUD ----------
+  // -------- class CRUD --------
   async function handleCreate(name: string) {
     const row = await createClass({ name, subject: "General" });
     setClasses(xs => [...xs, row]);
@@ -70,7 +53,7 @@ export default function Classes() {
     if (selectedId === id) { setSelectedId(null); setFiles([]); setSel({}); setCards([]); }
   }
 
-  // --------- uploads ----------
+  // -------- uploads (drag/drop + click) --------
   function acceptFile(f: File) {
     return ["application/pdf", "image/png", "image/jpeg"].includes(f.type);
   }
@@ -82,7 +65,6 @@ export default function Classes() {
 
     setBusyUpload(true);
     try {
-      // upload sequentially to keep UI/state simple
       for (const f of arr) {
         const row = await uploadFile(selectedId, f);
         setFiles(xs => [row, ...xs]);
@@ -100,7 +82,6 @@ export default function Classes() {
     await uploadMany(e.target.files);
     e.target.value = "";
   }
-
   function onDragOver(e: React.DragEvent<HTMLDivElement>) {
     e.preventDefault();
     e.dataTransfer.dropEffect = "copy";
@@ -115,7 +96,7 @@ export default function Classes() {
     await uploadMany(e.dataTransfer.files);
   }
 
-  // --------- files table selection ----------
+  // -------- selection helpers --------
   function toggleAll(checked: boolean) {
     const m: Record<string, boolean> = {};
     if (checked) files.forEach(f => (m[f.id] = true));
@@ -135,73 +116,44 @@ export default function Classes() {
     }
   }
 
-  // --------- chunking ----------
-  async function onCreateChunks() {
-    if (!selectedId) return;
-    const ids = selectedIds.length ? selectedIds : files.map(f => f.id); // fallback to all
-    if (ids.length === 0) return;
+  // -------- single-button pipeline: chunks → embeddings → cards --------
+  async function onGenerateFlashcards() {
+    if (!selectedId) return alert("Select a class first");
+    if (files.length === 0) return alert("Upload at least one file first");
 
-    setBusyChunk(true);
+    // use selected files if any; else process all
+    const ids = selectedIds.length ? selectedIds : files.map(f => f.id);
+
+    setBusyFlow(true);
     try {
+      // 1) chunk
       const res: ChunkPreview[] = await createChunks({
         file_ids: ids,
         by: "page",
         size: 1,
         overlap: 0,
-        preview_limit_per_file: 3,
+        preview_limit_per_file: 2,
       });
       setPreview(res);
-    } catch {
-      alert("Chunking failed");
-    } finally {
-      setBusyChunk(false);
-    }
-  }
 
-  // --------- flashcards ----------
-  async function onGenerateCards() {
-    if (!selectedId) return alert("Select a class first");
-    setBusyCards(true);
-    try {
-      // ensure embeddings if needed
+      // 2) embeddings (POST)
       await buildEmbeddings(selectedId, 1000);
+
+      // 3) generate cards
       const created = await generateFlashcards({
         class_id: selectedId,
         n_cards: 20,
         top_k: 6,
         ensure_embeddings: false,
       });
-      setCards(created);
-      alert(`Generated ${created.length} flashcards`);
-    } catch (e: any) {
-      alert(e?.message || "Flashcard generation failed");
-    } finally {
-      setBusyCards(false);
-    }
-  }
 
-  // one-click: chunk -> embed -> generate
-  async function onChunksThenCards() {
-    if (!selectedId) return alert("Select a class first");
-    const ids = selectedIds.length ? selectedIds : files.map(f => f.id);
-    if (ids.length === 0) return alert("Upload a file first");
-
-    setBusyAll(true);
-    try {
-      await onCreateChunks();                  // creates preview too
-      await buildEmbeddings(selectedId, 1000); // compute vectors
-      const created = await generateFlashcards({
-        class_id: selectedId,
-        n_cards: 20,
-        top_k: 6,
-        ensure_embeddings: false,
-      });
       setCards(created);
-      alert(`Chunks → ${created.length} flashcards created`);
-    } catch (e: any) {
-      alert(e?.message || "Chunks → Flashcards failed");
+      alert(`Created ${created.length} flashcards`);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Failed to generate flashcards";
+      alert(msg);
     } finally {
-      setBusyAll(false);
+      setBusyFlow(false);
     }
   }
 
@@ -218,12 +170,11 @@ export default function Classes() {
 
       <section style={{ padding: 20 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 8, marginBottom: 8, flexWrap: "wrap" }}>
-          <h2 style={{ margin: 0 }}>{selectedClass ? `${selectedClass.name}` : "Workspace"}</h2>
+          <h2 style={{ margin: 0 }}>{selectedId ? classes.find(c => c.id === selectedId)?.name : "Workspace"}</h2>
 
-          {/* Toolbar */}
-          {selectedClass && (
+          {selectedId && (
             <div style={{ display: "inline-flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-              {/* Drag & Drop zone + click-to-upload */}
+              {/* Drag & Drop / Click-to-upload */}
               <div
                 onDragOver={onDragOver}
                 onDragLeave={onDragLeave}
@@ -253,56 +204,22 @@ export default function Classes() {
                 <span>{busyUpload ? "Uploading…" : "Drop files or Choose File"}</span>
               </div>
 
-              {/* Create Chunks */}
+              {/* The ONE button */}
               <button
-                onClick={onCreateChunks}
-                disabled={!selectedId || busyChunk || busyAll || (files.length === 0)}
+                onClick={onGenerateFlashcards}
+                disabled={busyUpload || busyFlow || files.length === 0}
                 style={{
                   padding: "6px 12px",
                   borderRadius: 999,
                   border: "1px solid #cfd4dc",
-                  background: (!selectedId || busyChunk || busyAll || files.length === 0) ? "#f3f4f6" : "#7B5FEF",
-                  color: (!selectedId || busyChunk || busyAll || files.length === 0) ? "#9aa0a6" : "#fff",
+                  background: (busyUpload || busyFlow || files.length === 0) ? "#f3f4f6" : "#059669",
+                  color: (busyUpload || busyFlow || files.length === 0) ? "#9aa0a6" : "#fff",
                   fontWeight: 700,
-                  cursor: (!selectedId || busyChunk || busyAll || files.length === 0) ? "not-allowed" : "pointer"
+                  cursor: (busyUpload || busyFlow || files.length === 0) ? "not-allowed" : "pointer"
                 }}
+                title="Chunk selected/all files, build embeddings, and generate flashcards"
               >
-                {busyChunk ? "Creating…" : `Create Chunks${selectedIds.length ? ` (${selectedIds.length})` : ""}`}
-              </button>
-
-              {/* Generate Flashcards */}
-              <button
-                onClick={onGenerateCards}
-                disabled={!selectedId || busyCards || busyAll}
-                style={{
-                  padding: "6px 12px",
-                  borderRadius: 999,
-                  border: "1px solid #cfd4dc",
-                  background: (!selectedId || busyCards || busyAll) ? "#f3f4f6" : "#10B981",
-                  color: (!selectedId || busyCards || busyAll) ? "#9aa0a6" : "#fff",
-                  fontWeight: 700,
-                  cursor: (!selectedId || busyCards || busyAll) ? "not-allowed" : "pointer"
-                }}
-              >
-                {busyCards ? "Generating…" : "Generate Flashcards"}
-              </button>
-
-              {/* One-click pipeline */}
-              <button
-                onClick={onChunksThenCards}
-                disabled={!selectedId || busyAll || (files.length === 0)}
-                style={{
-                  padding: "6px 12px",
-                  borderRadius: 999,
-                  border: "1px solid #cfd4dc",
-                  background: (!selectedId || busyAll || files.length === 0) ? "#f3f4f6" : "#059669",
-                  color: (!selectedId || busyAll || files.length === 0) ? "#9aa0a6" : "#fff",
-                  fontWeight: 700,
-                  cursor: (!selectedId || busyAll || files.length === 0) ? "not-allowed" : "pointer"
-                }}
-                title="Chunk selected/all files, build embeddings, then generate flashcards"
-              >
-                {busyAll ? "Working…" : "Chunks → Flashcards"}
+                {busyFlow ? "Working…" : "Generate Flashcards"}
               </button>
             </div>
           )}
@@ -312,7 +229,7 @@ export default function Classes() {
           <div style={{ opacity: .7 }}>Select a class from the left sidebar.</div>
         ) : (
           <>
-            {/* Files table */}
+            {/* Files */}
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
@@ -349,13 +266,7 @@ export default function Classes() {
                     <td>
                       <button
                         onClick={() => onDeleteFile(f.id, f.filename)}
-                        style={{
-                          padding: "6px 10px",
-                          borderRadius: 8,
-                          border: "1px solid #E4E7EC",
-                          background: "#fff",
-                          cursor: "pointer"
-                        }}
+                        style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #E4E7EC", background: "#fff", cursor: "pointer" }}
                         title="Delete file"
                       >
                         🗑️ Delete
@@ -369,22 +280,16 @@ export default function Classes() {
               </tbody>
             </table>
 
-            {/* Chunk preview drawer */}
+            {/* Chunk preview drawer (optional, auto-opens after chunk step) */}
             {preview && (
               <div
                 role="dialog"
                 aria-modal="true"
-                style={{
-                  position: "fixed", inset: 0, background: "rgba(16,24,40,0.35)",
-                  display: "flex", alignItems: "flex-end", zIndex: 50
-                }}
+                style={{ position: "fixed", inset: 0, background: "rgba(16,24,40,0.35)", display: "flex", alignItems: "flex-end", zIndex: 50 }}
                 onClick={() => setPreview(null)}
               >
                 <div
-                  style={{
-                    width: "min(920px, 96vw)", maxHeight: "80vh", margin: "0 auto 24px",
-                    background: "#fff", borderRadius: 16, boxShadow: "0 20px 50px rgba(16,24,40,.25)", overflow: "hidden",
-                  }}
+                  style={{ width: "min(920px, 96vw)", maxHeight: "80vh", margin: "0 auto 24px", background: "#fff", borderRadius: 16, boxShadow: "0 20px 50px rgba(16,24,40,.25)", overflow: "hidden" }}
                   onClick={e => e.stopPropagation()}
                 >
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", borderBottom: "1px solid #eee" }}>
@@ -425,7 +330,7 @@ export default function Classes() {
               </div>
             )}
 
-            {/* Flashcards viewer (simple) */}
+            {/* Flashcards */}
             {cards.length > 0 && (
               <div style={{ marginTop: 20 }}>
                 <h3 style={{ margin: "10px 0" }}>Flashcards</h3>
