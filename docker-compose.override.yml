@@ -1,0 +1,8 @@
+services:
+  web:
+    build: ./frontend
+    container_name: notescape-web
+    depends_on:
+      - api
+    ports:
+      - "${WEB_PORT:-5173}:80"

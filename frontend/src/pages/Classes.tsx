@@ -1,44 +1,65 @@
 import { useEffect, useMemo, useState } from "react";
 import ClassSidebar from "../components/ClassSidebar";
 import {
+  // classes + files
   listClasses, createClass, updateClass, deleteClass,
-  listFiles, uploadFile,
-  deleteFile, createChunks, FileRow, ClassRow, ChunkPreview
-} from "../lib/api"; // <-- make sure these exist (from earlier message)
+  listFiles, uploadFile, deleteFile,
+  // chunking
+  createChunks, FileRow, ClassRow, ChunkPreview,
+  // embeddings + flashcards
+  buildEmbeddings, generateFlashcards, listFlashcards, Flashcard,
+} from "../lib/api";
 
-
+/**
+ * Classes page
+ * - Drag & drop uploads (pdf/png/jpg)
+ * - Create chunks for selected files
+ * - Generate flashcards (ensures embeddings)
+ * - One-click: Chunks → Flashcards
+ */
 export default function Classes() {
   const [classes, setClasses] = useState<ClassRow[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+
   const [files, setFiles] = useState<FileRow[]>([]);
+  const [sel, setSel] = useState<Record<string, boolean>>({});
+  const selectedIds = useMemo(
+    () => files.filter(f => sel[f.id]).map(f => f.id),
+    [files, sel]
+  );
+
   const [busyUpload, setBusyUpload] = useState(false);
   const [busyChunk, setBusyChunk] = useState(false);
+  const [busyCards, setBusyCards] = useState(false);
+  const [busyAll, setBusyAll] = useState(false);
 
-  // selection for chunking
-  const [sel, setSel] = useState<Record<string, boolean>>({});
-  const selectedIds = useMemo(() => files.filter(f => sel[f.id]).map(f => f.id), [files, sel]);
+  const [dropping, setDropping] = useState(false);
 
-  // preview drawer
   const [preview, setPreview] = useState<ChunkPreview[] | null>(null);
+  const [cards, setCards] = useState<Flashcard[]>([]);
 
+  // load classes once
   useEffect(() => { (async () => setClasses(await listClasses()))(); }, []);
+
+  // load files (+ existing cards) when class changes
   useEffect(() => {
-    if (selectedId == null) { setFiles([]); setSel({}); return; }
+    if (selectedId == null) { setFiles([]); setSel({}); setCards([]); return; }
     (async () => {
       const fs = await listFiles(selectedId);
       setFiles(fs);
       setSel({});
+      try { setCards(await listFlashcards(selectedId)); } catch { /* ok if endpoint absent */ }
     })();
   }, [selectedId]);
 
   const selectedClass = classes.find(c => c.id === selectedId) || null;
-  const API = ""; // Vite proxy for /api and /uploads
+  const API = ""; // Vite proxy handles /api and /uploads
 
- async function handleCreate(name: string) {
-  const row = await createClass({ name, subject: "General" }); // or a real subject
-  setClasses(xs => [...xs, row]);
-}
-
+  // --------- class CRUD ----------
+  async function handleCreate(name: string) {
+    const row = await createClass({ name, subject: "General" });
+    setClasses(xs => [...xs, row]);
+  }
   async function handleRename(id: number, name: string) {
     const row = await updateClass(id, { name });
     setClasses(xs => xs.map(c => (c.id === id ? row : c)));
@@ -46,53 +67,55 @@ export default function Classes() {
   async function handleDeleteClass(id: number) {
     await deleteClass(id);
     setClasses(xs => xs.filter(c => c.id !== id));
-    if (selectedId === id) { setSelectedId(null); setFiles([]); setSel({}); }
+    if (selectedId === id) { setSelectedId(null); setFiles([]); setSel({}); setCards([]); }
   }
 
-  async function onUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    if (!selectedId || !e.target.files?.[0]) return;
+  // --------- uploads ----------
+  function acceptFile(f: File) {
+    return ["application/pdf", "image/png", "image/jpeg"].includes(f.type);
+  }
+
+  async function uploadMany(fileList: FileList | File[]) {
+    if (!selectedId) { alert("Select a class first."); return; }
+    const arr = Array.from(fileList).filter(acceptFile);
+    if (arr.length === 0) return;
+
     setBusyUpload(true);
     try {
-      const row = await uploadFile(selectedId, e.target.files[0]);
-      setFiles(xs => [row, ...xs]);
+      // upload sequentially to keep UI/state simple
+      for (const f of arr) {
+        const row = await uploadFile(selectedId, f);
+        setFiles(xs => [row, ...xs]);
+      }
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setBusyUpload(false);
-      e.target.value = "";
+      setDropping(false);
     }
   }
 
-  async function onDeleteFile(fileId: string, filename: string) {
-    if (!confirm(`Delete "${filename}"?`)) return;
-    try {
-      await deleteFile(fileId);
-      setFiles(xs => xs.filter(f => f.id !== fileId));
-
-    } catch {
-      alert("Failed to delete file");
-    }
+  async function onUploadChange(e: React.ChangeEvent<HTMLInputElement>) {
+    if (!e.target.files?.length) return;
+    await uploadMany(e.target.files);
+    e.target.value = "";
   }
 
-async function onCreateChunks() {
-  if (selectedIds.length === 0) return;
-  setBusyChunk(true);
-  try {
-    const res: ChunkPreview[] = await createChunks({
-      file_ids: selectedIds,
-      by: "page",       // per-page chunking
-      size: 1,          // 1 page per chunk
-      overlap: 0,       // or 1 for one-page overlap
-      preview_limit_per_file: 3,
-    });
-    setPreview(res);
-  } catch {
-    alert("Chunking failed");
-  } finally {
-    setBusyChunk(false);
+  function onDragOver(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+    setDropping(true);
   }
-}
+  function onDragLeave(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    setDropping(false);
+  }
+  async function onDrop(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    await uploadMany(e.dataTransfer.files);
+  }
 
+  // --------- files table selection ----------
   function toggleAll(checked: boolean) {
     const m: Record<string, boolean> = {};
     if (checked) files.forEach(f => (m[f.id] = true));
@@ -100,6 +123,86 @@ async function onCreateChunks() {
   }
   function toggleOne(id: string, checked: boolean) {
     setSel(prev => ({ ...prev, [id]: checked }));
+  }
+
+  async function onDeleteFile(fileId: string, filename: string) {
+    if (!confirm(`Delete "${filename}"?`)) return;
+    try {
+      await deleteFile(fileId);
+      setFiles(xs => xs.filter(f => f.id !== fileId));
+    } catch {
+      alert("Failed to delete file");
+    }
+  }
+
+  // --------- chunking ----------
+  async function onCreateChunks() {
+    if (!selectedId) return;
+    const ids = selectedIds.length ? selectedIds : files.map(f => f.id); // fallback to all
+    if (ids.length === 0) return;
+
+    setBusyChunk(true);
+    try {
+      const res: ChunkPreview[] = await createChunks({
+        file_ids: ids,
+        by: "page",
+        size: 1,
+        overlap: 0,
+        preview_limit_per_file: 3,
+      });
+      setPreview(res);
+    } catch {
+      alert("Chunking failed");
+    } finally {
+      setBusyChunk(false);
+    }
+  }
+
+  // --------- flashcards ----------
+  async function onGenerateCards() {
+    if (!selectedId) return alert("Select a class first");
+    setBusyCards(true);
+    try {
+      // ensure embeddings if needed
+      await buildEmbeddings(selectedId, 1000);
+      const created = await generateFlashcards({
+        class_id: selectedId,
+        n_cards: 20,
+        top_k: 6,
+        ensure_embeddings: false,
+      });
+      setCards(created);
+      alert(`Generated ${created.length} flashcards`);
+    } catch (e: any) {
+      alert(e?.message || "Flashcard generation failed");
+    } finally {
+      setBusyCards(false);
+    }
+  }
+
+  // one-click: chunk -> embed -> generate
+  async function onChunksThenCards() {
+    if (!selectedId) return alert("Select a class first");
+    const ids = selectedIds.length ? selectedIds : files.map(f => f.id);
+    if (ids.length === 0) return alert("Upload a file first");
+
+    setBusyAll(true);
+    try {
+      await onCreateChunks();                  // creates preview too
+      await buildEmbeddings(selectedId, 1000); // compute vectors
+      const created = await generateFlashcards({
+        class_id: selectedId,
+        n_cards: 20,
+        top_k: 6,
+        ensure_embeddings: false,
+      });
+      setCards(created);
+      alert(`Chunks → ${created.length} flashcards created`);
+    } catch (e: any) {
+      alert(e?.message || "Chunks → Flashcards failed");
+    } finally {
+      setBusyAll(false);
+    }
   }
 
   return (
@@ -117,29 +220,89 @@ async function onCreateChunks() {
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 8, marginBottom: 8, flexWrap: "wrap" }}>
           <h2 style={{ margin: 0 }}>{selectedClass ? `${selectedClass.name}` : "Workspace"}</h2>
 
-          {/* toolbar */}
+          {/* Toolbar */}
           {selectedClass && (
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
-              <label style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                <input type="file" accept="application/pdf,image/png,image/jpeg" onChange={onUpload} />
-                {busyUpload && <span>Uploading…</span>}
-              </label>
+            <div style={{ display: "inline-flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+              {/* Drag & Drop zone + click-to-upload */}
+              <div
+                onDragOver={onDragOver}
+                onDragLeave={onDragLeave}
+                onDrop={onDrop}
+                title="Drag PDFs/PNGs here or click to choose"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
+                  padding: "8px 12px",
+                  borderRadius: 12,
+                  border: `2px dashed ${dropping ? "#7B5FEF" : "#cfd4dc"}`,
+                  background: dropping ? "rgba(123,95,239,0.10)" : "#fff",
+                  cursor: "pointer",
+                  userSelect: "none",
+                }}
+                onClick={() => document.getElementById("file-input-hidden")?.click()}
+              >
+                <input
+                  id="file-input-hidden"
+                  type="file"
+                  accept="application/pdf,image/png,image/jpeg"
+                  style={{ display: "none" }}
+                  multiple
+                  onChange={onUploadChange}
+                />
+                <span>{busyUpload ? "Uploading…" : "Drop files or Choose File"}</span>
+              </div>
 
+              {/* Create Chunks */}
               <button
                 onClick={onCreateChunks}
-                disabled={selectedIds.length === 0 || busyChunk}
+                disabled={!selectedId || busyChunk || busyAll || (files.length === 0)}
                 style={{
                   padding: "6px 12px",
                   borderRadius: 999,
                   border: "1px solid #cfd4dc",
-                  background: selectedIds.length === 0 || busyChunk ? "#f3f4f6" : "#7B5FEF",
-                  color: selectedIds.length === 0 || busyChunk ? "#9aa0a6" : "#fff",
+                  background: (!selectedId || busyChunk || busyAll || files.length === 0) ? "#f3f4f6" : "#7B5FEF",
+                  color: (!selectedId || busyChunk || busyAll || files.length === 0) ? "#9aa0a6" : "#fff",
                   fontWeight: 700,
-                  cursor: selectedIds.length === 0 || busyChunk ? "not-allowed" : "pointer"
+                  cursor: (!selectedId || busyChunk || busyAll || files.length === 0) ? "not-allowed" : "pointer"
                 }}
-                title={selectedIds.length ? `Create chunks for ${selectedIds.length} file(s)` : "Select at least one file"}
               >
                 {busyChunk ? "Creating…" : `Create Chunks${selectedIds.length ? ` (${selectedIds.length})` : ""}`}
+              </button>
+
+              {/* Generate Flashcards */}
+              <button
+                onClick={onGenerateCards}
+                disabled={!selectedId || busyCards || busyAll}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: 999,
+                  border: "1px solid #cfd4dc",
+                  background: (!selectedId || busyCards || busyAll) ? "#f3f4f6" : "#10B981",
+                  color: (!selectedId || busyCards || busyAll) ? "#9aa0a6" : "#fff",
+                  fontWeight: 700,
+                  cursor: (!selectedId || busyCards || busyAll) ? "not-allowed" : "pointer"
+                }}
+              >
+                {busyCards ? "Generating…" : "Generate Flashcards"}
+              </button>
+
+              {/* One-click pipeline */}
+              <button
+                onClick={onChunksThenCards}
+                disabled={!selectedId || busyAll || (files.length === 0)}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: 999,
+                  border: "1px solid #cfd4dc",
+                  background: (!selectedId || busyAll || files.length === 0) ? "#f3f4f6" : "#059669",
+                  color: (!selectedId || busyAll || files.length === 0) ? "#9aa0a6" : "#fff",
+                  fontWeight: 700,
+                  cursor: (!selectedId || busyAll || files.length === 0) ? "not-allowed" : "pointer"
+                }}
+                title="Chunk selected/all files, build embeddings, then generate flashcards"
+              >
+                {busyAll ? "Working…" : "Chunks → Flashcards"}
               </button>
             </div>
           )}
@@ -149,6 +312,7 @@ async function onCreateChunks() {
           <div style={{ opacity: .7 }}>Select a class from the left sidebar.</div>
         ) : (
           <>
+            {/* Files table */}
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
@@ -192,7 +356,7 @@ async function onCreateChunks() {
                           background: "#fff",
                           cursor: "pointer"
                         }}
-                        title="Delete PDF"
+                        title="Delete file"
                       >
                         🗑️ Delete
                       </button>
@@ -244,7 +408,7 @@ async function onCreateChunks() {
                             {p.previews.map(pr => (
                               <div key={pr.idx} style={{ border: "1px solid #E4E7EC", borderRadius: 12, padding: 12 }}>
                                 <div style={{ fontWeight: 700, marginBottom: 6 }}>
-                                  Chunk #{pr.idx} {pr.page_start ? `(pages ${pr.page_start}–${pr.page_end})` : ""}
+                                  Chunk #{pr.idx} {pr.page_start ? `(pages ${pr.page_start}–${pr.page_end})` : "" }
                                   <span style={{ fontWeight: 400, color: "#475467", marginLeft: 6 }}>· {pr.char_len} chars</span>
                                 </div>
                                 <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 13, lineHeight: 1.45 }}>
@@ -257,6 +421,27 @@ async function onCreateChunks() {
                       </div>
                     ))}
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* Flashcards viewer (simple) */}
+            {cards.length > 0 && (
+              <div style={{ marginTop: 20 }}>
+                <h3 style={{ margin: "10px 0" }}>Flashcards</h3>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 12 }}>
+                  {cards.map(c => (
+                    <div key={c.id} style={{ border: "1px solid #E4E7EC", borderRadius: 12, padding: 12, background: "#fff" }}>
+                      <div style={{ fontSize: 12, color: "#6B7280", marginBottom: 6 }}>{(c.difficulty || "medium").toUpperCase()}</div>
+                      <div style={{ fontWeight: 700, marginBottom: 8 }}>{c.question}</div>
+                      <details>
+                        <summary style={{ color: "#7B5FEF", cursor: "pointer" }}>Show answer</summary>
+                        <div style={{ marginTop: 6 }}>{c.answer}</div>
+                      </details>
+                      {c.hint && <div style={{ marginTop: 6, fontSize: 12, color: "#6B7280" }}>Hint: {c.hint}</div>}
+                      {c.tags?.length ? <div style={{ marginTop: 6, fontSize: 11, color: "#6B7280" }}>Tags: {c.tags.join(", ")}</div> : null}
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
