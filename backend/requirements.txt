@@ -13,3 +13,11 @@ groq>=0.31.0
 openai>=1.0.0
 sentence-transformers==2.7.0
 email-validator>=2.0.0
+
+
+# For GPU CUDA 12.1
+# pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu121
+#
+# If no GPU, you can use the CPU wheel:
+# pip install torch==2.2.2+cpu torchvision==0.17.2+cpu torchaudio==2.2.2+cpu \
+#   --index-url https://download.pytorch.org/whl/cpu

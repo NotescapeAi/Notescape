@@ -157,7 +157,7 @@ export async function generateFlashcards(payload: {
   ensure_embeddings?: boolean;
   ensure_limit?: number;
 }): Promise<Flashcard[]> {
-  const r = await fetch(`/api/flashcards/generate`, {
+  const r = await fetch(`/api/flashcards/generate/`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),

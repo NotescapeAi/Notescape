@@ -155,6 +155,7 @@ async def ensure_embeddings(body: EnsureEmbeddingsReq):
     return {"inserted": inserted}
 
 @router.post("/generate", response_model=List[FlashcardOut])
+@router.post("/generate/", response_model=List[FlashcardOut])
 async def generate(req: GenerateReq):
     embedder = get_embedder()
     generator = get_card_generator()

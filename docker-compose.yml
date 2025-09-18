@@ -17,15 +17,12 @@ services:
       dockerfile: Dockerfile
     container_name: notescape-api
     environment:
-      # point backend to the db container (never localhost inside Docker)
       DATABASE_URL: "postgresql://${PGUSER:-notescape}:${PGPASSWORD:-notescape_pass}@db:5432/${PGDATABASE:-notescape}"
 
-      # embeddings (free, local)
       EMBED_PROVIDER: ${EMBED_PROVIDER:-local}
       EMBED_MODEL: ${EMBED_MODEL:-sentence-transformers/all-MiniLM-L6-v2}
       EMBED_DIM: ${EMBED_DIM:-1536}
 
-      # flashcard LLM (Groq / Llama 3.1)
       LLM_PROVIDER: ${LLM_PROVIDER:-groq}
       GEN_MODEL: ${GEN_MODEL:-llama-3.1-8b-instant}
       GEN_T: ${GEN_T:-0.2}
@@ -35,10 +32,20 @@ services:
     ports:
       - "${API_PORT:-8000}:8000"
     volumes:
-      # optional: live-reload backend code while developing
       - ./backend:/app
-      # persist uploads inside container (named volume is portable on Windows)
       - uploads:/app/uploads
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: notescape-frontend
+    depends_on:
+      - api
+    ports:
+      - "3000:80" # Vite build served on localhost:3000
+    volumes:
+      - ./frontend:/app
 
 volumes:
   pgdata:
