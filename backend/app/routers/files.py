@@ -7,8 +7,9 @@ from app.core.db import db_conn
 from pathlib import Path, PurePosixPath
 from app.core.settings import settings
 
-
-UPLOAD_ROOT = Path(os.getenv("UPLOAD_ROOT", Path(__file__).resolve().parents[3] / "uploads"))
+UPLOAD_ROOT = Path(
+    settings.upload_root or (Path(__file__).resolve().parents[3] / "uploads")
+)
 UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
 
 router = APIRouter(prefix="/api/files", tags=["files"])

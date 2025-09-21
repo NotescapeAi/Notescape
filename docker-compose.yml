@@ -18,15 +18,16 @@ services:
     container_name: notescape-api
     environment:
       DATABASE_URL: "postgresql://${PGUSER:-notescape}:${PGPASSWORD:-notescape_pass}@db:5432/${PGDATABASE:-notescape}"
-
+      CORS_ORIGINS: "http://localhost:3000,http://localhost:5173"
+      UPLOAD_ROOT: "/app/uploads"
       EMBED_PROVIDER: ${EMBED_PROVIDER:-local}
       EMBED_MODEL: ${EMBED_MODEL:-sentence-transformers/all-MiniLM-L6-v2}
       EMBED_DIM: ${EMBED_DIM:-1536}
-
       LLM_PROVIDER: ${LLM_PROVIDER:-groq}
       GEN_MODEL: ${GEN_MODEL:-llama-3.1-8b-instant}
       GEN_T: ${GEN_T:-0.2}
       GROQ_API_KEY: ${GROQ_API_KEY}
+
     depends_on:
       - db
     ports:

@@ -68,11 +68,10 @@ async def delete_flashcard(card_id: str = Path(..., description="flashcards.id (
 
 async def _fetch_missing_chunks(limit: Optional[int]) -> List[Tuple[int, str]]:
     q = """
-        SELECT c.id, c.content
-        FROM chunks c
-        LEFT JOIN embeddings e ON e.chunk_id = c.id
-        WHERE e.chunk_id IS NULL
-        ORDER BY c.id
+      SELECT fc.id, fc.content
+      FROM file_chunks fc
+      WHERE fc.chunk_vector IS NULL
+      ORDER BY fc.id
     """
     params = ()
     if limit:
@@ -88,26 +87,21 @@ async def _insert_embeddings(pairs: List[Tuple[int, List[float]]]):
     async with db_conn() as (conn, cur):
         for chunk_id, vec in pairs:
             await cur.execute(
-                """
-                INSERT INTO embeddings (chunk_id, model, dim, vec)
-                VALUES (%s, %s, %s, %s::vector)
-                ON CONFLICT (chunk_id)
-                DO UPDATE SET model=EXCLUDED.model, dim=EXCLUDED.dim, vec=EXCLUDED.vec
-                """,
-                (chunk_id, "auto", EMBED_DIM, _vec_literal(vec)),
+                "UPDATE file_chunks SET chunk_vector=%s::vector WHERE id=%s",
+                (_vec_literal(vec), chunk_id),
             )
         await conn.commit()
 
 async def _pick_relevant_chunks(class_id: int, query_vec: List[float], top_k: int) -> List[Tuple[int, str]]:
     vec_lit = _vec_literal(query_vec)
     q = """
-        SELECT c.id, c.content
-        FROM embeddings e
-        JOIN chunks c ON c.id = e.chunk_id
-        JOIN files f ON f.id = c.file_id
-        WHERE f.class_id = %s
-        ORDER BY e.vec <=> %s::vector
-        LIMIT %s
+      SELECT fc.id, fc.content
+      FROM file_chunks fc
+      JOIN files f ON f.id = fc.file_id
+      WHERE f.class_id = %s
+        AND fc.chunk_vector IS NOT NULL
+      ORDER BY fc.chunk_vector <=> %s::vector
+      LIMIT %s
     """
     async with db_conn() as (conn, cur):
         await cur.execute(q, (class_id, vec_lit, top_k))
@@ -154,7 +148,7 @@ async def ensure_embeddings(body: EnsureEmbeddingsReq):
         inserted += len(sub_ids)
     return {"inserted": inserted}
 
-@router.post("/generate", response_model=List[FlashcardOut])
+
 @router.post("/generate/", response_model=List[FlashcardOut])
 async def generate(req: GenerateReq):
     embedder = get_embedder()
