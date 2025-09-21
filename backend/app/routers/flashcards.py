@@ -3,7 +3,7 @@ from typing import Optional, List, Tuple, Dict
 from fastapi import APIRouter, HTTPException, Path
 from pydantic import BaseModel, Field
 from app.core.db import db_conn
-from app.core.llm import get_embedder, get_card_generator, EMBED_DIM
+from app.core.llm import get_embedder, get_card_generator
 
 # app/routers/flashcards.py
 router = APIRouter(prefix="/api/flashcards", tags=["flashcards"])
