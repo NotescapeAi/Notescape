@@ -1,4 +1,5 @@
 // src/App.tsx
+
 import React, { Suspense, lazy, useEffect } from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from "react-router-dom";
 
@@ -16,6 +17,7 @@ const ContactPage        = lazy(() => import("./pages/ContactPage"));
 const Dashboard          = lazy(() => import("./pages/Dashboard"));
 const Settings           = lazy(() => import("./pages/Settings"));
 const LogoutPage         = lazy(() => import("./pages/Logout"));
+const FlashcardsPage     = lazy(() => import("./pages/FlashcardsPage")); // NEW
 
 function GetStartedGate() {
   const loggedIn = !!localStorage.getItem("auth_token");
@@ -59,7 +61,9 @@ export default function App() {
           <Route path="/logout"          element={<LogoutPage />} />
 
           {/* app */}
-          <Route path="/classes"   element={<Classes />} />
+          <Route path="/classes" element={<Classes />} />
+          {/* 👇 NEW nested flashcards route for a class */}
+          <Route path="/classes/:classId/flashcards" element={<FlashcardsPage />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/settings"  element={<Settings />} />
 
