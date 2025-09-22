@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import ClassSidebar from "../components/ClassSidebar";
+import ClassHeaderButtons from "../components/ClassHeaderButtons"; // ✅ already imported
+
 import {
   listClasses, createClass, updateClass, deleteClass,
   listFiles, uploadFile, deleteFile,
@@ -20,12 +22,12 @@ export default function Classes() {
   const [dropping, setDropping] = useState(false);
 
   const [preview, setPreview] = useState<ChunkPreview[] | null>(null);
-  const [cards, setCards] = useState<Flashcard[]>([]);
+  const [cards, setCards] = useState<Flashcard[]>([]); // ✅ left as-is (we just don't render them here anymore)
 
   // load classes once
   useEffect(() => { (async () => setClasses(await listClasses()))(); }, []);
 
-  // load files + cards on class change
+  // load files + cards on class change (✅ left as-is)
   useEffect(() => {
     if (selectedId == null) { setFiles([]); setSel({}); setCards([]); return; }
     (async () => {
@@ -116,7 +118,7 @@ export default function Classes() {
     }
   }
 
-  // -------- single-button pipeline: chunks → embeddings → cards --------
+  // -------- single-button pipeline: chunks → embeddings → cards -------- (✅ unchanged)
   async function onGenerateFlashcards() {
     if (!selectedId) return alert("Select a class first");
     if (files.length === 0) return alert("Upload at least one file first");
@@ -174,7 +176,7 @@ export default function Classes() {
 
           {selectedId && (
             <div style={{ display: "inline-flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-              {/* Drag & Drop / Click-to-upload */}
+              {/* Drag & Drop / Click-to-upload (✅ unchanged) */}
               <div
                 onDragOver={onDragOver}
                 onDragLeave={onDragLeave}
@@ -204,23 +206,12 @@ export default function Classes() {
                 <span>{busyUpload ? "Uploading…" : "Drop files or Choose File"}</span>
               </div>
 
-              {/* The ONE button */}
-              <button
-                onClick={onGenerateFlashcards}
-                disabled={busyUpload || busyFlow || files.length === 0}
-                style={{
-                  padding: "6px 12px",
-                  borderRadius: 999,
-                  border: "1px solid #cfd4dc",
-                  background: (busyUpload || busyFlow || files.length === 0) ? "#f3f4f6" : "#059669",
-                  color: (busyUpload || busyFlow || files.length === 0) ? "#9aa0a6" : "#fff",
-                  fontWeight: 700,
-                  cursor: (busyUpload || busyFlow || files.length === 0) ? "not-allowed" : "pointer"
-                }}
-                title="Chunk selected/all files, build embeddings, and generate flashcards"
-              >
-                {busyFlow ? "Working…" : "Generate Flashcards"}
-              </button>
+              {/* ✅ REPLACED your old single button with the two-button header component.
+                  This calls your existing generator and navigates to /classes/:classId/flashcards. */}
+              <ClassHeaderButtons
+                classId={String(selectedId)}
+                onGenerate={() => onGenerateFlashcards()}
+              />
             </div>
           )}
         </div>
@@ -229,7 +220,7 @@ export default function Classes() {
           <div style={{ opacity: .7 }}>Select a class from the left sidebar.</div>
         ) : (
           <>
-            {/* Files */}
+            {/* Files (✅ unchanged) */}
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
@@ -280,7 +271,7 @@ export default function Classes() {
               </tbody>
             </table>
 
-            {/* Chunk preview drawer (optional, auto-opens after chunk step) */}
+            {/* Chunk preview drawer (✅ unchanged) */}
             {preview && (
               <div
                 role="dialog"
@@ -330,26 +321,8 @@ export default function Classes() {
               </div>
             )}
 
-            {/* Flashcards */}
-            {cards.length > 0 && (
-              <div style={{ marginTop: 20 }}>
-                <h3 style={{ margin: "10px 0" }}>Flashcards</h3>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 12 }}>
-                  {cards.map(c => (
-                    <div key={c.id} style={{ border: "1px solid #E4E7EC", borderRadius: 12, padding: 12, background: "#fff" }}>
-                      <div style={{ fontSize: 12, color: "#6B7280", marginBottom: 6 }}>{(c.difficulty || "medium").toUpperCase()}</div>
-                      <div style={{ fontWeight: 700, marginBottom: 8 }}>{c.question}</div>
-                      <details>
-                        <summary style={{ color: "#7B5FEF", cursor: "pointer" }}>Show answer</summary>
-                        <div style={{ marginTop: 6 }}>{c.answer}</div>
-                      </details>
-                      {c.hint && <div style={{ marginTop: 6, fontSize: 12, color: "#6B7280" }}>Hint: {c.hint}</div>}
-                      {c.tags?.length ? <div style={{ marginTop: 6, fontSize: 11, color: "#6B7280" }}>Tags: {c.tags.join(", ")}</div> : null}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            {/* ❌ Flashcards block REMOVED from this page.
+                Flashcards are now shown on /classes/:classId/flashcards */}
           </>
         )}
       </section>
