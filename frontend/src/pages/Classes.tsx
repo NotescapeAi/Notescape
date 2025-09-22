@@ -5,8 +5,8 @@ import ClassHeaderButtons from "../components/ClassHeaderButtons"; // ✅ alread
 import {
   listClasses, createClass, updateClass, deleteClass,
   listFiles, uploadFile, deleteFile,
-  createChunks, FileRow, ClassRow, ChunkPreview,
-  buildEmbeddings, generateFlashcards, listFlashcards, Flashcard,
+  createChunks, type FileRow, type ClassRow, type ChunkPreview,
+  buildEmbeddings, generateFlashcards, listFlashcards, type Flashcard,
 } from "../lib/api";
 
 export default function Classes() {
@@ -18,11 +18,11 @@ export default function Classes() {
   const selectedIds = useMemo(() => files.filter(f => sel[f.id]).map(f => f.id), [files, sel]);
 
   const [busyUpload, setBusyUpload] = useState(false);
-  const [busyFlow, setBusyFlow] = useState(false);
+  const [_busyFlow, setBusyFlow] = useState(false); // FIX: prefix unused state to satisfy eslint
   const [dropping, setDropping] = useState(false);
 
   const [preview, setPreview] = useState<ChunkPreview[] | null>(null);
-  const [cards, setCards] = useState<Flashcard[]>([]); // ✅ left as-is (we just don't render them here anymore)
+  const [_cards, setCards] = useState<Flashcard[]>([]); // FIX: prefix unused state
 
   // load classes once
   useEffect(() => { (async () => setClasses(await listClasses()))(); }, []);
@@ -206,8 +206,7 @@ export default function Classes() {
                 <span>{busyUpload ? "Uploading…" : "Drop files or Choose File"}</span>
               </div>
 
-              {/* ✅ REPLACED your old single button with the two-button header component.
-                  This calls your existing generator and navigates to /classes/:classId/flashcards. */}
+              {/* Header buttons */}
               <ClassHeaderButtons
                 classId={String(selectedId)}
                 onGenerate={() => onGenerateFlashcards()}
