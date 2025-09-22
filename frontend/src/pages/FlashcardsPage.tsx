@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { listFlashcards, Flashcard } from "../lib/api";
+import { listFlashcards, type Flashcard } from "../lib/api";
 
 export default function FlashcardsPage() {
   const { classId } = useParams();
@@ -17,10 +17,15 @@ export default function FlashcardsPage() {
       try {
         setError(null);
         if (!id) { setCards([]); return; }
-        const data = await listFlashcards(id);     // ← uses your existing API
+        const data = await listFlashcards(id); // ← uses your existing API
         if (mounted) setCards(Array.isArray(data) ? data : []);
-      } catch (e: any) {
-        if (mounted) setError(e?.message || "Failed to load flashcards");
+      } catch (e: unknown) { // FIX: avoid 'any'
+        if (!mounted) return;
+        if (e instanceof Error) {
+          setError(e.message);
+        } else {
+          setError("Failed to load flashcards");
+        }
       } finally {
         if (mounted) setLoading(false);
       }
