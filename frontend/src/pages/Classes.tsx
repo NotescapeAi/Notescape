@@ -18,11 +18,11 @@ export default function Classes() {
   const selectedIds = useMemo(() => files.filter(f => sel[f.id]).map(f => f.id), [files, sel]);
 
   const [busyUpload, setBusyUpload] = useState(false);
-  const [_busyFlow, setBusyFlow] = useState(false); // FIX: prefix unused state to satisfy eslint
+  const [, setBusyFlow] = useState(false);               // ✅ keep setter only (eslint-safe)
   const [dropping, setDropping] = useState(false);
 
   const [preview, setPreview] = useState<ChunkPreview[] | null>(null);
-  const [_cards, setCards] = useState<Flashcard[]>([]); // FIX: prefix unused state
+  const [, setCards] = useState<Flashcard[]>([]);        // ✅ keep setter only (eslint-safe)
 
   // load classes once
   useEffect(() => { (async () => setClasses(await listClasses()))(); }, []);
