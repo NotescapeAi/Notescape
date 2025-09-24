@@ -3,10 +3,21 @@ import ClassSidebar from "../components/ClassSidebar";
 import ClassHeaderButtons from "../components/ClassHeaderButtons"; // ✅ already imported
 
 import {
-  listClasses, createClass, updateClass, deleteClass,
-  listFiles, uploadFile, deleteFile,
-  createChunks, type FileRow, type ClassRow, type ChunkPreview,
-  buildEmbeddings, generateFlashcards, listFlashcards, type Flashcard,
+  listClasses,
+  createClass,
+  updateClass,
+  deleteClass,
+  listFiles,
+  uploadFile,
+  deleteFile,
+  createChunks,
+  type FileRow,
+  type ClassRow,
+  type ChunkPreview,
+  buildEmbeddings,
+  generateFlashcards,
+  listFlashcards,
+  type Flashcard,
 } from "../lib/api";
 
 export default function Classes() {
@@ -14,27 +25,42 @@ export default function Classes() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
   const [files, setFiles] = useState<FileRow[]>([]);
+  // FIXED: any → Record<string, boolean>
   const [sel, setSel] = useState<Record<string, boolean>>({});
-  const selectedIds = useMemo(() => files.filter(f => sel[f.id]).map(f => f.id), [files, sel]);
+  const selectedIds = useMemo(
+    () => files.filter((f) => sel[f.id]).map((f) => f.id),
+    [files, sel]
+  );
 
   const [busyUpload, setBusyUpload] = useState(false);
-  const [, setBusyFlow] = useState(false);               // ✅ keep setter only (eslint-safe)
+  const [, setBusyFlow] = useState(false); // ✅ keep setter only (eslint-safe)
   const [dropping, setDropping] = useState(false);
 
   const [preview, setPreview] = useState<ChunkPreview[] | null>(null);
-  const [, setCards] = useState<Flashcard[]>([]);        // ✅ keep setter only (eslint-safe)
+  const [, setCards] = useState<Flashcard[]>([]); // ✅ keep setter only (eslint-safe)
 
   // load classes once
-  useEffect(() => { (async () => setClasses(await listClasses()))(); }, []);
+  useEffect(() => {
+    (async () => setClasses(await listClasses()))();
+  }, []);
 
   // load files + cards on class change (✅ left as-is)
   useEffect(() => {
-    if (selectedId == null) { setFiles([]); setSel({}); setCards([]); return; }
+    if (selectedId == null) {
+      setFiles([]);
+      setSel({});
+      setCards([]);
+      return;
+    }
     (async () => {
       const fs = await listFiles(selectedId);
       setFiles(fs);
       setSel({});
-      try { setCards(await listFlashcards(selectedId)); } catch { /* ok if empty */ }
+      try {
+        setCards(await listFlashcards(selectedId));
+      } catch {
+        /* ok if empty */
+      }
     })();
   }, [selectedId]);
 
