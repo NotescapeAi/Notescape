@@ -13,12 +13,12 @@ from app.routers.classes import router as classes_router
 from app.routers.files import router as files_router
 from app.routers.chunks import router as chunks_router
 from app.routers.contact import router as contact_router
-from app.routers.embeddings import router as embeddings_router      # ← add
-from app.routers.flashcards import router as flashcards_router      # ← add
+from app.routers.embeddings import router as embeddings_router
+from app.routers.flashcards import router as flashcards_router
 
 app = FastAPI(title=settings.api_title)
 
-# CORS (ensure your frontend origin is allowed)
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in settings.cors_origins.split(",") if o.strip()] or ["http://localhost:5173"],
@@ -41,29 +41,13 @@ logging.getLogger("uvicorn.error").info(f"[main] uploads_root = {uploads_dir}")
 async def health():
     return {"status": "ok"}
 
-# (optional) quick DB ping if you want /health/db
-# from app.core.db import db_conn
-# @app.get("/health/db")
-# async def health_db():
-#     try:
-#         async with db_conn() as (conn, cur):
-#             await cur.execute("SELECT version()")
-#             v = (await cur.fetchone())[0]
-#         return {"ok": True, "version": v}
-#     except Exception as e:
-#         return {"ok": False, "error": str(e)}
-
-# Routers (note: embeddings under /api, flashcards at /flashcards)
-#app.include_router(classes_router,  prefix="/api")
-#app.include_router(files_router,    prefix="/api")
-#app.include_router(chunks_router,   prefix="/api")
-#app.include_router(contact_router,  prefix="/api")
+# Routers (all already prefixed internally)
 app.include_router(classes_router)
 app.include_router(files_router)
 app.include_router(contact_router)
 app.include_router(chunks_router)
-app.include_router(embeddings_router)   # ← now available: /api/embeddings/build
-app.include_router(flashcards_router)                  # ← now available: /flashcards/...
+app.include_router(embeddings_router)
+app.include_router(flashcards_router)
 
 @app.on_event("startup")
 async def show_routes():
