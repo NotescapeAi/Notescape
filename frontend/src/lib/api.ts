@@ -1,4 +1,5 @@
 // Vite: if VITE_API_BASE_URL is blank, we call the proxy (/api) directly in dev.
+// Vite: if VITE_API_BASE_URL is blank, we call the proxy (/api) directly in dev.
 const API = import.meta.env.VITE_API_BASE_URL || ""; // use proxy in dev
 
 // -------------------- Types --------------------
@@ -109,8 +110,8 @@ export async function uploadFile(classId: number, file: File): Promise<FileRow> 
         const err = (j as { error?: unknown }).error;
         if (typeof err === "string" && err.trim()) msg = err;
       }
-    } catch (e) {
-      console.debug("uploadFile(): non-JSON error body", e);
+    } catch {
+      // ignore non-JSON body
     }
     throw new Error(msg);
   }
@@ -171,15 +172,15 @@ export async function buildEmbeddings(classId: number, limit = 1000) {
 }
 
 // -------------------- Flashcards --------------------
-// NOTE: Backend now enforces an exact target count (default 24) and applies
-// the difficulty to *all* generated cards. You can omit n_cards to use the backend default.
+// NOTE: Backend enforces an exact target count (default 24) and applies
+// the difficulty to *all* generated cards. Omit n_cards to use backend default.
 export async function generateFlashcards(payload: {
   class_id: number;
-  file_ids: string[];                    // backend ignores unknown keys, safe to pass
-  n_cards?: number;                      // optional; backend enforces default target if omitted
-  top_k?: number;                        // default 12 on backend
+  file_ids: string[];
+  n_cards?: number;
+  top_k?: number;
   difficulty: "easy" | "medium" | "hard";
-  topic?: string | null;                 // optional retrieval hint
+  topic?: string | null;
 }): Promise<Flashcard[]> {
   const r = await fetch(`${API}/api/flashcards/generate`, {
     method: "POST",
@@ -196,17 +197,20 @@ export async function generateFlashcards(payload: {
 export async function listFlashcards(classId: number): Promise<Flashcard[]> {
   const r = await fetch(`${API}/api/flashcards/${classId}`);
   if (!r.ok) throw new Error("Failed to fetch flashcards");
-  // NEW: Normalize hint and tags to be UI-safe (ensure hint is string|null and tags is string[])
-  const raw = await r.json(); // NEW
-  return (raw as any[]).map((c) => ({ // NEW
-    ...c, // NEW
-    hint: c?.hint ?? null, // NEW
+  // Normalize hint/tags to be UI-safe (hint: string|null, tags: string[])
+  const raw = (await r.json()) as any[];
+  return raw.map((c) => ({
+    ...c,
+    hint: c?.hint ?? null,
     tags: Array.isArray(c?.tags)
       ? c.tags
-      : (typeof c?.tags === "string"
-          ? c.tags.split(",").map((t: string) => t.trim()).filter(Boolean)
-          : []), // NEW
-  })); // NEW
+      : typeof c?.tags === "string"
+      ? c.tags
+          .split(",")
+          .map((t: string) => t.trim())
+          .filter(Boolean)
+      : [],
+  })) as Flashcard[];
 }
 
 export async function deleteFlashcard(cardId: string): Promise<{ ok: boolean }> {
@@ -237,6 +241,7 @@ export async function logout() {
   try {
     await fetch(`${API}/api/auth/logout`, { method: "POST" });
   } catch (err) {
+    // ignore network errors on logout
     console.debug("logout request failed (ignored)", err);
   }
   localStorage.removeItem("auth_token");
