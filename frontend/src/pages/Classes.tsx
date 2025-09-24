@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
+// NEW: read navigation state so when you come “Back” from Flashcards, the same class re-selects
+import { useLocation } from "react-router-dom"; // NEW
+
 import ClassSidebar from "../components/ClassSidebar";
-import ClassHeaderButtons from "../components/ClassHeaderButtons"; // ✅ already imported
+import ClassHeaderButtons from "../components/ClassHeaderButtons";
 
 import {
   listClasses, createClass, updateClass, deleteClass,
@@ -18,16 +21,24 @@ export default function Classes() {
   const selectedIds = useMemo(() => files.filter(f => sel[f.id]).map(f => f.id), [files, sel]);
 
   const [busyUpload, setBusyUpload] = useState(false);
-  const [, setBusyFlow] = useState(false);               // ✅ keep setter only (eslint-safe)
+  const [, setBusyFlow] = useState(false); // keep setter only (eslint-safe)
   const [dropping, setDropping] = useState(false);
 
   const [preview, setPreview] = useState<ChunkPreview[] | null>(null);
-  const [, setCards] = useState<Flashcard[]>([]);        // ✅ keep setter only (eslint-safe)
+  const [, setCards] = useState<Flashcard[]>([]); // keep setter only (eslint-safe)
+
+  const location = useLocation(); // NEW
 
   // load classes once
   useEffect(() => { (async () => setClasses(await listClasses()))(); }, []);
 
-  // load files + cards on class change (✅ left as-is)
+  // NEW: if we arrived from Flashcards with a class id, auto-select it
+  useEffect(() => {
+    const st = (location as any)?.state; // NEW
+    if (st?.selectId) setSelectedId(Number(st.selectId)); // NEW
+  }, [location]); // NEW
+
+  // load files + cards on class change
   useEffect(() => {
     if (selectedId == null) { setFiles([]); setSel({}); setCards([]); return; }
     (async () => {
@@ -118,7 +129,7 @@ export default function Classes() {
     }
   }
 
-  // -------- single-button pipeline: chunks → embeddings → cards -------- (✅ unchanged)
+  // -------- single-button pipeline: chunks → embeddings → cards --------
   async function onGenerateFlashcards() {
     if (!selectedId) return alert("Select a class first");
     if (files.length === 0) return alert("Upload at least one file first");
@@ -138,15 +149,19 @@ export default function Classes() {
       });
       setPreview(res);
 
-      // 2) embeddings (POST)
+      // 2) embeddings
       await buildEmbeddings(selectedId, 1000);
 
       // 3) generate cards
+      const difficulty =
+        (localStorage.getItem("fc_pref_difficulty") as "easy" | "medium" | "hard") || "medium"; // NEW: read user choice
+
       const created = await generateFlashcards({
         class_id: selectedId,
-        n_cards: 20,
-        top_k: 6,
-        ensure_embeddings: false,
+        file_ids: ids,
+        // n_cards omitted so backend uses its stable default and enforces exact count // NEW
+        top_k: 12, // CHANGED: align with backend default/previous recommendation
+        difficulty, // NEW: apply user's selected difficulty
       });
 
       setCards(created);
@@ -176,7 +191,7 @@ export default function Classes() {
 
           {selectedId && (
             <div style={{ display: "inline-flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-              {/* Drag & Drop / Click-to-upload (✅ unchanged) */}
+              {/* Drag & Drop / Click-to-upload */}
               <div
                 onDragOver={onDragOver}
                 onDragLeave={onDragLeave}
@@ -219,7 +234,7 @@ export default function Classes() {
           <div style={{ opacity: .7 }}>Select a class from the left sidebar.</div>
         ) : (
           <>
-            {/* Files (✅ unchanged) */}
+            {/* Files */}
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
@@ -270,7 +285,7 @@ export default function Classes() {
               </tbody>
             </table>
 
-            {/* Chunk preview drawer (✅ unchanged) */}
+            {/* Chunk preview drawer */}
             {preview && (
               <div
                 role="dialog"
@@ -320,8 +335,7 @@ export default function Classes() {
               </div>
             )}
 
-            {/* ❌ Flashcards block REMOVED from this page.
-                Flashcards are now shown on /classes/:classId/flashcards */}
+            {/* Flashcards are shown on /classes/:classId/flashcards */}
           </>
         )}
       </section>
