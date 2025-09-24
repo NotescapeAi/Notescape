@@ -1,13 +1,11 @@
-# app/routers/flashcards.py
 from typing import Optional, List, Tuple, Dict
-from fastapi import APIRouter, HTTPException, Path
+from fastapi import APIRouter, HTTPException, Path, Query
 from pydantic import BaseModel, Field
 from app.core.db import db_conn
 from app.core.llm import get_embedder, get_card_generator
+import json
 
-# app/routers/flashcards.py
 router = APIRouter(prefix="/api/flashcards", tags=["flashcards"])
-
 
 class EnsureEmbeddingsReq(BaseModel):
     limit: Optional[int] = Field(default=500)
@@ -16,7 +14,10 @@ class GenerateReq(BaseModel):
     class_id: int
     topic: Optional[str] = None
     top_k: int = Field(default=12, ge=1, le=100)
-    n_cards: int = Field(default=10, ge=1, le=50)
+    # default target count if the client does not send n_cards
+    n_cards: int = Field(default=24, ge=1, le=50)
+    # force all generated cards to a single difficulty if provided
+    difficulty: Optional[str] = Field(default=None, pattern="^(easy|medium|hard)$")
 
 class FlashcardOut(BaseModel):
     id: str
@@ -37,8 +38,45 @@ async def ping():
 
 # ---------- LIST / DELETE ----------
 
+def _maybe_expand_legacy_jsonblob(
+    row: Tuple[str, int, Optional[int], str, str, Optional[str], Optional[str], Optional[List[str]]]
+) -> Optional[List[FlashcardOut]]:
+    """
+    Older rows sometimes saved one 'summary' card whose *answer* is a JSON blob:
+      {"cards":[{question,answer,hint,difficulty,tags}, ...]}
+    Expand them on read so the UI shows individual cards.
+    """
+    _id, _class_id, _src_id, question, answer, hint, difficulty, tags = row
+    if not isinstance(answer, str) or '"cards"' not in answer:
+        return None
+    try:
+        data = json.loads(answer)
+        cards = data.get("cards")
+        if not isinstance(cards, list):
+            return None
+        out: List[FlashcardOut] = []
+        for i, c in enumerate(cards):
+            out.append(
+                FlashcardOut(
+                    id=f"legacy-{_id}-{i}",
+                    class_id=_class_id,
+                    source_chunk_id=_src_id,
+                    question=str(c.get("question") or question or "").strip(),
+                    answer=str(c.get("answer") or "").strip(),
+                    hint=(c.get("hint") if c.get("hint") not in (None, "", "null") else None),
+                    difficulty=(c.get("difficulty") or difficulty or "medium"),
+                    tags=list(c.get("tags") or []),
+                )
+            )
+        return out
+    except Exception:
+        return None
+
 @router.get("/{class_id}", response_model=List[FlashcardOut])
-async def list_flashcards_for_class(class_id: int):
+async def list_flashcards_for_class(
+    class_id: int,
+    difficulty: Optional[str] = Query(default=None, pattern="^(easy|medium|hard)$"),
+):
     q = """
       SELECT id::text, class_id, source_chunk_id, question, answer, hint, difficulty, tags
       FROM flashcards
@@ -48,14 +86,29 @@ async def list_flashcards_for_class(class_id: int):
     async with db_conn() as (conn, cur):
         await cur.execute(q, (class_id,))
         rows = await cur.fetchall()
-    return [
-        FlashcardOut(
-            id=r[0], class_id=r[1], source_chunk_id=r[2],
-            question=r[3], answer=r[4], hint=r[5],
-            difficulty=r[6] or "medium", tags=r[7] or []
-        )
-        for r in rows
-    ]
+
+    out: List[FlashcardOut] = []
+    for r in rows:
+        expanded = _maybe_expand_legacy_jsonblob(r)
+        if expanded:
+            out.extend(expanded)
+        else:
+            out.append(
+                FlashcardOut(
+                    id=r[0],
+                    class_id=r[1],
+                    source_chunk_id=r[2],
+                    question=r[3],
+                    answer=r[4],
+                    hint=r[5],
+                    difficulty=r[6] or "medium",
+                    tags=r[7] or [],
+                )
+            )
+
+    if difficulty:
+        out = [c for c in out if (c.difficulty or "medium") == difficulty]
+    return out
 
 @router.delete("/{card_id}", status_code=204)
 async def delete_flashcard(card_id: str = Path(..., description="flashcards.id (UUID)")):
@@ -66,7 +119,7 @@ async def delete_flashcard(card_id: str = Path(..., description="flashcards.id (
 
 # ---------- EMBEDDINGS HELPERS ----------
 
-async def _fetch_missing_chunks(limit: Optional[int]) -> List[Tuple[int, str]]:
+async def _fetch_missing_chunks(limit: Optional[int]) -> List[Tuple[int, str]]:  # (chunk_id, content)
     q = """
       SELECT fc.id, fc.content
       FROM file_chunks fc
@@ -118,11 +171,14 @@ async def _insert_flashcards(class_id: int, cards: List[Dict], source_chunk_id: 
             hint = c.get("hint")
             diff = c.get("difficulty") or "medium"
             tags = c.get("tags") or []
-            await cur.execute("""
+            await cur.execute(
+                """
                 INSERT INTO flashcards (class_id, source_chunk_id, question, answer, hint, difficulty, tags, created_by)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, 'llm')
                 RETURNING id::text
-            """, (class_id, source_chunk_id, q, a, hint, diff, tags))
+                """,
+                (class_id, source_chunk_id, q, a, hint, diff, tags),
+            )
             row = await cur.fetchone()
             out_ids.append(row[0])
         await conn.commit()
@@ -130,8 +186,8 @@ async def _insert_flashcards(class_id: int, cards: List[Dict], source_chunk_id: 
 
 # ---------- ROUTES ----------
 
-@router.post("/ensure-embeddings")
-async def ensure_embeddings(body: EnsureEmbeddingsReq):
+@router.post("/ensure-embeddings/{class_id}")
+async def ensure_embeddings(class_id: int, body: EnsureEmbeddingsReq):
     rows = await _fetch_missing_chunks(body.limit)
     if not rows:
         return {"inserted": 0, "message": "No missing embeddings."}
@@ -141,42 +197,83 @@ async def ensure_embeddings(body: EnsureEmbeddingsReq):
     B = 64
     inserted = 0
     for i in range(0, len(txts), B):
-        sub_ids = ids[i:i+B]
-        sub_txts = txts[i:i+B]
+        sub_ids = ids[i : i + B]
+        sub_txts = txts[i : i + B]
         vecs = await embedder.embed_texts(sub_txts)
         await _insert_embeddings(list(zip(sub_ids, vecs)))
         inserted += len(sub_ids)
     return {"inserted": inserted}
 
-
-@router.post("/generate/", response_model=List[FlashcardOut])
+@router.post("/generate", response_model=List[FlashcardOut])   # <-- no trailing slash
 async def generate(req: GenerateReq):
+    """
+    Generate up to n_cards, enforcing:
+    - exact target count (we reprompt until filled, then truncate),
+    - single difficulty if provided,
+    - de-duplication by question text.
+    """
     embedder = get_embedder()
     generator = get_card_generator()
 
+    # --- Retrieval
     qtext = req.topic or "Create high-yield study flashcards for this class content."
     qvec = (await embedder.embed_texts([qtext]))[0]
-
     hits = await _pick_relevant_chunks(req.class_id, qvec, req.top_k)
     if not hits:
         raise HTTPException(status_code=404, detail="No chunks found for this class. Upload content first.")
 
-    joined = "\n".join("• " + c[:1000] for _, c in hits)
-    cards = await generator.generate(joined, req.n_cards)
+    # Make a few alternative contexts to help reach the target count
+    contexts: List[str] = []
+    joined_all = "\n".join("• " + c[:1000] for _, c in hits)
+    contexts.append(joined_all)
+    if len(hits) > 4:
+        half = len(hits) // 2
+        contexts.append("\n".join("• " + c[:1000] for _, c in hits[:half]))
+        contexts.append("\n".join("• " + c[:1000] for _, c in hits[half:]))
+
+    target = max(1, min(50, req.n_cards or 24))
+    collected: List[Dict] = []
+    seen_q = set()
+
+    attempts = 0
+    # Try a few rounds until we reach target
+    while len(collected) < target and attempts < 4:
+        need = target - len(collected)
+        ctx = contexts[attempts % len(contexts)]
+        batch = await generator.generate(ctx, need)
+        for c in batch or []:
+            q = (c.get("question") or "").strip()
+            a = (c.get("answer") or "").strip()
+            if not q or not a or q in seen_q:
+                continue
+            if req.difficulty:
+                c["difficulty"] = req.difficulty
+            collected.append(c)
+            seen_q.add(q)
+        attempts += 1
+
+    if not collected:
+        raise HTTPException(status_code=500, detail="Card generation returned no usable cards.")
+
+    # trim/pad to exact target (pad is not needed because we loop above)
+    if len(collected) > target:
+        collected = collected[:target]
 
     source_chunk_id = hits[0][0] if hits else None
-    ids = await _insert_flashcards(req.class_id, cards, source_chunk_id)
+    ids = await _insert_flashcards(req.class_id, collected, source_chunk_id)
 
     out: List[FlashcardOut] = []
-    for i, c in zip(ids, cards):
-        out.append(FlashcardOut(
-            id=i,
-            class_id=req.class_id,
-            source_chunk_id=source_chunk_id,
-            question=c.get("question", ""),
-            answer=c.get("answer", ""),
-            hint=c.get("hint"),
-            difficulty=c.get("difficulty", "medium"),
-            tags=c.get("tags") or [],
-        ))
+    for i, c in zip(ids, collected):
+        out.append(
+            FlashcardOut(
+                id=i,
+                class_id=req.class_id,
+                source_chunk_id=source_chunk_id,
+                question=c.get("question", ""),
+                answer=c.get("answer", ""),
+                hint=c.get("hint"),
+                difficulty=c.get("difficulty", "medium"),
+                tags=c.get("tags") or [],
+            )
+        )
     return out
