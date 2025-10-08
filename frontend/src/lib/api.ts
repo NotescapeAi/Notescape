@@ -1,5 +1,5 @@
 // Vite: if VITE_API_BASE_URL is blank, we call the proxy (/api) directly in dev.
-// Vite: if VITE_API_BASE_URL is blank, we call the proxy (/api) directly in dev.
+
 const API = import.meta.env.VITE_API_BASE_URL || ""; // use proxy in dev
 
 // -------------------- Types --------------------
