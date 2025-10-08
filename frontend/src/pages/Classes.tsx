@@ -28,6 +28,7 @@ export default function Classes() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
   const [files, setFiles] = useState<FileRow[]>([]);
+  // keep selection as a typed map
   const [sel, setSel] = useState<Record<string, boolean>>({});
   const selectedIds = useMemo(
     () => files.filter((f) => sel[f.id]).map((f) => f.id),
@@ -196,7 +197,6 @@ export default function Classes() {
       const created = await generateFlashcards({
         class_id: selectedId,
         file_ids: ids,
-        // n_cards omitted so backend uses its default
         top_k: 12,
         difficulty,
       });

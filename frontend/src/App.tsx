@@ -19,6 +19,11 @@ const Settings           = lazy(() => import("./pages/Settings"));
 const LogoutPage         = lazy(() => import("./pages/Logout"));
 const FlashcardsPage     = lazy(() => import("./pages/FlashcardsPage")); // NEW
 
+
+//      Create these files: src/pages/FlashcardsViewMode.tsx & src/pages/FlashcardsStudyMode.tsx
+const FlashcardsViewMode  = lazy(() => import("./pages/FlashcardsViewMode"));  // NEW
+const FlashcardsStudyMode = lazy(() => import("./pages/FlashcardsStudyMode")); // NEW
+const FlashcardsBookmarks  = lazy(() => import("./pages/FlashcardsBookmarks"));
 function GetStartedGate() {
   const loggedIn = !!localStorage.getItem("auth_token");
   return <Navigate to={loggedIn ? "/classes" : "/signup"} replace />;
@@ -62,8 +67,12 @@ export default function App() {
 
           {/* app */}
           <Route path="/classes" element={<Classes />} />
-          {/* 👇 NEW nested flashcards route for a class */}
+          {/* 👇 your existing flashcards route stays the same */}
           <Route path="/classes/:classId/flashcards" element={<FlashcardsPage />} />
+          {/* NEW: Brainscape-style nested modes under the same class/flashcards path */}
+          <Route path="/classes/:classId/flashcards/view"  element={<FlashcardsViewMode />} />   {/* NEW */}
+          <Route path="/classes/:classId/flashcards/study" element={<FlashcardsStudyMode />} />  {/* NEW */}
+          <Route path="/classes/:classId/flashcards/bookmarks" element={<FlashcardsBookmarks />} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/settings"  element={<Settings />} />
 
