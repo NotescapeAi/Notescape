@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, ChevronLeft, ChevronRight, Eye, EyeOff } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight} from "lucide-react";
 import KebabMenu from "../components/KebabMenu";
 import useBookmarks from "../lib/bookmarks";
 import { deleteFlashcard, type Flashcard } from "../lib/api";
@@ -73,7 +73,7 @@ export default function FlashcardsStudyMode() {
                   if (!card) return;
                   if (!confirm("Delete this flashcard?")) return;
                   try {
-                    await deleteFlashcard(card.id as any);
+                    await deleteFlashcard(String(card.id));
                     setCards(prev => {
                       const next = prev.filter(x => x.id !== card.id);
                       const newIdx = Math.min(next.length - 1, idx);
@@ -85,8 +85,9 @@ export default function FlashcardsStudyMode() {
                       }
                       return next;
                     });
-                  } catch (err: any) {
-                    alert(err?.message || "Failed to delete flashcard");
+                  } catch (err: unknown) {
++                   const message = err instanceof Error? err.message : String(err);
++                   alert(message || "Failed to delete flashcard");
                   }
                 },
               },
