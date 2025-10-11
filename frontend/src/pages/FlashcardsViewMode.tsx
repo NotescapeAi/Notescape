@@ -4,7 +4,7 @@ import { ArrowLeft } from "lucide-react";
 import KebabMenu from "../components/KebabMenu";
 import useBookmarks from "../lib/bookmarks";
 import { deleteFlashcard, type Flashcard } from "../lib/api";
-type FlashcardWithMeta = Flashcard & { difficulty?: string | null };
+
 type LocationState = { cards?: Flashcard[]; className?: string };
 
 export default function FlashcardsViewMode() {
