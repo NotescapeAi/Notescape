@@ -1,0 +1,117 @@
+/* ===== Navbar Styles ===== */
+.ns-nav-wrap {
+  position: fixed;
+  top: 0;
+  z-index: 50;
+  width: 100%;
+  background: #fff;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+}
+.ns-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 auto;
+  padding: 10px 10px;
+  max-width: 1200px;
+}
+.ns-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+}
+.ns-logo img {
+  height: 32px;
+  width: 40px;
+  border-radius: 8px;
+}
+.ns-logo .ns-brand {
+  font-weight: 610;
+  letter-spacing: -0.3px;
+  font-size: 20px;
+  color: rgb(30, 30, 30);
+}
+.ns-link {
+  position: relative;
+  color: rgb(124, 69, 133);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 14px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  transition: color .15s ease, background .15s ease;
+}
+.ns-link:hover {
+  color: #4f46e5;
+  background: rgba(79,70,229,.08);
+}
+/* Navbar link underline animation */
+.ns-link::after {
+  content: "";
+  position: absolute;
+  bottom: -3px; left: 50%;
+  width: 0; height: 2px;
+  background: #4f46e5;
+  transition: width .3s ease, left .3s ease;
+}
+.ns-link:hover::after {
+  width: 100%;
+  left: 0;
+}
+
+/* Mobile Navbar */
+.menu-toggle {
+  display: none;
+  cursor: pointer;
+  font-size: 24px;
+}
+@media (max-width: 768px) {
+  .ns-nav-links {
+    display: none;
+    flex-direction: column;
+    gap: 16px;
+    background: white;
+    position: absolute;
+    top: 60px;
+    right: 20px;
+    padding: 20px;
+    border-radius: 16px;
+    box-shadow: 0 12px 24px rgba(0,0,0,0.1);
+  }
+  .ns-nav-links.active {
+    display: flex;
+  }
+  .menu-toggle {
+    display: block;
+  }
+}
+/* put this in navbar.css or a global buttons.css file */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: linear-gradient(90deg, var(--c2), var(--c3));
+  color: #ffffff;
+  padding: 10px 16px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 14px;
+  border: 0;
+  text-decoration: none;
+  box-shadow: 0 10px 28px rgba(139, 92, 246, 0.24);
+  transition: transform .15s var(--easing),
+              box-shadow .18s var(--easing),
+              background-position .5s ease,
+              color .3s ease;
+  background-size: 200% 100%;
+}
+.btn-primary:hover {
+  transform: translateY(-2px);
+  background-position: 100% 0;
+  box-shadow: 0 16px 36px rgba(223, 223, 224, 0.28);
+  color: #ffffff;
+  background: rgb(123, 126, 190); 
+}
+
