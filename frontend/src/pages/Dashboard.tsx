@@ -359,11 +359,150 @@ export default function Dashboard(): JSX.Element {
                 <div className="mt-4">
                   <Link to="/planner" className="text-indigo-600 text-sm font-medium hover:underline">Adjust plan</Link>
                 </div>
+          {/* Placeholder profile (female style) */}
+          <div className="flex items-center gap-4">
+            <div className="flex flex-col items-end">
+              <div className="text-sm text-gray-500">Good evening</div>
+              <div className="text-sm font-semibold">Mahnum Zahid</div>
+            </div>
+
+            {/* female placeholder avatar */}
+            <div
+              aria-hidden
+              className="w-12 h-12 rounded-full bg-gradient-to-br from-pink-200 via-violet-200 to-indigo-200 flex items-center justify-center shadow-md text-2xl"
+              title="Profile"
+            >
+              👩
+            </div>
+          </div>
+        </div>
+
+        {/* Top stats row */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+          <StatCard title="Study Hours (This Week)" value="17.4 hrs" sub="+12% vs last week" />
+          <StatCard title="Active Courses" value="5" sub="2 completed" />
+          <StatCard title="Average Quiz Score" value="89%" sub="+4% improvement" />
+        </div>
+
+        {/* Analytics + donut area */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+          {/* Line chart large */}
+          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="bg-white rounded-2xl p-5 shadow-sm border border-indigo-50 col-span-2">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-800">Weekly Study Trend</h3>
+                <p className="text-xs text-gray-500 mt-1">Hours per day</p>
+              </div>
+              <div className="text-xs text-gray-500">This Week</div>
+            </div>
+
+            <div className="h-48">
+              <Line data={lineData as any} options={lineOptions as any} />
+            </div>
+            <div className="mt-4 grid grid-cols-3 gap-4 text-sm text-gray-600">
+              <div>
+                <div className="text-xs">Focus Sessions</div>
+                <div className="font-semibold text-gray-800">12</div>
+              </div>
+              <div>
+                <div className="text-xs">Longest Streak</div>
+                <div className="font-semibold text-gray-800">8 days</div>
+              </div>
+              <div>
+                <div className="text-xs">Avg Session</div>
+                <div className="font-semibold text-gray-800">46 min</div>
+              </div>
+            </div>
+          </motion.div>
+
+          {/* small donut + quick stats */}
+          <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="bg-white rounded-2xl p-4 shadow-sm border border-indigo-50">
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="text-sm font-semibold text-gray-800">Performance</h4>
+              <span className="text-xs text-gray-500">Monthly</span>
+            </div>
+
+            {/* smaller donut container */}
+            <div className="flex items-center gap-4">
+              <div className="w-28 h-28">
+                <Doughnut data={donutData as any} options={donutOptions as any} />
+              </div>
+
+              <div className="flex-1">
+                <div className="text-sm text-gray-600">Completed</div>
+                <div className="text-2xl font-semibold text-gray-800 mt-1">62%</div>
+                <div className="mt-3 text-xs text-gray-500">Keep consistent to reach 80% monthly goal.</div>
+
+                <div className="mt-4">
+                  <Link to="/planner" className="text-indigo-600 text-sm font-medium hover:underline">Adjust plan</Link>
+                </div>
               </div>
             </div>
           </motion.div>
         </div>
 
+        {/* New Row: Goals + Recent Activity */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+          {/* Study Goals Tracker (wide) */}
+          <motion.section initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="bg-white rounded-2xl p-6 shadow-sm border border-indigo-50 lg:col-span-2">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-800">Study Goals</h3>
+                <p className="text-xs text-gray-500 mt-1">Weekly target & progress</p>
+              </div>
+              <div className="text-xs text-gray-500">Goal: 20 hrs</div>
+            </div>
+
+            {/* Goals */}
+            <div className="space-y-4">
+              <div>
+                <div className="flex justify-between text-sm text-gray-600 mb-2">
+                  <span>Weekly Study</span>
+                  <span className="font-semibold text-gray-800">17.4 / 20 hrs</span>
+                </div>
+                <div className="w-full bg-gray-100 h-3 rounded-full overflow-hidden">
+                  <div className="h-3 rounded-full bg-indigo-600 transition-all" style={{ width: "87%" }} />
+                </div>
+              </div>
+
+              <div>
+                <div className="flex justify-between text-sm text-gray-600 mb-2">
+                  <span>Flashcards Goal</span>
+                  <span className="font-semibold text-gray-800">420 / 500</span>
+                </div>
+                <div className="w-full bg-gray-100 h-3 rounded-full overflow-hidden">
+                  <div className="h-3 rounded-full bg-violet-500 transition-all" style={{ width: "84%" }} />
+                </div>
+              </div>
+
+              <div className="flex gap-3 mt-4">
+                <button className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium">Start Focus Session</button>
+                <Link to="/goals" className="px-4 py-2 border border-indigo-100 rounded-lg text-sm hover:bg-gray-50">Manage Goals</Link>
+              </div>
+            </div>
+          </motion.section>
+
+          {/* Recent Activity */}
+          <motion.aside initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="bg-white rounded-2xl p-4 shadow-sm border border-indigo-50">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-sm font-semibold text-gray-800">Recent Activity</h4>
+              <Link to="/activity" className="text-xs text-indigo-600 hover:underline">See all</Link>
+            </div>
+
+            <div className="space-y-3">
+              {recent.map((r, i) => (
+                <div key={i} className="flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600">
+                    {r.icon}
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-sm text-gray-800 font-medium">{r.text}</div>
+                    <div className="text-xs text-gray-500 mt-1">{r.when}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </motion.aside>
         {/* New Row: Goals + Recent Activity */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
           {/* Study Goals Tracker (wide) */}
