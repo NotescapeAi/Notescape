@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import KebabMenu from "../components/KebabMenu";
@@ -49,7 +49,7 @@ export default function FlashcardsViewMode() {
                   <div className="flex items-center justify-between mb-2">
                     <div className="inline-flex gap-2 items-center">
                       <span className="text-[11px] font-bold text-violet-600 bg-violet-100 rounded-full px-3 py-1">
-                        {(c as any).difficulty ? String((c as any).difficulty).toUpperCase() : "MEDIUM"}
+                        {c.difficulty ? String(c.difficulty).toUpperCase() : "MEDIUM"}
                       </span>
                       <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 rounded-full px-3 py-1">
                         {className}
@@ -59,7 +59,7 @@ export default function FlashcardsViewMode() {
                     <KebabMenu
                       items={[
                         {
-                          label: bm.isBookmarked(String(c.id)) ? "Remove Bookmark" : "Bookmark",
+                          label: bm.isBookmarked(String(c.id)) ? "Remove Bookmark": "Bookmark",
                           onClick: () => bm.toggle(String(c.id)),
                         },
                         {
@@ -82,10 +82,11 @@ export default function FlashcardsViewMode() {
                           onClick: async () => {
                             if (!confirm("Delete this flashcard?")) return;
                             try {
-                              await deleteFlashcard(c.id as any);
+                              await deleteFlashcard(String(c.id));
                               setCards(prev => prev.filter(x => x.id !== c.id));
-                            } catch (err: any) {
-                              alert(err?.message || "Failed to delete flashcard");
+                            } catch (err: unknown) {
+                                  const message = err instanceof Error ? err.message : String(err);
+                                  alert(message || "Failed to delete flashcard");
                             }
                           },
                         },

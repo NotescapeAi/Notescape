@@ -3,24 +3,36 @@ import { useNavigate } from "react-router-dom";
 
 type Props = {
   classId: string | number;
-  onGenerate?: (classId: number) => Promise<void> | void; // keep your existing signature
+  onGenerate?: (classId: number) => Promise<void> | void;
 };
 
 const LS_DIFF_KEY = "fc_pref_difficulty";
+type Difficulty = "easy" | "medium" | "hard";
+
+function isDifficulty(x: unknown): x is Difficulty {
+  return x === "easy" || x === "medium" || x === "hard";
+}
 
 export default function ClassHeaderButtons({ classId, onGenerate }: Props) {
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
   const toId = Number(classId);
 
-  const [difficulty, setDifficulty] = useState<"easy" | "medium" | "hard">(
-    (localStorage.getItem(LS_DIFF_KEY) as any) || "medium"
-  );
-  useEffect(() => { localStorage.setItem(LS_DIFF_KEY, difficulty); }, [difficulty]);
+  const [difficulty, setDifficulty] = useState<Difficulty>(() => {
+    const raw = localStorage.getItem(LS_DIFF_KEY);
+    return isDifficulty(raw) ? raw : "medium";
+  });
+
+  useEffect(() => {
+    localStorage.setItem(LS_DIFF_KEY, difficulty);
+  }, [difficulty]);
 
   const handleGenerate = async () => {
     if (!toId) return;
-    if (!onGenerate) { navigate(`/classes/${toId}/flashcards`); return; }
+    if (!onGenerate) {
+      navigate(`/classes/${toId}/flashcards`);
+      return;
+    }
     try {
       setBusy(true);
       // parent reads localStorage("fc_pref_difficulty") and passes to API
@@ -37,7 +49,10 @@ export default function ClassHeaderButtons({ classId, onGenerate }: Props) {
         <span style={{ fontSize: 12, color: "#6B7280" }}>Difficulty:</span>
         <select
           value={difficulty}
-          onChange={(e) => setDifficulty(e.target.value as any)}
+          onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
+            const val = e.target.value;
+            if (isDifficulty(val)) setDifficulty(val);
+          }}
           style={{ padding: "6px 10px", borderRadius: 10, border: "1px solid #cfd4dc" }}
           aria-label="Difficulty"
         >

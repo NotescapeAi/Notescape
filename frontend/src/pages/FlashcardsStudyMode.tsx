@@ -2,6 +2,7 @@
 // ✅ FIXED VERSION with schedule display + precise refresh
 
 import React, { useEffect, useMemo, useState } from "react";
+
 import { Link, useLocation, useParams } from "react-router-dom";
 import { ArrowLeft, ChevronLeft, ChevronRight, Eye, EyeOff, Play } from "lucide-react";
 
@@ -37,6 +38,13 @@ async function fetchAllCardsForClass(classId: number) {
   const j = await r.json();
   return Array.isArray(j) ? j : j.cards ?? [];
 }
+
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import { ArrowLeft, ChevronLeft, ChevronRight} from "lucide-react";
+import KebabMenu from "../components/KebabMenu";
+import useBookmarks from "../lib/bookmarks";
+import { deleteFlashcard, type Flashcard } from "../lib/api";
+
 
 async function submitReview(card_id: string, rating: 1 | 2 | 3 | 4 | 5) {
   const r = await fetch(`/api/sr/review`, {
@@ -195,6 +203,46 @@ export default function FlashcardsStudyMode() {
               <Play className="w-4 h-4" /> {useSR ? "SR: ON" : "SR: OFF"}
             </button>
           </div>
+
+
+          <KebabMenu
+            items={[
+              {
+                label: bm.isBookmarked(String(card?.id)) ? "Remove Bookmark" : "Bookmark",
+                onClick: () => bm.toggle(String(card?.id)),
+              },
+              {
+                label: "View Mode",
+                onClick: () => navigate(`/classes/${classId}/flashcards/view`, { state: { cards, className } }),
+              },
+              { label: "Study Mode", onClick: () => {} },
+              {
+                label: "Delete",
+                onClick: async () => {
+                  if (!card) return;
+                  if (!confirm("Delete this flashcard?")) return;
+                  try {
+                    await deleteFlashcard(String(card.id));
+                    setCards(prev => {
+                      const next = prev.filter(x => x.id !== card.id);
+                      const newIdx = Math.min(next.length - 1, idx);
+                      if (next.length === 0) {
+                        // go back to list when nothing to study
+                        requestAnimationFrame(() => navigate(`/classes/${classId}/flashcards`, { replace: true }));
+                      } else {
+                        setIdx(Math.max(0, newIdx));
+                      }
+                      return next;
+                    });
+                  } catch (err: unknown) {
+                   const message = err instanceof Error? err.message : String(err);
+                   alert(message || "Failed to delete flashcard");
+                  }
+                },
+              },
+            ]}
+          />
+
         </div>
       </div>
 
