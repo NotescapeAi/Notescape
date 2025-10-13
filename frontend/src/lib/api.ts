@@ -1,6 +1,12 @@
 // Vite: if VITE_API_BASE_URL is blank, we call the proxy (/api) directly in dev.
 
 const API = import.meta.env.VITE_API_BASE_URL || ""; // use proxy in dev
+// ------------ User header helper (re-usable) ------------
+function userHeader() {
+  const u = localStorage.getItem("user_id");
+  if (!u || !u.trim()) throw new Error("Please set your user_id first (localStorage).");
+  return { "X-User-Id": u.trim() };
+}
 
 // -------------------- Types --------------------
 export type ClassRow = {
@@ -43,6 +49,7 @@ export type Flashcard = {
   hint?: string | null;
   difficulty: "easy" | "medium" | "hard";
   tags: string[];
+  due_at?: string; // Add the due_at property (it can be a string or Date type)
 };
 
 // -------------------- Classes --------------------
@@ -254,4 +261,32 @@ export async function deleteAccount() {
     throw new Error((j as any).error || "Delete failed");
   }
   localStorage.removeItem("auth_token");
+}
+// -------------------- Spaced Repetition --------------------
+export type DueCard = Flashcard; // same shape
+
+export async function listDueCards(classId: number, limit = 30): Promise<DueCard[]> {
+  const r = await fetch(`${API}/api/sr/due/${classId}?limit=${limit}`, {
+    headers: { ...userHeader() }
+  });
+  if (!r.ok) throw new Error(`Failed to load due cards (HTTP ${r.status})`);
+  return r.json();
+}
+
+export async function postReview(cardId: string, rating: 1|2|3|4|5) {
+  const r = await fetch(`${API}/api/sr/review`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...userHeader() },
+    body: JSON.stringify({ card_id: cardId, rating })
+  });
+  if (!r.ok) {
+    let msg = `Review failed (HTTP ${r.status})`;
+    try { const j = await r.json(); if ((j as any)?.detail) msg = (j as any).detail; } catch {}
+    throw new Error(msg);
+  }
+  return r.json() as Promise<{
+    ok: boolean,
+    next_due_at: string,
+    state: { repetition: number; ease_factor: number; interval_days: number; learning: boolean }
+  }>;
 }
