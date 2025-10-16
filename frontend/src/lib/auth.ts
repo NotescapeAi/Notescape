@@ -1,4 +1,3 @@
-// src/lib/auth.ts
 export function initUserId() {
   const KEY = "user_id";
   let u = localStorage.getItem(KEY);

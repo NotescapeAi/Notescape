@@ -1,4 +1,3 @@
-// src/pages/FlashcardsBookmarks.tsx
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
@@ -11,19 +10,21 @@ function expandLegacy(c: Flashcard): Flashcard[] {
     if (typeof c.answer === "string" && c.answer.includes('"cards"')) {
       const data = JSON.parse(c.answer);
       if (Array.isArray(data?.cards)) {
-        return data.cards.map((x: any, i: number) => ({
+        return data.cards.map((x: { [key: string]: any }, i: number) => ({
           id: `legacy-${c.id}-${i}`,
           class_id: c.class_id,
           source_chunk_id: c.source_chunk_id ?? null,
           question: String(x?.question ?? c.question ?? "").trim(),
           answer: String(x?.answer ?? "").trim(),
           hint: x?.hint ?? null,
-          difficulty: (x?.difficulty ?? c.difficulty ?? "medium") as any,
+          difficulty: (x?.difficulty ?? c.difficulty ?? "medium") as string,
           tags: Array.isArray(x?.tags) ? x.tags : Array.isArray(c.tags) ? c.tags : [],
-        })) as any;
+        }));
       }
     }
-  } catch {}
+  } catch (error) {
+    console.error(error);
+  }
   const tags = Array.isArray(c.tags) ? c.tags : [];
   return [{ ...c, tags }];
 }
@@ -67,7 +68,6 @@ export default function FlashcardsBookmarks() {
 
   const expanded = useMemo(() => cardsRaw.flatMap(expandLegacy), [cardsRaw]);
 
-  // show only bookmarked in this page
   const bookmarkedCards = expanded.filter(c => bm.isBookmarked(String(c.id)));
 
   return (

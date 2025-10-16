@@ -38,6 +38,7 @@ def _normalize(s: str) -> str:
     s = re.sub(r"[ \t]+", " ", s)
     s = re.sub(r"\n{3,}", "\n\n", s)
     return s.strip()
+
 def _chunk_chars(text: str, size: int, overlap: int) -> List[str]:
     """Simple char-based chunking with overlap."""
     text = text or ""
@@ -107,8 +108,12 @@ def _read_pdf_pages(abs_pdf_path: Path) -> List[str]:
     out: List[str] = []
     for p in reader.pages:
         try:
-            out.append(_normalize(p.extract_text() or ""))
-        except Exception:
+            page_text = p.extract_text() or ""
+            if not page_text:
+                log.warning(f"Empty page detected!")
+            out.append(page_text)
+        except Exception as e:
+            log.error(f"Error extracting text from page: {p} | {str(e)}")
             out.append("")
     return out
 
@@ -179,7 +184,6 @@ async def create_chunks(payload: ChunkRequest, request: Request) -> List[ChunkPr
 
         # Fetch storage_url (and filename if available)
         async with db_conn() as (conn, cur):
-            # If your 'files' table has filename/class_id, grab them too; otherwise this still works.
             await cur.execute("SELECT storage_url FROM files WHERE id=%s", (fid,))
             row = await cur.fetchone()
 

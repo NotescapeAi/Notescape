@@ -69,9 +69,12 @@ def _extract_with_pypdf(pdf_path: Path) -> List[str]:
     for p in reader.pages:
         try:
             txt = p.extract_text() or ""
-        except Exception:
-            txt = ""
-        out.append(_normalize(txt))
+            if not txt:
+                log.warning(f"Page {p}: No text extracted.")
+            out.append(_normalize(txt))
+        except Exception as e:
+            log.error(f"Error extracting text from page: {p} | {str(e)}")
+            out.append("")
     return out
 
 
@@ -135,11 +138,12 @@ def chunk_by_pages(page_texts: List[str], pages_per_chunk: int = 1, overlap_page
         end = min(n, i + pages_per_chunk)
         block = "\n\n".join(page_texts[start:end]).strip()
         if block:
+            log.info(f"Chunking page {start + 1} to {end}, {len(block)} chars")
             chunks.append({
                 "idx": idx,
                 "content": block,
                 "char_len": len(block),
-                "page_start": start + 1,  # 1-based for UI
+                "page_start": start + 1,
                 "page_end": end,
             })
             idx += 1

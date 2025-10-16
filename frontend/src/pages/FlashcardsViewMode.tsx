@@ -13,11 +13,11 @@ export default function FlashcardsViewMode() {
   const state = (useLocation().state || {}) as LocationState;
 
   const bm = useBookmarks();
-  const [cards, setCards] = useState<Flashcard[]>(Array.isArray(state.cards) ? state.cards : []);
-  const className = state.className || "";
+  const [cards, setCards] = useState<Flashcard[]>(Array.isArray(state.cards) ? state.cards : []); // Flashcards state
+  const className = state.className || ""; // Class name
 
   const tagsOf = (c: Flashcard) =>
-    Array.isArray(c.tags) ? c.tags.map(t => String(t).trim()).filter(Boolean) : [];
+    Array.isArray(c.tags) ? c.tags.map(t => String(t).trim()).filter(Boolean) : []; // Get tags of each flashcard
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#fafafa] to-white">
@@ -39,20 +39,20 @@ export default function FlashcardsViewMode() {
 
       <div className="mx-auto max-w-6xl px-4 py-6">
         {cards.length === 0 ? (
-          <div className="text-slate-500">No cards to show.</div>
+          <div className="text-slate-500">No cards to show.</div> // Display message when no cards are available
         ) : (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-4">
             {cards.map((c) => {
-              const tags = tagsOf(c);
+              const tags = tagsOf(c); // Get tags for each card
               return (
                 <div key={c.id} className="border border-slate-200 rounded-2xl bg-white p-4">
                   <div className="flex items-center justify-between mb-2">
                     <div className="inline-flex gap-2 items-center">
                       <span className="text-[11px] font-bold text-violet-600 bg-violet-100 rounded-full px-3 py-1">
-                        {(c as any).difficulty ? String((c as any).difficulty).toUpperCase() : "MEDIUM"}
+                        {(c.difficulty || "medium").toUpperCase()} {/* Display difficulty */}
                       </span>
                       <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 rounded-full px-3 py-1">
-                        {className}
+                        {className} {/* Display class name */}
                       </span>
                     </div>
 
@@ -60,11 +60,11 @@ export default function FlashcardsViewMode() {
                       items={[
                         {
                           label: bm.isBookmarked(String(c.id)) ? "Remove Bookmark" : "Bookmark",
-                          onClick: () => bm.toggle(String(c.id)),
+                          onClick: () => bm.toggle(String(c.id)), // Toggle bookmark
                         },
                         {
                           label: "View Mode",
-                          onClick: () => {}, // already here
+                          onClick: () => {}, // Already in view mode
                         },
                         {
                           label: "Study Mode",
@@ -73,17 +73,17 @@ export default function FlashcardsViewMode() {
                               state: {
                                 cards,
                                 className,
-                                startIndex: cards.findIndex(x => String(x.id) === String(c.id)),
+                                startIndex: cards.findIndex(x => String(x.id) === String(c.id)), // Start index for study mode
                               },
                             }),
                         },
                         {
                           label: "Delete",
                           onClick: async () => {
-                            if (!confirm("Delete this flashcard?")) return;
+                            if (!confirm("Delete this flashcard?")) return; // Confirm before delete
                             try {
-                              await deleteFlashcard(c.id as any);
-                              setCards(prev => prev.filter(x => x.id !== c.id));
+                              await deleteFlashcard(c.id as any); // Delete flashcard
+                              setCards(prev => prev.filter(x => x.id !== c.id)); // Remove from UI
                             } catch (err: any) {
                               alert(err?.message || "Failed to delete flashcard");
                             }
@@ -93,18 +93,18 @@ export default function FlashcardsViewMode() {
                     />
                   </div>
 
-                  <div className="font-extrabold mb-2 text-slate-900">Q: {c.question}</div>
-                  <div className="text-slate-800 whitespace-pre-wrap">A: {c.answer}</div>
+                  <div className="font-extrabold mb-2 text-slate-900">Q: {c.question}</div> {/* Display question */}
+                  <div className="text-slate-800 whitespace-pre-wrap">A: {c.answer}</div> {/* Display answer */}
 
                   {c.hint && String(c.hint).trim() && (
                     <div className="mt-3 text-xs text-slate-500">
-                      <span className="font-semibold">Hint:</span> {String(c.hint).trim()}
+                      <span className="font-semibold">Hint:</span> {String(c.hint).trim()} {/* Display hint */}
                     </div>
                   )}
 
                   {tags.length > 0 && (
                     <div className="mt-3 text-xs text-slate-500">
-                      <span className="font-semibold">Tags:</span> {tags.join(", ")}
+                      <span className="font-semibold">Tags:</span> {tags.join(", ")} {/* Display tags */}
                     </div>
                   )}
                 </div>

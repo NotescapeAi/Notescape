@@ -1,4 +1,4 @@
-from typing import Optional, List, Tuple, Dict
+from typing import Optional, List, Tuple, Dict  # Importing Tuple here
 from fastapi import APIRouter, HTTPException, Path, Query
 from pydantic import BaseModel, Field
 from app.core.db import db_conn
@@ -14,9 +14,7 @@ class GenerateReq(BaseModel):
     class_id: int
     topic: Optional[str] = None
     top_k: int = Field(default=12, ge=1, le=100)
-    # default target count if the client does not send n_cards
     n_cards: int = Field(default=24, ge=1, le=50)
-    # force all generated cards to a single difficulty if provided
     difficulty: Optional[str] = Field(default=None, pattern="^(easy|medium|hard)$")
 
 class FlashcardOut(BaseModel):
@@ -40,7 +38,7 @@ async def ping():
 
 def _maybe_expand_legacy_jsonblob(
     row: Tuple[str, int, Optional[int], str, str, Optional[str], Optional[str], Optional[List[str]]]
-) -> Optional[List[FlashcardOut]]:
+) -> Optional[List[FlashcardOut]]:  # Fixed Tuple import
     """
     Older rows sometimes saved one 'summary' card whose *answer* is a JSON blob:
       {"cards":[{question,answer,hint,difficulty,tags}, ...]}

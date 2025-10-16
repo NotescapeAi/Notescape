@@ -1,12 +1,14 @@
 -- classes
+-- classes
 CREATE TABLE IF NOT EXISTS classes (
   id SERIAL PRIMARY KEY,
   name TEXT NOT NULL,
-  description TEXT,
+  subject TEXT,            -- ✅ add this line
+  description TEXT,        -- (keep if you still want it)
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-ALTER TABLE classes OWNER TO CURRENT_USER;
-ALTER SEQUENCE IF EXISTS classes_id_seq OWNER TO CURRENT_USER;
+ALTER TABLE classes DROP COLUMN IF EXISTS description;
+
 
 -- files
 CREATE TABLE IF NOT EXISTS files (

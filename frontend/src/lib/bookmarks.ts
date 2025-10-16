@@ -1,4 +1,4 @@
-// src/lib/bookmarks.ts
+/// src/lib/bookmarks.ts
 import { useEffect, useMemo, useState } from "react";
 
 const KEY = "notescape.bookmarks";
