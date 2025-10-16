@@ -1,4 +1,3 @@
--- Per-user per-card spaced repetition state
 CREATE TABLE IF NOT EXISTS sr_card_state (
   user_id TEXT NOT NULL,
   card_id UUID NOT NULL REFERENCES flashcards(id) ON DELETE CASCADE,

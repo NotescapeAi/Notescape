@@ -18,6 +18,7 @@ const Dashboard          = lazy(() => import("./pages/Dashboard"));
 const Settings           = lazy(() => import("./pages/Settings"));
 const LogoutPage         = lazy(() => import("./pages/Logout"));
 const FlashcardsPage     = lazy(() => import("./pages/FlashcardsPage")); // NEW
+const Profile            = lazy(() => import("./pages/Profile"));
 
 
 //      Create these files: src/pages/FlashcardsViewMode.tsx & src/pages/FlashcardsStudyMode.tsx
@@ -81,6 +82,7 @@ export default function App() {
           <Route path="/terms"     element={<TermsPage />} />
           <Route path="/privacy"   element={<PrivacyPolicy />} />
           <Route path="/support"   element={<ContactPage />} />
+          <Route path="/profile" element={<Profile />} />
 
           {/* 404 */}
           <Route path="*" element={<NotFound />} />
