@@ -1,9 +1,11 @@
 // src/pages/Classes.tsx
-import React, { useEffect, useMemo, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
-import { motion, AnimatePresence } from "framer-motion";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
+
 import ClassSidebar from "../components/ClassSidebar";
 import ClassHeaderButtons from "../components/ClassHeaderButtons";
+import FileViewer from "../components/FileViewer";
+
 import {
   listClasses,
   createClass,
@@ -21,58 +23,155 @@ import {
   listFlashcards,
   type Flashcard,
 } from "../lib/api";
-import { UploadCloud, Trash2 } from "lucide-react";
-import { FaBook, FaTasks, FaLayerGroup, FaCog, FaSignOutAlt, FaPlus, FaRegCalendarAlt, FaCheckCircle } from "react-icons/fa";
 
-/**
- * Advanced Classes page:
- * - Loads existing classes via listClasses()
- * - Optimistically shows newly created class while createClass() runs
- * - Keeps upload / file / flashcard logic intact
- * - Visual polish: frosted glass + gradient + motion
- *
- * This file uses your existing API helpers from ../lib/api
- */
+/* -------------------- constants / helpers -------------------- */
+const ALLOWED_MIME = new Set<string>([
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation", // .pptx
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",   // .docx
+]);
 
-export default function Classes(): JSX.Element {
+const ALLOWED_EXT = new Set<string>([".pdf", ".pptx", ".docx"]);
+
+function hasAllowedExt(name: string) {
+  const dot = name.lastIndexOf(".");
+  if (dot < 0) return false;
+  return ALLOWED_EXT.has(name.slice(dot).toLowerCase());
+}
+
+function isAllowed(file: File) {
+  // Some browsers mislabel Office docs; accept by extension as a fallback.
+  return ALLOWED_MIME.has(file.type) || hasAllowedExt(file.name);
+}
+
+function prettyBytes(bytes?: number) {
+  if (!Number.isFinite(bytes ?? NaN)) return "—";
+  const u = ["B", "KB", "MB", "GB", "TB"];
+  let i = 0;
+  let n = bytes as number;
+  while (n >= 1024 && i < u.length - 1) {
+    n /= 1024;
+    i++;
+  }
+  return `${n.toFixed(n < 10 && i > 0 ? 2 : 0)} ${u[i]}`;
+}
+
+function timeLocal(s?: string | null) {
+  if (!s) return "—";
+  try {
+    return new Date(s).toLocaleString();
+  } catch {
+    return s;
+  }
+}
+
+/* -------------------- small UI atoms -------------------- */
+function Badge({ children }: { children: React.ReactNode }) {
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        padding: "2px 8px",
+        fontSize: 12,
+        borderRadius: 999,
+        background: "#F2F4F7",
+        color: "#344054",
+        border: "1px solid #E4E7EC",
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
+function Button({
+  children,
+  onClick,
+  kind = "default",
+  title,
+  disabled,
+}: {
+  children: React.ReactNode;
+  onClick?: () => void;
+  kind?: "default" | "primary" | "danger" | "ghost";
+  title?: string;
+  disabled?: boolean;
+}) {
+  const styles: Record<string, React.CSSProperties> = {
+    base: {
+      padding: "8px 12px",
+      borderRadius: 10,
+      fontSize: 14,
+      lineHeight: 1.2,
+      cursor: disabled ? "not-allowed" : "pointer",
+      userSelect: "none",
+      border: "1px solid transparent",
+      display: "inline-flex",
+      alignItems: "center",
+      gap: 8,
+      background: "#fff",
+    },
+    default: { borderColor: "#E4E7EC", background: "#fff" },
+    ghost: { borderColor: "transparent", background: "transparent" },
+    primary: { borderColor: "#7B5FEF", background: "#7B5FEF", color: "#fff" },
+    danger: { borderColor: "#FEE4E2", background: "#FEE4E2", color: "#B42318" },
+    disabled: { opacity: 0.6 },
+  };
+  const style = {
+    ...styles.base,
+    ...(styles[kind] || styles.default),
+    ...(disabled ? styles.disabled : {}),
+  };
+  return (
+    <button onClick={disabled ? undefined : onClick} title={title} style={style} disabled={disabled}>
+      {children}
+    </button>
+  );
+}
+
+function Divider() {
+  return <div style={{ height: 1, background: "#EEF2F6", margin: "12px 0" }} />;
+}
+
+/* -------------------- page -------------------- */
+export default function Classes() {
   const [classes, setClasses] = useState<ClassRow[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [files, setFiles] = useState<FileRow[]>([]);
+
+  const [files, setFiles] = useState<FileRow[] | undefined>([]);
   const [sel, setSel] = useState<Record<string, boolean>>({});
-  const selectedIds = useMemo(() => files.filter((f) => sel[f.id]).map((f) => f.id), [files, sel]);
+  const selectedIds = useMemo(
+    () => (files ?? []).filter((f) => sel[f.id]).map((f) => f.id),
+    [files, sel]
+  );
 
   const [busyUpload, setBusyUpload] = useState(false);
   const [busyFlow, setBusyFlow] = useState(false);
   const [dropping, setDropping] = useState(false);
+  const [invalidDropCount, setInvalidDropCount] = useState(0);
+
   const [preview, setPreview] = useState<ChunkPreview[] | null>(null);
   const [, setCards] = useState<Flashcard[]>([]);
+  const [activeFile, setActiveFile] = useState<FileRow | null>(null);
+  const [showUploadHint, setShowUploadHint] = useState(false);
+
   const location = useLocation();
-  const API_BASE_FOR_DOWNLOADS = "";
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  // UI modal state for creating classes
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [newClassName, setNewClassName] = useState("");
-  const [newClassInstructor, setNewClassInstructor] = useState("");
-  const [creating, setCreating] = useState(false);
-
-  // ---------- Fetch classes on mount ----------
+  // load classes once
   useEffect(() => {
-    (async () => {
-      try {
-        const cs = await listClasses();
-        setClasses(cs || []);
-      } catch (err) {
-        console.error("Failed to load classes", err);
-      }
-    })();
+    (async () => setClasses(await listClasses()))();
   }, []);
 
-  // If route passed selectId
+  // if we arrived from Flashcards with a class id, auto-select it
   useEffect(() => {
     const st = (location as any)?.state;
     if (st?.selectId) setSelectedId(Number(st.selectId));
   }, [location]);
 
+  // load files + cards on class change
   useEffect(() => {
     if (selectedId == null) {
       setFiles([]);
@@ -82,88 +181,61 @@ export default function Classes(): JSX.Element {
     }
     (async () => {
       const fs = await listFiles(selectedId);
-      setFiles(fs);
+      setFiles(fs ?? []); // null-safe
       setSel({});
       try {
         setCards(await listFlashcards(selectedId));
-      } catch {}
+      } catch {
+        /* ok if empty */
+      }
     })();
   }, [selectedId]);
 
-  // ---------- Class CRUD (wired + optimistic create) ----------
-  async function handleCreate(name: string, instructor?: string) {
-    if (!name) return;
-    setCreating(true);
+  // Vite dev proxy handles /api and /uploads
+  const API_BASE_FOR_DOWNLOADS = "";
 
-    // optimistic id for UI (negative so it won't clash)
-    const tempId = Date.now() * -1;
-    const tempClass: ClassRow = {
-      id: tempId,
-      name,
-      instructor: instructor || "",
-      created_at: new Date().toISOString(),
-    } as ClassRow;
-
-    // show instantly
-    setClasses((xs) => [tempClass, ...xs]);
-    setShowCreateModal(false);
-    setNewClassName("");
-    setNewClassInstructor("");
-
-    try {
-      const row = await createClass({ name, subject: instructor || "General" });
-      // replace temp with real
-      setClasses((xs) => xs.map((c) => (c.id === tempId ? row : c)));
-      // optionally select the new class immediately
-      setSelectedId(row.id);
-    } catch (err) {
-      // remove temp on failure
-      setClasses((xs) => xs.filter((c) => c.id !== tempId));
-      alert(err instanceof Error ? err.message : "Failed to create class");
-    } finally {
-      setCreating(false);
-    }
+  /* -------- class CRUD -------- */
+  async function handleCreate(name: string) {
+    const row = await createClass({ name, subject: "General" });
+    setClasses((xs) => [...xs, row]);
   }
-
   async function handleRename(id: number, name: string) {
-    try {
-      const row = await updateClass(id, { name });
-      setClasses((xs) => xs.map((c) => (c.id === id ? row : c)));
-    } catch {
-      alert("Rename failed");
-    }
+    const row = await updateClass(id, { name });
+    setClasses((xs) => xs.map((c) => (c.id === id ? row : c)));
   }
-
   async function handleDeleteClass(id: number) {
-    if (!confirm("Delete this class?")) return;
-    try {
-      await deleteClass(id);
-      setClasses((xs) => xs.filter((c) => c.id !== id));
-      if (selectedId === id) {
-        setSelectedId(null);
-        setFiles([]);
-        setSel({});
-        setCards([]);
-      }
-    } catch {
-      alert("Delete failed");
+    await deleteClass(id);
+    setClasses((xs) => xs.filter((c) => c.id !== id));
+    if (selectedId === id) {
+      setSelectedId(null);
+      setFiles([]);
+      setSel({});
+      setCards([]);
     }
   }
 
-  // ---------- File upload helpers (kept from your previous code) ----------
+  /* -------- uploads (drag/drop + click) -------- */
   function acceptFile(f: File) {
-    return ["application/pdf", "image/png", "image/jpeg"].includes(f.type);
+    return isAllowed(f);
   }
 
   async function uploadMany(fileList: FileList | File[]) {
-    if (!selectedId) return alert("Select a class first.");
-    const arr = Array.from(fileList).filter(acceptFile);
-    if (arr.length === 0) return;
+    if (!selectedId) {
+      alert("Select a class first.");
+      return;
+    }
+    const arr = Array.from(fileList);
+    const accepted = arr.filter(acceptFile);
+    const rejected = arr.filter((f) => !acceptFile(f));
+    setInvalidDropCount(rejected.length);
+
+    if (accepted.length === 0) return;
+
     setBusyUpload(true);
     try {
-      for (const f of arr) {
+      for (const f of accepted) {
         const row = await uploadFile(selectedId, f);
-        setFiles((xs) => [row, ...xs]);
+        setFiles((xs) => [row, ...(xs ?? [])]);
       }
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : "Upload failed");
@@ -178,7 +250,6 @@ export default function Classes(): JSX.Element {
     await uploadMany(e.target.files);
     e.target.value = "";
   }
-
   function onDragOver(e: React.DragEvent<HTMLDivElement>) {
     e.preventDefault();
     e.dataTransfer.dropEffect = "copy";
@@ -193,10 +264,10 @@ export default function Classes(): JSX.Element {
     await uploadMany(e.dataTransfer.files);
   }
 
-  // ---------- selection / delete file ----------
+  /* -------- selection helpers -------- */
   function toggleAll(checked: boolean) {
     const m: Record<string, boolean> = {};
-    if (checked) files.forEach((f) => (m[f.id] = true));
+    if (checked) (files ?? []).forEach((f) => (m[f.id] = true));
     setSel(m);
   }
   function toggleOne(id: string, checked: boolean) {
@@ -207,20 +278,22 @@ export default function Classes(): JSX.Element {
     if (!confirm(`Delete "${filename}"?`)) return;
     try {
       await deleteFile(fileId);
-      setFiles((xs) => xs.filter((f) => f.id !== fileId));
+      setFiles((xs) => (xs ?? []).filter((f) => f.id !== fileId));
     } catch {
       alert("Failed to delete file");
     }
   }
 
-  // ---------- Flashcard generation (kept) ----------
+  /* -------- pipeline: chunks → embeddings → cards -------- */
   async function onGenerateFlashcards() {
     if (!selectedId) return alert("Select a class first");
-    if (files.length === 0) return alert("Upload at least one file first");
+    if ((files?.length ?? 0) === 0) return alert("Upload at least one file first");
 
-    const ids = selectedIds.length ? selectedIds : files.map((f) => f.id);
+    const ids = selectedIds.length ? selectedIds : (files ?? []).map((f) => f.id);
+
     setBusyFlow(true);
     try {
+      // 1) chunk
       const res: ChunkPreview[] = await createChunks({
         file_ids: ids,
         by: "page",
@@ -229,221 +302,415 @@ export default function Classes(): JSX.Element {
         preview_limit_per_file: 2,
       });
       setPreview(res);
+
+      // 2) embeddings
       await buildEmbeddings(selectedId, 1000);
-      const difficulty = (localStorage.getItem("fc_pref_difficulty") as "easy" | "medium" | "hard") || "medium";
+
+      // 3) generate cards
+      const difficulty =
+        (localStorage.getItem("fc_pref_difficulty") as
+          | "easy"
+          | "medium"
+          | "hard") || "medium";
+
       const created = await generateFlashcards({
         class_id: selectedId,
         file_ids: ids,
         top_k: 12,
         difficulty,
       });
+
       setCards(created);
       alert(`Created ${created.length} flashcards`);
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Failed to generate flashcards";
+      const msg =
+        e instanceof Error ? e.message : "Failed to generate flashcards";
       alert(msg);
     } finally {
       setBusyFlow(false);
     }
   }
 
-  // ---------- helper UI small components ----------
-  const StatCard: React.FC<{ title: string; value: string; sub?: string }> = ({ title, value, sub }) => (
-    <motion.div whileHover={{ y: -4 }} className="bg-white/80 backdrop-blur-sm rounded-2xl p-4 shadow-sm border border-white/40">
-      <p className="text-xs text-gray-600">{title}</p>
-      <p className="text-xl font-semibold text-gray-800 mt-1">{value}</p>
-      {sub && <p className="text-xs text-green-600 mt-1">{sub}</p>}
-    </motion.div>
-  );
-
-  // recent activity for UI (small)
-  const recent = [
-    { text: "Completed Physics Quiz", when: "2 hrs ago", icon: <FaCheckCircle className="text-green-500" /> },
-    { text: "Reviewed 20 Flashcards (Math)", when: "6 hrs ago", icon: <FaLayerGroup className="text-indigo-500" /> },
-    { text: "Started Focus Session (45m)", when: "Yesterday", icon: <FaRegCalendarAlt className="text-indigo-400" /> },
-  ];
-
-  // Quick stats values computed from current state
-  const quickTotalClasses = classes.length.toString();
-  const quickFilesUploaded = files.length > 0 ? files.length.toString() : "—";
-  const quickFlashcards = "—"; // you can compute or fetch if you have that API
+  /* -------------------- UI -------------------- */
+  const currentClass = selectedId
+    ? classes.find((c) => c.id === selectedId)?.name
+    : null;
 
   return (
-    <div className="grid grid-cols-[260px_1fr] min-h-screen bg-gradient-to-br from-[#DBD1F3] via-[#E8E0FF] to-white">
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "320px 1fr",
+        minHeight: "100vh",
+        background: "#FAFAFB",
+      }}
+    >
       {/* Sidebar */}
-      <aside className="bg-gradient-to-br from-[#D0C4F2] to-[#E4DAFF] border-r border-white/40 shadow-inner">
-        <ClassSidebar
-          items={classes}
-          selectedId={selectedId}
-          onSelect={(id) => setSelectedId(id)}
-          onCreate={(name) => handleCreate(name)}
-          onRename={(id, name) => handleRename(id, name)}
-          onDelete={(id) => handleDeleteClass(id)}
-        />
-      </aside>
+      <ClassSidebar
+        items={classes}
+        selectedId={selectedId}
+        onSelect={(id) => setSelectedId(id)}
+        onCreate={handleCreate}
+        onRename={handleRename}
+        onDelete={handleDeleteClass}
+      />
 
-      {/* Main Section */}
-      <section className="p-8 overflow-y-auto">
-        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }} className="mb-6">
-          <div className="flex items-center justify-between gap-4 flex-wrap">
-            <div>
-              <h2 className="text-3xl font-extrabold bg-gradient-to-r from-violet-700 to-indigo-600 text-transparent bg-clip-text">
-                {selectedId ? classes.find((c) => c.id === selectedId)?.name ?? "Workspace" : "Workspace"}
-              </h2>
-              {selectedId && (
-                <div className="flex items-center gap-2 mt-2">
-                  <span className="text-xs bg-violet-100 text-violet-700 px-2 py-1 rounded-full font-semibold">
-                    {files.length} file{files.length !== 1 ? "s" : ""}
-                  </span>
-                  <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full font-semibold">
-                    {selectedIds.length ? `${selectedIds.length} selected` : "All"}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            <div className="flex items-center gap-4">
-              {/* Upload area & header buttons (existing components) */}
-              {selectedId && (
-                <div
-                  onDragOver={onDragOver}
-                  onDragLeave={onDragLeave}
-                  onDrop={onDrop}
-                  onClick={() => document.getElementById("file-input-hidden")?.click()}
-                  title="Drag PDFs/PNGs here or click to choose"
-                  className={`flex items-center gap-2 px-5 py-3 rounded-xl cursor-pointer backdrop-blur-md shadow-md border transition-all duration-200 ${dropping ? "border-violet-500 bg-violet-100/70" : "border-gray-200 bg-white/70 hover:bg-gray-100/80"
-                    }`}
-                >
-                  <input id="file-input-hidden" type="file" accept="application/pdf,image/png,image/jpeg" multiple className="hidden" onChange={onUploadChange} />
-                  <UploadCloud size={18} className="text-violet-700" />
-                  <span className="text-sm font-medium text-gray-700">{busyUpload ? "Uploading…" : "Drop or Choose File"}</span>
-                </div>
-              )}
-
-              <ClassHeaderButtons classId={selectedId ? String(selectedId) : ""} onGenerate={() => onGenerateFlashcards()} />
-
-              {/* Floating UI-only Add button that also calls handleCreate via modal below */}
-              <button className="hidden md:inline-flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-full shadow hover:brightness-105 transition" onClick={() => setShowCreateModal(true)}>
-                <FaPlus /> New Class
-              </button>
-            </div>
+      {/* Main */}
+      <section style={{ padding: 20 }}>
+        {/* Header */}
+        <div
+          style={{
+            background: "#fff",
+            border: "1px solid #EEF2F6",
+            borderRadius: 14,
+            padding: 16,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+            <h2 style={{ margin: 0 }}>{currentClass ?? "Workspace"}</h2>
+            {busyUpload && <Badge>Uploading…</Badge>}
+            {busyFlow && <Badge>Processing…</Badge>}
+            {showUploadHint && <Badge>Allowed: PDF • PPTX • DOCX</Badge>}
           </div>
-        </motion.div>
 
-        {/* Quick Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <StatCard title="Total Classes" value={quickTotalClasses} />
-          <StatCard title="Files Uploaded" value={quickFilesUploaded} />
-          <StatCard title="Flashcards Generated" value={quickFlashcards} />
+          {selectedId && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <Button
+                kind="default"
+                onClick={() => {
+                  setShowUploadHint(true);
+                  setTimeout(() => setShowUploadHint(false), 2200);
+                  fileInputRef.current?.click();
+                }}
+                title="Choose files"
+              >
+                ⬆️ Upload
+              </Button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept={[
+                  "application/pdf",
+                  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                  ".pdf,.pptx,.docx",
+                ].join(",")}
+                style={{ display: "none" }}
+                multiple
+                onChange={onUploadChange}
+              />
+              <ClassHeaderButtons
+                classId={String(selectedId)}
+                onGenerate={() => onGenerateFlashcards()}
+              />
+            </div>
+          )}
         </div>
 
-        {/* Main content (table or empty prompt) */}
+        <Divider />
+
         {!selectedId ? (
-          <p className="text-gray-500 italic">Select a class from the left sidebar or create a new one.</p>
+          <div
+            style={{
+              background: "#fff",
+              border: "1px solid #EEF2F6",
+              borderRadius: 14,
+              padding: 24,
+              color: "#667085",
+            }}
+          >
+            Select a class from the left to start.
+          </div>
         ) : (
-          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35 }} className="bg-white/80 backdrop-blur-xl rounded-2xl shadow-lg border border-white/40 p-6">
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse min-w-[720px]">
-                <thead className="bg-gradient-to-r from-[#000000] to-[#000000] text-white/90">
-                  <tr>
-                    <th className="py-3 px-4 text-left w-8">
-                      <input type="checkbox" checked={files.length > 0 && selectedIds.length === files.length} onChange={(e) => toggleAll(e.target.checked)} />
+          <>
+            {/* Dropzone */}
+            <div
+              onDragOver={onDragOver}
+              onDragLeave={onDragLeave}
+              onDrop={onDrop}
+              onClick={() => {
+                setShowUploadHint(true);
+                setTimeout(() => setShowUploadHint(false), 2200);
+                fileInputRef.current?.click();
+              }}
+              role="button"
+              title="Drag & drop files here or click to choose"
+              style={{
+                border: `2px dashed ${dropping ? "#7B5FEF" : "#cfd4dc"}`,
+                background: dropping ? "rgba(123,95,239,0.06)" : "#fff",
+                borderRadius: 14,
+                padding: 20,
+                cursor: "pointer",
+                userSelect: "none",
+              }}
+            >
+              <div style={{ fontWeight: 600, marginBottom: 6 }}>
+                Drop files here or click to upload
+              </div>
+              <div style={{ fontSize: 13, color: "#475467" }}>
+                {dropping ? "Allowed: PDF, PPTX, DOCX" : "Multiple files supported"}
+              </div>
+              {invalidDropCount > 0 && (
+                <div
+                  style={{
+                    marginTop: 10,
+                    border: "1px solid #FEE4E2",
+                    background: "#FEF3F2",
+                    color: "#B42318",
+                    borderRadius: 10,
+                    padding: 10,
+                    fontSize: 13,
+                  }}
+                >
+                  Ignored {invalidDropCount} unsupported file{invalidDropCount > 1 ? "s" : ""}.
+                  Allowed types: PDF, PPTX, DOCX.
+                </div>
+              )}
+            </div>
+
+            <Divider />
+
+            {/* Files table */}
+            <div
+              style={{
+                background: "#fff",
+                border: "1px solid #EEF2F6",
+                borderRadius: 14,
+                overflow: "hidden",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: 12,
+                  borderBottom: "1px solid #EEF2F6",
+                }}
+              >
+                <div style={{ fontWeight: 700 }}>Files</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <Badge>{selectedIds.length} selected</Badge>
+                  {selectedIds.length > 0 && (
+                    <Button
+                      kind="danger"
+                      onClick={async () => {
+                        const toDelete = (files ?? []).filter((f) => selectedIds.includes(f.id));
+                        if (!confirm(`Delete ${toDelete.length} file(s)?`)) return;
+                        for (const f of toDelete) await onDeleteFile(f.id, f.filename);
+                        setSel({});
+                      }}
+                    >
+                      🗑️ Delete selected
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              <table
+                style={{
+                  width: "100%",
+                  borderCollapse: "collapse",
+                  fontSize: 14,
+                }}
+              >
+                <thead>
+                  <tr style={{ background: "#FAFAFB" }}>
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #EEF2F6", width: 42, padding: "10px 12px" }}>
+                      <input
+                        type="checkbox"
+                        aria-label="Select all"
+                        checked={(files?.length ?? 0) > 0 && selectedIds.length === (files?.length ?? 0)}
+                        onChange={(e) => toggleAll(e.target.checked)}
+                      />
                     </th>
-                    <th className="py-3 px-4 text-left">File</th>
-                    <th className="py-3 px-4 text-left">Size</th>
-                    <th className="py-3 px-4 text-left">When</th>
-                    <th className="py-3 px-4 text-left">Open</th>
-                    <th className="py-3 px-4 text-left">Actions</th>
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #EEF2F6", padding: "10px 12px" }}>
+                      File
+                    </th>
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #EEF2F6", padding: "10px 12px", width: 120 }}>
+                      Size
+                    </th>
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #EEF2F6", padding: "10px 12px", width: 220 }}>
+                      Uploaded
+                    </th>
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #EEF2F6", padding: "10px 12px", width: 100 }}>
+                      Open
+                    </th>
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #EEF2F6", padding: "10px 12px", width: 120 }}>
+                      Actions
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {files.map((f) => (
-                    <tr key={f.id} className="border-t hover:bg-[#F4EEFF]/50 transition-all">
-                      <td className="py-3 px-4 align-top">
-                        <input type="checkbox" checked={!!sel[f.id]} onChange={(e) => toggleOne(f.id, e.target.checked)} />
+                  {(files ?? []).map((f) => (
+                    <tr key={f.id} style={{ borderBottom: "1px solid #F2F4F7" }}>
+                      <td style={{ padding: "10px 12px" }}>
+                        <input
+                          type="checkbox"
+                          checked={!!sel[f.id]}
+                          onChange={(e) => toggleOne(f.id, e.target.checked)}
+                          aria-label={`Select ${f.filename}`}
+                        />
                       </td>
-                      <td className="py-3 px-4 align-top">
-                        <div className="font-medium text-gray-800">{f.filename}</div>
-                        <div className="text-xs text-gray-500 mt-1">{f.content_type || ""}</div>
+                      <td style={{ padding: "10px 12px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span
+                            style={{ fontWeight: 600, color: "#101828", cursor: "pointer" }}
+                            onClick={() => setActiveFile(f)}
+                            title="Open preview"
+                          >
+                            {f.filename}
+                          </span>
+                          <Badge>{(f.filename.split(".").pop() || "").toUpperCase()}</Badge>
+                        </div>
                       </td>
-                      <td className="py-3 px-4 text-gray-600 align-top">{(f.size_bytes / 1024 / 1024).toFixed(2)} MB</td>
-                      <td className="py-3 px-4 text-gray-600 align-top">{f.uploaded_at ? new Date(f.uploaded_at).toLocaleString() : "—"}</td>
-                      <td className="py-3 px-4 align-top">
-                        <a href={`${API_BASE_FOR_DOWNLOADS}${f.storage_url}`} target="_blank" rel="noreferrer" className="text-violet-700 font-semibold hover:underline">
-                          View
-                        </a>
+                      <td style={{ padding: "10px 12px" }}>{prettyBytes(f.size_bytes)}</td>
+                      <td style={{ padding: "10px 12px" }}>{timeLocal(f.uploaded_at)}</td>
+                      <td style={{ padding: "10px 12px" }}>
+                        <Button kind="ghost" onClick={() => setActiveFile(f)} title="Open in viewer">
+                          view
+                        </Button>
                       </td>
-                      <td className="py-3 px-4 align-top">
-                        <button onClick={() => onDeleteFile(f.id, f.filename)} className="inline-flex items-center gap-2 text-sm text-red-600 hover:text-red-800 font-semibold">
-                          <Trash2 size={14} /> Delete
-                        </button>
+                      <td style={{ padding: "10px 12px" }}>
+                        <Button kind="default" onClick={() => onDeleteFile(f.id, f.filename)} title="Delete file">
+                          🗑️ Delete
+                        </Button>
                       </td>
                     </tr>
                   ))}
-
-                  {files.length === 0 && (
+                  {(files?.length ?? 0) === 0 && (
                     <tr>
-                      <td colSpan={6} className="text-center py-8 text-gray-500 italic">
-                        No files yet. Upload PDFs or images to generate flashcards.
+                      <td colSpan={6} style={{ padding: 18, color: "#667085" }}>
+                        No files yet. Drop a PDF, PPTX, or DOCX to begin.
                       </td>
                     </tr>
                   )}
                 </tbody>
               </table>
             </div>
-          </motion.div>
+
+            {/* Chunk preview dialog */}
+            {preview && (
+              <div
+                role="dialog"
+                aria-modal="true"
+                style={{
+                  position: "fixed",
+                  inset: 0,
+                  background: "rgba(16,24,40,0.35)",
+                  display: "flex",
+                  alignItems: "flex-end",
+                  zIndex: 50,
+                }}
+                onClick={() => setPreview(null)}
+              >
+                <div
+                  style={{
+                    width: "min(920px, 96vw)",
+                    maxHeight: "80vh",
+                    margin: "0 auto 24px",
+                    background: "#fff",
+                    borderRadius: 16,
+                    boxShadow: "0 20px 50px rgba(16,24,40,.25)",
+                    overflow: "hidden",
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      padding: "12px 16px",
+                      borderBottom: "1px solid #eee",
+                    }}
+                  >
+                    <strong>Chunk Previews</strong>
+                    <Button kind="default" onClick={() => setPreview(null)}>
+                      Close
+                    </Button>
+                  </div>
+                  <div
+                    style={{
+                      padding: 16,
+                      overflow: "auto",
+                      maxHeight: "calc(80vh - 56px)",
+                    }}
+                  >
+                    {preview.map((p) => (
+                      <div key={p.file_id} style={{ marginBottom: 18 }}>
+                        <div style={{ fontWeight: 800, marginBottom: 6 }}>
+                          File {p.file_id} — {p.total_chunks} chunk(s)
+                        </div>
+                        {p.total_chunks === 0 ? (
+                          <div
+                            style={{
+                              border: "1px solid #FDEFC7",
+                              background: "#FFF8E6",
+                              color: "#8B5E00",
+                              borderRadius: 12,
+                              padding: 12,
+                            }}
+                          >
+                            No text extracted (could be a scanned or unparseable file).
+                          </div>
+                        ) : (
+                          <div style={{ display: "grid", gap: 10 }}>
+                            {p.previews.map((pr) => (
+                              <div
+                                key={pr.idx}
+                                style={{
+                                  border: "1px solid #E4E7EC",
+                                  borderRadius: 12,
+                                  padding: 12,
+                                }}
+                              >
+                                <div style={{ fontWeight: 700, marginBottom: 6 }}>
+                                  Chunk #{pr.idx}{" "}
+                                  {pr.page_start ? `(pages ${pr.page_start}–${pr.page_end})` : ""}{" "}
+                                  <span style={{ fontWeight: 400, color: "#475467", marginLeft: 6 }}>
+                                    · {pr.char_len} chars
+                                  </span>
+                                </div>
+                                <pre
+                                  style={{
+                                    margin: 0,
+                                    whiteSpace: "pre-wrap",
+                                    fontFamily:
+                                      "ui-monospace, SFMono-Regular, Menlo, monospace",
+                                    fontSize: 13,
+                                    lineHeight: 1.45,
+                                  }}
+                                >
+                                  {pr.sample}
+                                </pre>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* In-app file viewer (PDF/Office preview in iframe/object) */}
+            {activeFile && (
+              <FileViewer
+                url={`${API_BASE_FOR_DOWNLOADS}${activeFile.storage_url}`}
+                name={activeFile.filename}
+                mime={(activeFile as any).mime || null}
+                onClose={() => setActiveFile(null)}
+              />
+            )}
+          </>
         )}
       </section>
-
-      {/* Floating Create Button (responsive) */}
-      <div className="fixed right-6 bottom-6 z-50">
-        <button onClick={() => setShowCreateModal(true)} className="bg-indigo-600 text-white w-14 h-14 rounded-full flex items-center justify-center text-xl shadow-2xl hover:scale-105 transition">
-          <FaPlus />
-        </button>
-      </div>
-
-      {/* Floating toast while busyFlow */}
-      <AnimatePresence>
-        {busyFlow && (
-          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 12 }} className="fixed right-6 bottom-6 bg-white/90 backdrop-blur-md border border-gray-200 rounded-full px-5 py-3 shadow-xl flex items-center gap-3 z-50">
-            <div className="w-3 h-3 rounded-full bg-violet-600 animate-pulse" />
-            <div className="text-sm text-gray-700 font-medium">Processing files…</div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ===== Create Class Modal (UI with wired createClass) ===== */}
-      <AnimatePresence>
-        {showCreateModal && (
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-60 flex items-center justify-center">
-            <div className="absolute inset-0 bg-black/40" onClick={() => setShowCreateModal(false)} />
-
-            <motion.div initial={{ y: 20, opacity: 0, scale: 0.98 }} animate={{ y: 0, opacity: 1, scale: 1 }} exit={{ y: 20, opacity: 0, scale: 0.98 }} transition={{ type: "spring", stiffness: 300, damping: 28 }} className="relative z-50 w-full max-w-md mx-4 bg-white/80 backdrop-blur-md border border-white/30 rounded-2xl p-6 shadow-xl">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-gray-800">Create New Class</h3>
-                <button onClick={() => setShowCreateModal(false)} className="text-gray-500 hover:text-gray-700">✕</button>
-              </div>
-
-              <form onSubmit={(e) => { e.preventDefault(); handleCreate(newClassName, newClassInstructor); }} className="space-y-3">
-                <div>
-                  <label className="text-xs text-gray-600">Class Name</label>
-                  <input value={newClassName} onChange={(e) => setNewClassName(e.target.value)} required placeholder="e.g. Math 101" className="w-full mt-1 px-3 py-2 rounded-lg border border-gray-200 bg-white/70" />
-                </div>
-
-                <div>
-                  <label className="text-xs text-gray-600">Instructor</label>
-                  <input value={newClassInstructor} onChange={(e) => setNewClassInstructor(e.target.value)} placeholder="e.g. Dr. Khan" className="w-full mt-1 px-3 py-2 rounded-lg border border-gray-200 bg-white/70" />
-                </div>
-
-                <div className="flex items-center justify-end gap-2 pt-3">
-                  <button type="button" onClick={() => setShowCreateModal(false)} className="px-4 py-2 rounded-lg text-sm border border-gray-200">Cancel</button>
-                  <button type="submit" disabled={creating} className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm">{creating ? "Creating…" : "Create"}</button>
-                </div>
-              </form>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }
