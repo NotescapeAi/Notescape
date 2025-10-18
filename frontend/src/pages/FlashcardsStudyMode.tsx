@@ -1,13 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
-<<<<<<< HEAD
-
-import { Link, useLocation, useParams } from "react-router-dom";
-=======
-import { Link, useLocation, useParams, useNavigate } from "react-router-dom";
->>>>>>> Hajra-space-repetition
+import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
+import useBookmarks from "../lib/bookmarks";
+import { deleteFlashcard, type Flashcard } from "../lib/api";
 import { ArrowLeft, ChevronLeft, ChevronRight, Eye, EyeOff, Play } from "lucide-react";
 import KebabMenu from "../components/KebabMenu";
-import useBookmarks from "../lib/bookmarks";
+
 
 export type Flashcard = {
   class_id: number;
@@ -43,17 +40,10 @@ async function fetchAllCardsForClass(classId: number) {
   return Array.isArray(j) ? j : j.cards ?? [];
 }
 
-<<<<<<< HEAD
-import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, ChevronLeft, ChevronRight} from "lucide-react";
-import KebabMenu from "../components/KebabMenu";
-import useBookmarks from "../lib/bookmarks";
-import { deleteFlashcard, type Flashcard } from "../lib/api";
 
 
-=======
-// Submit review function
->>>>>>> Hajra-space-repetition
+
+
 async function submitReview(card_id: string, rating: 1 | 2 | 3 | 4 | 5) {
   const r = await fetch(`/api/sr/review`, {
     method: "POST",
