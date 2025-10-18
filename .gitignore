@@ -30,3 +30,7 @@ frontend/node_modules/
 coverage/
 frontend/coverage/
 
+
+# artifacts
+*.zip
+sr_tables.sql

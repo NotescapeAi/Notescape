@@ -25,7 +25,6 @@ import {
 import { Line, Doughnut } from "react-chartjs-2";
 import type { ChartData, ChartOptions } from "chart.js";
 
-// Chart setup
 ChartJS.register(
   CategoryScale,
   LinearScale,
@@ -37,7 +36,10 @@ ChartJS.register(
   ArcElement
 );
 
-// Reusable SidebarItem and StatCard components
+/* -------------------------
+   Small reusable components
+   -------------------------*/
+
 type SidebarItemProps = {
   to: string;
   icon: React.ReactNode;
@@ -75,7 +77,9 @@ const StatCard: React.FC<{ title: string; value: string; sub?: string }> = ({
   </motion.div>
 );
 
-// Dashboard main component
+/* -------------------------
+   Dashboard main component
+   -------------------------*/
 export default function Dashboard(): JSX.Element {
   const location = useLocation();
 
@@ -192,22 +196,19 @@ export default function Dashboard(): JSX.Element {
           </div>
 
           {/* profile */}
-          <Link to="/profile" className="flex items-center gap-4 group cursor-pointer">
+          <div className="flex items-center gap-4">
             <div className="flex flex-col items-end">
               <div className="text-sm text-gray-500">Good evening</div>
-              <div className="text-sm font-semibold text-indigo-700 group-hover:underline">
-                Mahnum Zahid
-              </div>
+              <div className="text-sm font-semibold">Mahnum Zahid</div>
             </div>
             <div
-              className="w-12 h-12 rounded-full bg-gradient-to-br from-pink-200 via-violet-200 to-indigo-200 flex items-center justify-center shadow-md text-2xl group-hover:scale-[1.03] transition"
-              title="Open profile"
-              role="button"
-              aria-label="Open profile"
+              aria-hidden="true"
+              className="w-12 h-12 rounded-full bg-gradient-to-br from-pink-200 via-violet-200 to-indigo-200 flex items-center justify-center shadow-md text-2xl"
+              title="Profile"
             >
               👩
             </div>
-          </Link>
+          </div>
         </div>
 
         {/* Top stats row */}
@@ -282,6 +283,88 @@ export default function Dashboard(): JSX.Element {
               </div>
             </div>
           </motion.div>
+        </div>
+
+        {/* Goals + Recent Activity */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+          {/* Goals */}
+          <motion.section
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-white rounded-2xl p-6 shadow-sm border border-indigo-50 lg:col-span-2"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-lg font-semibold text-gray-800">Study Goals</h3>
+                <p className="text-xs text-gray-500 mt-1">Weekly target & progress</p>
+              </div>
+              <div className="text-xs text-gray-500">Goal: 20 hrs</div>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <div className="flex justify-between text-sm text-gray-600 mb-2">
+                  <span>Weekly Study</span>
+                  <span className="font-semibold text-gray-800">17.4 / 20 hrs</span>
+                </div>
+                <div className="w-full bg-gray-100 h-3 rounded-full overflow-hidden">
+                  <div className="h-3 rounded-full bg-indigo-600 transition-all" style={{ width: "87%" }} />
+                </div>
+              </div>
+
+              <div>
+                <div className="flex justify-between text-sm text-gray-600 mb-2">
+                  <span>Flashcards Goal</span>
+                  <span className="font-semibold text-gray-800">420 / 500</span>
+                </div>
+                <div className="w-full bg-gray-100 h-3 rounded-full overflow-hidden">
+                  <div className="h-3 rounded-full bg-violet-500 transition-all" style={{ width: "84%" }} />
+                </div>
+              </div>
+
+              <div className="flex gap-3 mt-4">
+                <button className="px-4 py-2 bg-indigo-600 text-white rounded-lg font-medium">
+                  Start Focus Session
+                </button>
+                <Link to="/goals" className="px-4 py-2 border border-indigo-100 rounded-lg text-sm hover:bg-gray-50">
+                  Manage Goals
+                </Link>
+              </div>
+            </div>
+          </motion.section>
+
+          {/* Recent Activity */}
+          <motion.aside
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-white rounded-2xl p-4 shadow-sm border border-indigo-50"
+          >
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-sm font-semibold text-gray-800">Recent Activity</h4>
+              <Link to="/activity" className="text-xs text-indigo-600 hover:underline">
+                See all
+              </Link>
+            </div>
+
+            <div className="space-y-3">
+              {recent.map((r, i) => (
+                <div key={i} className="flex items-start gap-3">
+                  <div className="w-9 h-9 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-600">
+                    {r.icon}
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-sm text-gray-800 font-medium">{r.text}</div>
+                    <div className="text-xs text-gray-500 mt-1">{r.when}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </motion.aside>
+        </div>
+
+        {/* Footer */}
+        <div className="text-xs text-gray-400 text-center mt-8">
+          Need more polish? I can connect real data endpoints, add dark mode or animate counts.
         </div>
       </main>
     </div>
