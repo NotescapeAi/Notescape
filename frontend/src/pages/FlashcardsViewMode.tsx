@@ -82,7 +82,7 @@ export default function FlashcardsViewMode() {
 
   const progress = useMemo(() => (cards.length ? `${idx + 1} / ${cards.length}` : "0 / 0"), [idx, cards.length]);
 
-  // delete current card
+  // delete current card 
   async function handleDelete(c?: Flashcard) {
     if (!c?.id) return;
     if (!confirm("Delete this flashcard?")) return;
