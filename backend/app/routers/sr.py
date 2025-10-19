@@ -1,171 +1,119 @@
-from typing import Optional, List
-from fastapi import APIRouter, HTTPException, Header, Query
-from pydantic import BaseModel, Field
-from datetime import datetime, timezone, timedelta
-import os
-
+from fastapi import APIRouter
+from pydantic import BaseModel
 from app.core.db import db_conn
-from app.core.scheduler import BrainLikeScheduler, SRState
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo  # Python 3.9+ required for timezone handling
+import logging
 
-router = APIRouter(prefix="/api/sr", tags=["spaced-repetition"])
-sched = BrainLikeScheduler()
+router = APIRouter()
 
-# Demo-friendly fast intervals (minutes)
-FAST_INTERVALS = {
-    1: timedelta(minutes=1),
-    2: timedelta(minutes=3),
-    3: timedelta(minutes=10),
-    4: timedelta(minutes=30),
-    5: timedelta(minutes=60),
-}
+# Define Pakistani timezone
+PKT = ZoneInfo("Asia/Karachi")
 
-# ---------- MODELS ----------
-
+# Flashcard model to receive data
 class Flashcard(BaseModel):
-    # FIX: include class_id so our query construction doesn't fail
-    class_id: int
-    id: str
+    card_id: str
+    difficulty: int  # 1–5 user rating
+    retrievability: float  # 0–1, probability of recall
+    stability: float  # Stability in minutes or days
+    difficulty_factor: float  # Difficulty coefficient
     question: str
     answer: str
-    hint: Optional[str] = None
-    difficulty: Optional[str] = "medium"
-    # Keep as ISO string for the frontend (nullable)
-    due_at: Optional[str] = None
 
+# FSRS Algorithm: Calculating next review time based on difficulty, stability, and retrievability
+def calculate_fsrs(card: Flashcard):
+    R = card.retrievability
+    S = card.stability
+    D = card.difficulty_factor
 
-class ReviewReq(BaseModel):
-    card_id: str
-    rating: int = Field(ge=1, le=5)
+    # More difficult → lower stability
+    if card.difficulty <= 2:
+        S = 1  # review very soon
+    elif card.difficulty == 3:
+        S = max(5, S * 1.1)  # small improvement
+    elif card.difficulty >= 4:
+        S = max(60, S * 1.5)  # increase stability for easier cards (rating 5 -> 60 minutes)
 
+    # Adjust retrievability (bounded 0–1)
+    R = min(1.0, max(0.0, R + (card.difficulty - 3) * 0.1))
 
-def _get_user_id(x_user_id: Optional[str]) -> str:
-    # Dev-safe fallback when header missing
-    return (x_user_id or "dev-user").strip()
+    # Get current time in Pakistani timezone
+    now_local = datetime.now(PKT)
+    next_local = now_local + timedelta(minutes=S)  # Add stability to current time
 
+    # Convert next review time to UTC for storage
+    next_utc = next_local.astimezone(timezone.utc)
 
-# ---------- ROUTES ----------
+    # Return updated state with next review time in UTC
+    return {"retrievability": R, "stability": S, "next_review": next_utc}
 
-@router.get("/due/{class_id}", response_model=List[Flashcard])
-async def due_cards(
-    class_id: int,
-    limit: int = Query(default=30, ge=1, le=10000),
-    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
-):
-    user_id = _get_user_id(x_user_id)
-    now = datetime.now(timezone.utc)
-
-    q = """
-    WITH base AS (
-      SELECT f.id::text AS id, f.class_id, f.question, f.answer, f.hint, f.difficulty, s.due_at
-      FROM flashcards f
-      LEFT JOIN sr_card_state s ON s.card_id = f.id AND s.user_id = %s
-      WHERE f.class_id = %s
-    )
-    SELECT id, class_id, question, answer, hint, difficulty, due_at
-    FROM base
-    WHERE (due_at IS NULL) OR (due_at <= %s)
-    ORDER BY due_at NULLS FIRST
-    LIMIT %s;
-    """
+# --- GET due cards --- (Updated for FSRS with PKT handling)
+@router.get("/api/sr/due/{class_id}")
+async def get_due_cards(class_id: int, limit: int = 30):
     async with db_conn() as (conn, cur):
-        await cur.execute(q, (user_id, class_id, now, limit))
+        query = """
+        SELECT 
+            f.id AS card_id, 
+            COALESCE(s.difficulty, 3) AS difficulty,
+            COALESCE(s.retrievability, 0.5) AS retrievability,
+            COALESCE(s.stability, 5) AS stability,
+            COALESCE(s.difficulty_factor, 1.0) AS difficulty_factor,
+            f.question, f.answer, s.next_review
+        FROM flashcards f
+        LEFT JOIN sr_card_state s ON s.card_id = f.id AND s.user_id = %s
+        WHERE f.class_id = %s
+          AND (s.next_review IS NULL OR s.next_review <= NOW())
+        ORDER BY s.next_review NULLS FIRST, f.created_at ASC
+        LIMIT %s;
+        """
+        await cur.execute(query, ('dev-user', class_id, limit))
         rows = await cur.fetchall()
 
-    out: List[Flashcard] = []
-    for r in rows:
-        due_at = r[6]
-        # FIX: serialize datetime → ISO string for the frontend
-        due_at_iso = due_at.isoformat() if isinstance(due_at, datetime) else None
-        out.append(
-            Flashcard(
-                class_id=r[1],
-                id=r[0],
-                question=r[2],
-                answer=r[3],
-                hint=r[4],
-                difficulty=r[5] or "medium",
-                due_at=due_at_iso,
-            )
-        )
-    return out
+    return [
+        {
+            "card_id": r[0],
+            "difficulty": r[1],
+            "retrievability": r[2],
+            "stability": r[3],
+            "difficulty_factor": r[4],
+            "question": r[5],
+            "answer": r[6],
+            "next_review": r[7].isoformat() if r[7] else None,  # Return ISO with time zone info
+        }
+        for r in rows
+    ]
 
+# --- POST review --- (Updated for FSRS with PKT handling)
+@router.post("/api/sr/review")
+async def post_review(review_data: Flashcard):
+    logging.info(f"Received review data: {review_data}")  # Log the incoming review data
+    updated_state = calculate_fsrs(review_data)
 
-@router.post("/review")
-async def review_card(
-    body: ReviewReq,
-    x_user_id: Optional[str] = Header(None, alias="X-User-Id"),
-):
-    user_id = _get_user_id(x_user_id)
-    now = datetime.now(timezone.utc)
-
-    fetch_q = """
-      SELECT f.class_id, s.repetition, s.ease_factor, s.interval_minutes, s.learning, s.due_at, s.last_review
-      FROM flashcards f
-      LEFT JOIN sr_card_state s ON s.card_id = f.id AND s.user_id = %s
-      WHERE f.id = %s::uuid
-    """
     async with db_conn() as (conn, cur):
-        await cur.execute(fetch_q, (user_id, body.card_id))
-        row = await cur.fetchone()
-        if not row:
-            raise HTTPException(status_code=404, detail="Card not found")
-
-        class_id, repetition, ef, interval_minutes, learning, due_at, last_review = row
-        state = SRState(
-            repetition=repetition or 0,
-            ease_factor=float(ef or 2.5),
-            interval_minutes=float(interval_minutes or 0.0),
-            learning=bool(learning) if learning is not None else True,
-            due_at=due_at or now,
-            last_review=last_review,
-        )
-
-        new_state = sched.review(state, rating=body.rating, now=now)
-
-        # FIX: override due_at using fast demo intervals (1–60 mins)
-        if body.rating in FAST_INTERVALS:
-            new_state.due_at = now + FAST_INTERVALS[body.rating]
-
-        upsert_q = """
-        INSERT INTO sr_card_state (user_id, card_id, repetition, ease_factor, interval_minutes, learning, due_at, last_review)
-        VALUES (%s, %s::uuid, %s, %s, %s, %s, %s, %s)
-        ON CONFLICT (user_id, card_id)
-        DO UPDATE SET
-          repetition = EXCLUDED.repetition,
-          ease_factor = EXCLUDED.ease_factor,
-          interval_minutes = EXCLUDED.interval_minutes,
-          learning = EXCLUDED.learning,
-          due_at = EXCLUDED.due_at,
-          last_review = EXCLUDED.last_review
+        query = """
+        INSERT INTO sr_card_state (card_id, user_id, retrievability, stability, difficulty, next_review, reps)
+        VALUES (%s, %s, %s, %s, %s, %s, 1)
+        ON CONFLICT (card_id, user_id) DO UPDATE
+        SET retrievability = EXCLUDED.retrievability,
+            stability = EXCLUDED.stability,
+            difficulty = EXCLUDED.difficulty,
+            next_review = EXCLUDED.next_review,
+            reps = sr_card_state.reps + 1;
         """
-        await cur.execute(
-            upsert_q,
-            (
-                user_id,
-                body.card_id,
-                new_state.repetition,
-                new_state.ease_factor,
-                new_state.interval_minutes,
-                new_state.learning,
-                new_state.due_at,
-                now,
-            ),
-        )
+        try:
+            await cur.execute(
+                query,
+                (
+                    review_data.card_id,
+                    'dev-user',  # Assuming 'dev-user' for now, replace with actual user
+                    updated_state['retrievability'],
+                    updated_state['stability'],
+                    review_data.difficulty,
+                    updated_state['next_review'].isoformat(),  # Storing in UTC format
+                )
+            )
+            return {"success": True, "updated_state": updated_state}
+        except Exception as e:
+            logging.error(f"Error: {str(e)}")  # Log error details
+            return {"error": str(e)}  # Return the error message for debugging
 
-        await cur.execute(
-            "INSERT INTO sr_reviews (user_id, card_id, rating, reviewed_at) VALUES (%s, %s::uuid, %s, %s)",
-            (user_id, body.card_id, body.rating, now),
-        )
-
-        await conn.commit()
-
-    return {
-        "ok": True,
-        "next_due_at": new_state.due_at.isoformat() if new_state.due_at else None,
-        "state": {
-            "repetition": new_state.repetition,
-            "ease_factor": round(new_state.ease_factor, 3),
-            "interval_minutes": new_state.interval_minutes,
-            "learning": new_state.learning,
-        },
-    }
