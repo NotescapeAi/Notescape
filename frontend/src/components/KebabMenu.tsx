@@ -1,4 +1,3 @@
-// src/components/KebabMenu.tsx
 import React, { useEffect, useRef, useState } from "react";
 import { MoreVertical } from "lucide-react";
 
@@ -40,9 +39,8 @@ export default function KebabMenu({ items }: { items: KebabItem[] }) {
               key={idx}
               type="button"
               onClick={() => {
-                // IMPORTANT: close, THEN navigate/act on next tick
+                // Close first, then act on next tick to avoid focus/overlay glitches
                 setOpen(false);
-                // use rAF first (more robust than setTimeout 0 in some browsers)
                 requestAnimationFrame(() => it.onClick());
               }}
               className="block w-full text-left px-3 py-2 text-[14px] hover:bg-slate-50 rounded-lg"
