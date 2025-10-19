@@ -1,376 +1,414 @@
-// frontend/src/pages/FlashcardsStudyMode.tsx
-import { useEffect, useMemo, useState } from "react";
-import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, ChevronLeft, ChevronRight, Eye, EyeOff, Play } from "lucide-react";
-import useBookmarks from "../lib/bookmarks";
-import KebabMenu from "../components/KebabMenu";
+import React, { useEffect, useState } from "react";
+import { useLocation, useNavigate, useParams, Link } from "react-router-dom";
+import { listDueCards, postReview } from "../lib/api";
+import { ArrowLeft } from "lucide-react";
 
-/* --------- Types (match backend) --------- */
-export type Flashcard = {
-  class_id: number;
-  id: string;
+// Type definition
+interface Flashcard {
+  card_id: string;
+  difficulty: number;
+  retrievability: number;
+  stability: number;
+  difficulty_factor: number;
   question: string;
   answer: string;
-  hint?: string | null;
-  difficulty?: string | null;
-  due_at?: string | null;
+  next_review?: string;
+  isDue?: boolean;
+  class_id?: string;
+  last_reviewed?: string;
+  scheduled_reappear?: string;
+}
+
+// Utility to format date in PKT - handle undefined case
+const formatDate = (dateStr: string | undefined): string => {
+  if (!dateStr) return "Not scheduled";
+  
+  const date = new Date(dateStr);
+  return date.toLocaleString("en-PK", {
+    timeZone: "Asia/Karachi",
+    hour12: true,
+    timeZoneName: "short",
+  });
 };
 
-type LocationState = {
-  cards?: Flashcard[];
-  className?: string;
-  startIndex?: number;
-};
-
-/* --------- API helpers (SR + flashcards) --------- */
-async function fetchDueCards(classId: number, limit = 9999) {
-  const r = await fetch(`/api/sr/due/${classId}?limit=${limit}`, {
-    headers: { "X-User-Id": "dev-user" },
-  });
-  if (!r.ok) throw new Error(`Failed to fetch due cards (${r.status})`);
-  return (await r.json()) as Flashcard[];
-}
-
-async function fetchAllCardsForClass(classId: number) {
-  const r = await fetch(`/api/flashcards/${classId}`, {
-    headers: { "X-User-Id": "dev-user" },
-  });
-  if (!r.ok) throw new Error(`Failed to fetch all cards (${r.status})`);
-  const j = await r.json();
-  return (Array.isArray(j) ? j : j.cards ?? []) as Flashcard[];
-}
-
-async function submitReview(card_id: string, rating: 1 | 2 | 3 | 4 | 5) {
-  const r = await fetch(`/api/sr/review`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-User-Id": "dev-user",
-    },
-    body: JSON.stringify({ card_id, rating }),
-  });
-  if (!r.ok) {
-    const msg = await r.text();
-    throw new Error(`Review failed (${r.status}): ${msg}`);
-  }
-  return await r.json(); // { next_due_at?: string, ... }
-}
-
-async function deleteCard(cardId: string) {
-  const r = await fetch(`/api/flashcards/${cardId}`, {
-    method: "DELETE",
-    headers: { "X-User-Id": "dev-user" },
-  });
-  if (!r.ok) throw new Error(`Delete failed (${r.status})`);
-}
-
-export default function FlashcardsStudyMode() {
+const FlashcardsStudyMode = () => {
   const { classId } = useParams();
   const navigate = useNavigate();
-  const state = (useLocation().state || {}) as LocationState;
-  const className = state.className || "Untitled";
-
-  const bm = useBookmarks();
-
   const [cards, setCards] = useState<Flashcard[]>([]);
-  const [idx, setIdx] = useState<number>(Math.max(0, state.startIndex ?? 0));
+  const [idx, setIdx] = useState(0);
+  const [rating, setRating] = useState(3);
+  const [loading, setLoading] = useState(true);
   const [revealed, setRevealed] = useState(false);
+  const [className, setClassName] = useState("");
+  const [justReappearedCard, setJustReappearedCard] = useState<string | null>(null);
 
-  const [useSR, setUseSR] = useState(true);
-  const [loading, setLoading] = useState(false);
-  const [srEmpty, setSrEmpty] = useState(false);
-  const [allTotal, setAllTotal] = useState<number>(0);
-
-  const [visitedIds, setVisitedIds] = useState<Set<string>>(new Set());
-  const [reviewedIds, setReviewedIds] = useState<Set<string>>(new Set());
-  const [posting, setPosting] = useState(false);
-  const [statusMessage, setStatusMessage] = useState<string>("");
-
-  const current = cards[idx];
-
+  // Initial fetch of cards
   useEffect(() => {
-    if (!classId) return;
-    loadCards(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const fetchCards = async () => {
+      try {
+        const data = await listDueCards(Number(classId));
+        console.log("Fetched Cards:", data);
+
+        const updatedCards = data.map((card: Flashcard) => ({
+          ...card,
+          isDue: true,
+        }));
+
+        setCards(updatedCards);
+        if (data.length > 0) {
+          setClassName(data[0].class_id || "");
+        }
+      } catch (error) {
+        console.error("Error fetching cards:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchCards();
   }, [classId]);
 
-  async function loadCards(sr: boolean) {
-    if (!classId) return;
-    setLoading(true);
-    try {
-      const list: Flashcard[] = sr
-        ? await fetchDueCards(Number(classId), 9999)
-        : await fetchAllCardsForClass(Number(classId));
-
-      setCards(list ?? []);
-      setIdx(0);
-      setRevealed(false);
-      setSrEmpty((list ?? []).length === 0);
-      if (!sr) setAllTotal((list ?? []).length);
-    } catch (err) {
-      console.error("Failed to load cards", err);
-      setCards([]);
-      setSrEmpty(true);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  const progressPct = useMemo(
-    () => (cards.length ? Math.round((reviewedIds.size / cards.length) * 100) : 0),
-    [cards.length, reviewedIds]
-  );
-
+  // Check every second for cards that should reappear AND SWITCH TO THEM
   useEffect(() => {
-    if (!cards[idx]) return;
-    setVisitedIds((s) => {
-      if (s.has(cards[idx].id)) return s;
-      const n = new Set(s);
-      n.add(cards[idx].id);
-      return n;
-    });
-  }, [idx, cards]);
+    const interval = setInterval(() => {
+      const currentTime = new Date();
+      let reappearedCardId: string | null = null;
+      
+      const updatedCards = cards.map((card) => {
+        if (card.scheduled_reappear && !card.isDue) {
+          const reappearTime = new Date(card.scheduled_reappear);
+          if (currentTime >= reappearTime) {
+            console.log(`Card ${card.card_id} reappeared at ${formatDate(card.scheduled_reappear)}`);
+            reappearedCardId = card.card_id;
+            return {
+              ...card,
+              isDue: true,
+              scheduled_reappear: undefined
+            };
+          }
+        }
+        return card;
+      });
 
-  // Poll every 30s for new due cards when SR is ON
-  useEffect(() => {
-    if (!useSR || !classId) return;
-    const t = setInterval(() => loadCards(true), 30_000);
-    return () => clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [useSR, classId]);
-
-  async function handleReview(card: Flashcard | undefined, rating: 1 | 2 | 3 | 4 | 5) {
-    if (!card?.id || posting) return;
-    setPosting(true);
-    setStatusMessage("");
-    try {
-      const res = await submitReview(card.id, rating);
-
-      if (res?.next_due_at) {
-        const nextDue = new Date(res.next_due_at);
-        const mins = Math.max(1, Math.round((nextDue.getTime() - Date.now()) / 60000));
-        setStatusMessage(`✅ Scheduled again in ${mins} minute(s).`);
-        setCards((prev) => prev.map((c) => (c.id === card.id ? { ...c, due_at: res.next_due_at } : c)));
-      }
-
-      setReviewedIds((prev) => new Set(prev).add(card.id));
-      setIdx((i) => Math.min(i + 1, cards.length - 1));
-
-      if (useSR) {
-        if (res?.next_due_at) {
-          const delay = Math.max(0, new Date(res.next_due_at).getTime() - Date.now());
-          setTimeout(() => loadCards(true), delay + 2000);
-        } else {
-          setTimeout(() => loadCards(true), 500);
+      // If a card reappeared, update cards and switch to it immediately
+      if (reappearedCardId) {
+        setCards(updatedCards);
+        
+        const reappearedIndex = updatedCards.findIndex(card => card.card_id === reappearedCardId);
+        if (reappearedIndex !== -1) {
+          console.log(`Auto-switching to reappeared card at index: ${reappearedIndex}`);
+          setIdx(reappearedIndex);
+          setJustReappearedCard(reappearedCardId);
+          setRevealed(false);
+          // Clear the highlight after 3 seconds
+          setTimeout(() => setJustReappearedCard(null), 3000);
         }
       }
-    } catch (e: any) {
-      console.error(e);
-      alert(e?.message || "Failed to record review");
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [cards, idx]);
+
+  // Handle review submission
+  const handleReview = async () => {
+    if (cards.length === 0) return;
+
+    const card = cards[idx];
+    const reviewData = {
+      card_id: card.card_id,
+      difficulty: rating,
+      retrievability: card.retrievability,
+      stability: card.stability,
+      difficulty_factor: card.difficulty_factor,
+      question: card.question,
+      answer: card.answer,
+    };
+
+    console.log("Review Data:", reviewData);
+    setLoading(true);
+
+    try {
+      const response = await postReview(reviewData);
+      if (response.success) {
+        let updatedCard: Flashcard;
+        
+        if (rating === 1) {
+          // For rating 1: Schedule to reappear after exactly 1 minute
+          const reappearTime = new Date();
+          reappearTime.setMinutes(reappearTime.getMinutes() + 1);
+          
+          updatedCard = {
+            ...card,
+            ...response.updated_state,
+            isDue: false,
+            scheduled_reappear: reappearTime.toISOString()
+          };
+          
+          console.log(`Card scheduled to reappear at: ${formatDate(updatedCard.scheduled_reappear)}`);
+        } else {
+          // For ratings 2-5: Also set scheduled_reappear using the next_review from API
+          const nextReview = response.updated_state.next_review || "";
+          updatedCard = {
+            ...card,
+            ...response.updated_state,
+            isDue: new Date() >= new Date(nextReview),
+            scheduled_reappear: nextReview // Set scheduled_reappear for auto-switch
+          };
+        }
+
+        setCards((prevCards) =>
+          prevCards.map((c) =>
+            c.card_id === updatedCard.card_id ? updatedCard : c
+          )
+        );
+
+        if (rating === 1) {
+          alert(`This card will reappear in 1 minute (at ${formatDate(updatedCard.scheduled_reappear)})`);
+        } else {
+          alert(`Next review for this card is scheduled for: ${formatDate(updatedCard.next_review)}`);
+        }
+
+        // Move to next available card
+        findAndSetNextAvailableCard();
+        
+      } else {
+        alert("Failed to submit review. Please try again.");
+      }
+    } catch (error) {
+      console.error("Error submitting review:", error);
+      alert("An error occurred while submitting your review. Please try again.");
     } finally {
-      setPosting(false);
+      setLoading(false);
+      setRevealed(false);
     }
-  }
+  };
+
+  // Helper function to find and set next available card
+  const findAndSetNextAvailableCard = () => {
+    if (cards.length === 0) return;
+    
+    let nextAvailableIndex = -1;
+    for (let i = 1; i < cards.length; i++) {
+      const nextIdx = (idx + i) % cards.length;
+      if (cards[nextIdx].isDue) {
+        nextAvailableIndex = nextIdx;
+        break;
+      }
+    }
+    
+    if (nextAvailableIndex !== -1) {
+      setIdx(nextAvailableIndex);
+    }
+  };
+
+  // Navigation handlers - only navigate to available cards
+  const handleNext = () => {
+    if (cards.length === 0) return;
+    
+    let nextIndex = idx;
+    for (let i = 1; i <= cards.length; i++) {
+      const potentialIndex = (idx + i) % cards.length;
+      if (cards[potentialIndex].isDue) {
+        nextIndex = potentialIndex;
+        break;
+      }
+    }
+    
+    setIdx(nextIndex);
+    setRevealed(false);
+    setJustReappearedCard(null);
+  };
+
+  const handlePrevious = () => {
+    if (cards.length === 0) return;
+    
+    let prevIndex = idx;
+    for (let i = 1; i <= cards.length; i++) {
+      const potentialIndex = (idx - i + cards.length) % cards.length;
+      if (cards[potentialIndex].isDue) {
+        prevIndex = potentialIndex;
+        break;
+      }
+    }
+    
+    setIdx(prevIndex);
+    setRevealed(false);
+    setJustReappearedCard(null);
+  };
+
+  // Count available cards for display
+  const availableCards = cards.filter(card => card.isDue);
+  const currentCard = cards[idx];
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-[#fafafa] to-white">
-      {/* Header */}
-      <div className="sticky top-0 z-10 bg-white/80 backdrop-blur border-b border-slate-200">
-        <div className="mx-auto max-w-4xl px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <Link
-              to={`/classes/${classId}/flashcards`}
-              replace
-              className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm hover:bg-slate-50"
-            >
-              <ArrowLeft className="h-4 w-4" /> Back
-            </Link>
-
-            <div className="text-sm text-slate-500">
-              Study Mode · {className}
-              <span className="ml-2 text-xs text-slate-500">
-                {useSR ? `Due: ${cards.length} · Total: ${allTotal}` : `All Cards: ${cards.length}`}
-              </span>
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50 flex flex-col">
+      {/* Header - Compact */}
+      <div className="bg-white border-b border-slate-200 shrink-0">
+        <div className="max-w-4xl mx-auto px-6 py-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Link 
+                to={`/classes/${classId}/flashcards`} 
+                replace 
+                className="inline-flex items-center gap-2 rounded-full border border-slate-300 px-3 py-1 text-sm text-slate-700 hover:bg-slate-50 transition-colors"
+              >
+                <ArrowLeft className="h-3 w-3" /> Back
+              </Link>
+              <div>
+                <h1 className="text-lg font-bold text-slate-800">Study Mode</h1>
+                <div className="text-xs text-slate-600">
+                  <span className="font-semibold text-blue-600">{className}</span>
+                  <span className="ml-2">
+                    Due: {availableCards.length} · Total: {cards.length}
+                  </span>
+                </div>
+              </div>
             </div>
-
-            <button
-              onClick={() => {
-                const next = !useSR;
-                setUseSR(next);
-                loadCards(next);
-              }}
-              className={`ml-2 inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm transition ${
-                useSR ? "bg-emerald-50 border-emerald-300" : "bg-slate-100 hover:bg-slate-200"
-              }`}
-            >
-              <Play className="w-4 h-4" /> {useSR ? "SR: ON" : "SR: OFF"}
-            </button>
+            
+            {/* Progress Stats */}
+            <div className="text-right">
+              <div className="text-sm text-slate-600">
+                Card <span className="font-semibold text-slate-800">{idx + 1}</span> of <span className="font-semibold text-slate-800">{cards.length}</span>
+              </div>
+            </div>
           </div>
-
-          <KebabMenu
-            items={[
-              {
-                label: bm.isBookmarked(String(current?.id)) ? "Remove Bookmark" : "Bookmark",
-                onClick: () => current?.id && bm.toggle(String(current.id)),
-              },
-              {
-                label: "View Mode",
-                onClick: () =>
-                  navigate(`/classes/${classId}/flashcards/view`, {
-                    state: { cards, className },
-                  }),
-              },
-              { label: "Study Mode", onClick: () => {} },
-              {
-                label: "Delete",
-                onClick: async () => {
-                  if (!current) return;
-                  if (!confirm("Delete this flashcard?")) return;
-                  try {
-                    await deleteCard(String(current.id));
-                    setCards((prev) => {
-                      const next = prev.filter((x) => x.id !== current.id);
-                      const newIdx = Math.min(next.length - 1, idx);
-                      if (next.length === 0) {
-                        requestAnimationFrame(() =>
-                          navigate(`/classes/${classId}/flashcards`, { replace: true })
-                        );
-                      } else {
-                        setIdx(Math.max(0, newIdx));
-                      }
-                      return next;
-                    });
-                  } catch (err: unknown) {
-                    const message = err instanceof Error ? err.message : String(err);
-                    alert(message || "Failed to delete flashcard");
-                  }
-                },
-              },
-            ]}
-          />
         </div>
       </div>
 
-      {/* Body */}
-      <div className="mx-auto max-w-4xl px-4 py-6">
-        {/* Progress */}
-        <div className="mb-4">
-          <div className="flex items-center justify-between text-sm text-slate-500">
-            <div>Progress: {progressPct}%</div>
-            <div>{cards.length > 0 ? `${idx + 1} / ${cards.length}` : "0 / 0"}</div>
+      {/* Main Content - Fixed height */}
+      <div className="flex-1 flex items-center justify-center p-6">
+        {loading ? (
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+            <p className="text-slate-600 mt-4">Loading your flashcards...</p>
           </div>
-          <div className="mt-2 h-2 w-full rounded-full bg-slate-100 overflow-hidden">
-            <div className="h-2 bg-emerald-500 transition-all" style={{ width: `${progressPct}%` }} />
-          </div>
-        </div>
-
-        {/* Card */}
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          {loading ? (
-            <div className="text-center py-14 text-slate-500">Loading…</div>
-          ) : cards.length === 0 ? (
-            <div className="text-center py-14">
-              <div className="text-lg font-semibold text-slate-800">No cards to study right now</div>
-              <p className="text-sm text-slate-500 mt-1">
-                {useSR
-                  ? srEmpty
-                    ? "Nothing is due in spaced repetition for this class."
-                    : "Loading…"
-                  : "Load or generate flashcards to start studying."}
-              </p>
-            </div>
-          ) : (
-            <>
-              <div className="flex items-center justify-between mb-3">
-                <div className="text-xs font-medium text-slate-500">CARD #{idx + 1}</div>
-                <button
-                  onClick={() => setRevealed((v) => !v)}
-                  className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm hover:bg-slate-50"
-                >
-                  {revealed ? (
-                    <>
-                      <EyeOff className="w-4 h-4" /> Hide
-                    </>
-                  ) : (
-                    <>
-                      <Eye className="w-4 h-4" /> Reveal
-                    </>
+        ) : (
+          <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-6 w-full max-w-2xl">
+            {cards.length > 0 ? (
+              <div className="space-y-6">
+                {/* Card Status */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    {justReappearedCard === currentCard.card_id && (
+                      <span className="bg-amber-100 text-amber-800 px-2 py-1 rounded-full text-xs font-medium animate-pulse">
+                        🔄 Just Reappeared!
+                      </span>
+                    )}
+                  </div>
+                  {!currentCard.isDue && (
+                    <div className="text-xs text-slate-500">
+                      {currentCard.scheduled_reappear ? (
+                        <span className="text-orange-600">
+                          Reappears: {formatDate(currentCard.scheduled_reappear)}
+                        </span>
+                      ) : (
+                        <span className="text-blue-600">
+                          Next: {formatDate(currentCard.next_review)}
+                        </span>
+                      )}
+                    </div>
                   )}
-                </button>
-              </div>
+                </div>
 
-              <div className="font-extrabold mb-2 text-slate-900">Q: {current?.question}</div>
+                {/* Question */}
+                <div>
+                  <p className="text-xl font-medium text-slate-800 leading-relaxed text-center mb-4">
+                    {currentCard.question}
+                  </p>
+                </div>
 
-              <div className="mb-3">
-                {revealed ? (
-                  <div className="text-slate-800 whitespace-pre-wrap">A: {current?.answer}</div>
-                ) : (
+                {/* Answer Section */}
+                <div className="text-center">
                   <button
-                    className="font-bold text-violet-600 hover:text-violet-700"
-                    onClick={() => setRevealed(true)}
+                    onClick={() => setRevealed(!revealed)}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 focus:outline-none transition-colors text-sm"
                   >
-                    Show Answer
+                    <span>{revealed ? "Hide Answer" : "Show Answer"}</span>
                   </button>
-                )}
-              </div>
 
-              {/* schedule message */}
-              {statusMessage && (
-                <div className="mt-2 text-sm text-emerald-600 font-medium">{statusMessage}</div>
-              )}
+                  {revealed && (
+                    <div className="mt-4 p-4 bg-slate-50 rounded-lg border border-slate-200">
+                      <p className="text-lg text-slate-700 leading-relaxed">
+                        {currentCard.answer}
+                      </p>
+                    </div>
+                  )}
+                </div>
 
-              {/* Rating */}
-              <div className="mt-6">
-                <div className="text-xs font-medium text-slate-500 mb-2">Rate your confidence</div>
-                <div className="flex items-center gap-2">
-                  {[1, 2, 3, 4, 5].map((r) => (
+                {/* Rating Section */}
+                <div>
+                  <p className="text-md font-semibold text-slate-800 mb-3 text-center">
+                    How well did you know this?
+                  </p>
+                  
+                  <div className="max-w-md mx-auto">
+                    <div className="flex justify-between mb-3">
+                      {[1, 2, 3, 4, 5].map((num) => (
+                        <button
+                          key={num}
+                          onClick={() => setRating(num)}
+                          className={`w-10 h-10 rounded-full transition-all ${
+                            rating === num 
+                              ? "bg-blue-600 text-white shadow-lg transform scale-110" 
+                              : "bg-slate-200 text-slate-700 hover:bg-slate-300"
+                          }`}
+                        >
+                          {num}
+                        </button>
+                      ))}
+                    </div>
+                    
+                    <div className="flex items-center justify-between text-xs text-slate-600 mb-2">
+                      <span>Very Hard</span>
+                      <span>Very Easy</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="space-y-3">
+                  <button
+                    onClick={handleReview}
+                    disabled={!currentCard.isDue}
+                    className={`w-full py-3 rounded-lg font-semibold transition-all text-sm ${
+                      currentCard.isDue 
+                        ? "bg-green-600 hover:bg-green-700 text-white shadow-md" 
+                        : "bg-slate-300 text-slate-500 cursor-not-allowed"
+                    }`}
+                  >
+                    {currentCard.isDue ? "Submit Review" : "Not Available for Review"}
+                  </button>
+
+                  <div className="flex gap-3">
                     <button
-                      key={r}
-                      disabled={posting || !current}
-                      onClick={() => handleReview(current, r as 1 | 2 | 3 | 4 | 5)}
-                      className={`px-3 py-1 rounded-md border text-sm transition ${
-                        posting ? "opacity-50 cursor-not-allowed" : ""
-                      } ${
-                        r <= 2
-                          ? "border-rose-300 hover:bg-rose-50"
-                          : r === 3
-                          ? "border-amber-300 hover:bg-amber-50"
-                          : "border-emerald-300 hover:bg-emerald-50"
-                      }`}
+                      onClick={handlePrevious}
+                      className="flex-1 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 transition-colors text-sm"
                     >
-                      {r}
+                      ← Previous
                     </button>
-                  ))}
+                    <button
+                      onClick={handleNext}
+                      className="flex-1 py-2 bg-slate-600 text-white rounded-lg hover:bg-slate-700 transition-colors text-sm"
+                    >
+                      Next →
+                    </button>
+                  </div>
                 </div>
               </div>
-
-              {/* Nav */}
-              <div className="mt-6 flex justify-between items-center">
-                <button
-                  disabled={idx === 0 || posting}
-                  onClick={() => {
-                    setIdx((i) => Math.max(0, i - 1));
-                    setRevealed(false);
-                  }}
-                  className="p-2 rounded-md bg-slate-100 hover:bg-slate-200 disabled:opacity-50"
-                >
-                  <ChevronLeft className="w-5 h-5" />
-                </button>
-                <button
-                  disabled={idx === cards.length - 1 || posting}
-                  onClick={() => {
-                    setIdx((i) => Math.min(cards.length - 1, i + 1));
-                    setRevealed(false);
-                  }}
-                  className="p-2 rounded-md bg-slate-100 hover:bg-slate-200 disabled:opacity-50"
-                >
-                  <ChevronRight className="w-5 h-5" />
-                </button>
+            ) : (
+              <div className="text-center py-8">
+                <div className="text-4xl mb-3">📚</div>
+                <h3 className="text-lg font-semibold text-slate-700 mb-2">No cards available</h3>
+                <p className="text-slate-500 text-sm">
+                  All cards have been reviewed. Please wait for the next review time.
+                </p>
               </div>
-            </>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
-}
+};
+
+export default FlashcardsStudyMode;
