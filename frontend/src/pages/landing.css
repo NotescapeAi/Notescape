@@ -165,7 +165,7 @@ body {
 .cta-wrap{ padding: 80px 0 100px; }
 .cta-banner{
   display: flex; align-items: center; justify-content: space-between; gap: 40px;
-  border: 1px solid #f3f4f6; border-radius: 24px; padding: 48px 56px;
+  border: 1px solid #b2b3b4; border-radius: 24px; padding: 48px 56px;
   background: linear-gradient(135deg, #fafaff 0%, #ffffff 100%);
   box-shadow: 0 20px 40px rgba(15,23,36,.08);
   max-width: 1200px;
@@ -222,6 +222,7 @@ body {
   0%,100% { transform: translateY(0); }
   50% { transform: translateY(-8px); }
 }
+
 
 /* ===== Extra Scroll Animation Variants ✨ ===== */
 .zoom-in { opacity: 0; transform: scale(0.8); transition: all 0.8s ease; }
@@ -436,4 +437,72 @@ svg.fi, svg.fi * {
               rgba(79,70,229,.05) 100%);
   box-shadow: inset 0 1px 0 rgba(255,255,255,.6),
               0 8px 24px rgba(79,70,229,.12);
+}
+/* ================================
+   CTA banner polish (scoped)
+   ================================ */
+
+
+/* container is likely global; no-op here, but keep for structure */
+.cta-wrap .container { position: relative; }
+
+/* Card */
+.cta-banner {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: clamp(16px, 2vw, 28px);
+  padding: clamp(18px, 2.2vw, 26px) clamp(20px, 3vw, 36px);
+  border-radius: 16px;
+  background: rgba(255,255,255,0.78);
+  -webkit-backdrop-filter: blur(10px) saturate(120%);
+  backdrop-filter: blur(10px) saturate(120%);
+  border: 1px solid rgba(124, 58, 237, 0.18);
+  box-shadow:
+    0 10px 30px rgba(124, 58, 237, 0.10),
+    0 2px 6px rgba(16, 24, 40, 0.06);
+  overflow: hidden;
+}
+
+/* ================================
+   CTA banner polish (scoped)
+   ================================ */
+
+
+/* container is likely global; no-op here, but keep for structure */
+.cta-wrap .container { position: relative; }
+
+/* Card */
+.cta-banner {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: clamp(16px, 2vw, 28px);
+  padding: clamp(18px, 2.2vw, 26px) clamp(20px, 3vw, 36px);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.78);
+  -webkit-backdrop-filter: blur(10px) saturate(120%);
+  backdrop-filter: blur(10px) saturate(120%);
+  border: 1px solid rgba(124, 58, 237, 0.18);
+  box-shadow:
+    0 10px 30px rgba(124, 58, 237, 0.10),
+    0 2px 6px rgba(16, 24, 40, 0.06);
+  overflow: hidden;
+}
+
+/* Text */
+.cta-title {
+  margin: 0 0 4px 0;
+  font-size: clamp(18px, 2.2vw, 22px);
+  line-height: 1.2;
+  color: #0f172a; /* slate-900 */
+  letter-spacing: -0.01em;
+}
+
+.cta-sub {
+  margin: 0;
+  color: #475467; /* slate-600 */
+  font-size: clamp(14px, 1.8vw, 16px);
 }
