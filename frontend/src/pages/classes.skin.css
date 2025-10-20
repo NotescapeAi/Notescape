@@ -1,0 +1,263 @@
+/* =========================================
+   Classes page polish (scoped, non-invasive)
+   ========================================= */
+.cls-page {
+  /* If your navbar is fixed, adjust this to match its height */
+  --nav-height: 64px;
+}
+
+/* Sticky header: respects your inline border/radius; no layout change */
+.cls-page .cls-header {
+  position: sticky;
+  top: calc(var(--nav-height) + 8px);
+  z-index: 3;
+  backdrop-filter: saturate(140%) blur(6px);
+  -webkit-backdrop-filter: saturate(140%) blur(6px);
+}
+
+/* Dropzone feedback */
+.cls-page .cls-dropbox {
+  transition: border-color .18s ease, background .18s ease, box-shadow .18s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.cls-page .cls-dropbox:hover {
+  border-color: #c9d3e0;
+  background: #fcfdff;
+  box-shadow: 0 10px 22px rgba(15,23,36,.05);
+}
+.cls-page .cls-dropbox.is-dropping {
+  border-color: #7B5FEF !important;
+  background: rgba(123,95,239,0.06) !important;
+  box-shadow: 0 10px 28px rgba(123,95,239,.12);
+}
+
+/* Table shell subtle depth (doesn’t change your sizing) */
+.cls-page .cls-table-shell {
+  box-shadow:
+    0 1px 0 rgba(15,23,36,.02) inset,
+    0 -1px 0 rgba(15,23,36,.02) inset;
+}
+
+/* Table header/body polish */
+.cls-page .cls-table thead tr {
+  background: #fafafb;
+}
+.cls-page .cls-table thead th {
+  border-bottom: 1px solid #EEF2F6;
+  text-align: left;
+  padding: 10px 12px;
+  font-weight: 700;
+  color: #0f172a;
+}
+.cls-page .cls-table tbody tr {
+  border-bottom: 1px solid #F2F4F7;
+  transition: background .12s ease;
+}
+.cls-page .cls-table tbody tr:hover {
+  background: #fcfdff;
+}
+.cls-page .cls-table td {
+  padding: 10px 12px;
+}
+
+/* Numeric cells render evenly */
+.cls-page .cls-table .cls-num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Checkbox focus ring (keyboard friendly) */
+.cls-page input[type="checkbox"]:focus-visible {
+  outline: 2px solid rgba(123,95,239,.45);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Small-screen nudge (no layout change) */
+@media (max-width: 640px) {
+  .cls-page .cls-header { top: calc(var(--nav-height) + 4px); }
+}
+
+
+/* Compact kebab + popover for row actions */
+.rowmenu { position: relative; display: inline-block; }
+.icon-btn {
+  width: 28px; height: 28px; line-height: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid #e5e7eb; background: #fff; border-radius: 8px;
+  font-size: 18px; cursor: pointer;
+}
+.icon-btn:hover { background: #f9fafb; }
+
+.rowmenu .menu {
+  position: absolute; right: 0; top: 32px; z-index: 5;
+  min-width: 140px; background: #fff; border: 1px solid #e5e7eb;
+  border-radius: 10px; box-shadow: 0 10px 26px rgba(16,24,40,.12);
+  padding: 6px;
+}
+.rowmenu .menu-item {
+  width: 100%; text-align: left; background: transparent; border: 0;
+  padding: 8px 10px; border-radius: 8px; font-size: 14px; cursor: pointer;
+}
+.rowmenu .menu-item:hover { background: #f6f7fb; }
+.rowmenu .menu-item.danger { color: #b42318; }
+
+.icon-btn {
+  display:inline-flex; align-items:center; justify-content:center;
+  width:36px; height:36px; border-radius:10px; border:1px solid #E4E7EC;
+  background:#fff; cursor:pointer;
+}
+.icon-btn:hover { background:#F9FAFB; }
+.rowmenu { position:relative; }
+.rowmenu .menu {
+  position:absolute; right:0; top:36px; background:#fff; border:1px solid #E4E7EC;
+  border-radius:12px; min-width:140px; box-shadow:0 10px 30px rgba(16,24,40,.12); z-index:3;
+}
+.rowmenu .menu-item {
+  width:100%; text-align:left; padding:10px 12px; background:#fff; border:0; cursor:pointer;
+}
+.rowmenu .menu-item:hover { background:#F9FAFB; }
+.rowmenu .menu-item.danger { color:#B42318; }
+
+
+/* tiny helpers for icon buttons and row menus */
+.icon-btn {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  height:32px; width:32px;
+  border-radius:8px;
+  border:1px solid #E4E7EC;
+  background:#fff;
+  cursor:pointer;
+}
+.icon-btn:hover { background:#F9FAFB; }
+
+.rowmenu { position: relative; display: inline-block; }
+.rowmenu .menu {
+  position: absolute; right: 0; top: 34px;
+  min-width: 140px;
+  background: #fff;
+  border: 1px solid #E4E7EC;
+  border-radius: 10px;
+  box-shadow: 0 12px 30px rgba(16,24,40,.12);
+  padding: 6px;
+  z-index: 20;
+}
+.rowmenu .menu-item {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  font-size: 14px;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.rowmenu .menu-item:hover { background: #F2F4F7; }
+.rowmenu .menu-item.danger { color: #B42318; }
+.rowmenu .menu-item.danger:hover { background: #FEF3F2; }
+
+/* Card shell */
+.files-card {
+  background: #fff;
+  border: 1px solid #EEF2F6;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+/* Toolbar: prevent overlap by using spaced flex that can wrap */
+.files-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px;
+  border-bottom: 1px solid #EEF2F6;
+}
+.files-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+.title-text { font-weight: 700; }
+.files-actions { display: inline-flex; gap: 8px; }
+
+/* Icon button */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 32px;
+  width: 32px;
+  border-radius: 8px;
+  border: 1px solid #E4E7EC;
+  background: #fff;
+  cursor: pointer;
+}
+.icon-btn:hover { background: #F9FAFB; }
+
+/* Compact file list */
+.filelist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.fileitem {
+  display: grid;
+  grid-template-columns: auto 1fr auto; /* [checkbox] [main] [kebab] */
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #F2F4F7;
+}
+.fileitem:last-child { border-bottom: 0; }
+
+.fileitem:hover { background: #FBFBFF; }
+
+.fileitem-check { margin: 0 4px 0 2px; }
+
+.fileitem-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+.filename {
+  font-weight: 600;
+  color: #101828;
+  max-width: 52vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* right side kebab */
+.fileitem-actions { display: inline-flex; }
+
+/* empty row */
+.fileitem.empty {
+  color: #667085;
+  border-bottom: 0;
+}
+
+/* RowMenu tweaks (keeps kebab neat) */
+.rowmenu { position: relative; display: inline-flex; }
+.rowmenu > .icon-btn { height: 28px; width: 28px; }
+.rowmenu .menu {
+  position: absolute; right: 0; top: 32px; z-index: 20;
+  min-width: 140px; background:#fff; border:1px solid #E4E7EC;
+  border-radius:10px; box-shadow:0 12px 30px rgba(16,24,40,.12); padding:6px;
+}
+.rowmenu .menu-item {
+  display:block; width:100%; padding:8px 10px; font-size:14px;
+  background:none; border:0; border-radius:8px; text-align:left; cursor:pointer;
+}
+.rowmenu .menu-item:hover { background:#F2F4F7; }
+.rowmenu .menu-item.danger { color:#B42318; }
+.rowmenu .menu-item.danger:hover { background:#FEF3F2; }

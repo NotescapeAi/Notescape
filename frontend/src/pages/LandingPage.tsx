@@ -79,44 +79,55 @@ useEffect(() => {
           <h2 className="h2 text-center mb-12 fade-in text-4xl font-bold bg-gradient-to-r ">
             Your Complete Personal Learning Workspace
           </h2>
-            <div className="features-grid">
-              <div className="feature-card slide-up">
-                <Upload className="feature-icon fi" />
-                <div className="feature-title">Effortless Material Upload</div>
-                <div className="feature-desc">Upload PDFs, slides and even handwritten notes—organized automatically.</div>
-              </div>
+            <div className="features-grid"><div className="feature-card slide-up">
+  <div className="fi">
+    <Upload color="#4f46e5" size={22} strokeWidth={2.2} />
+  </div>
+  <div className="feature-title">Effortless Material Upload</div>
+  <div className="feature-desc">Upload PDFs, slides and even handwritten notes—organized automatically.</div>
+</div>
 
-              <div className="feature-card slide-up">
-                <Bot className="feature-icon fi" />
-                <div className="feature-title">AI-Powered Assistance</div>
-                <div className="feature-desc">Get instant summaries and clarifications from the integrated AI coach.</div>
-              </div>
+<div className="feature-card slide-up">
+  <div className="fi">
+    <Bot color="#4f46e5" size={22} strokeWidth={2.2} />
+  </div>
+  <div className="feature-title">AI-Powered Assistance</div>
+  <div className="feature-desc">Get instant summaries and clarifications from the integrated AI coach.</div>
+</div>
 
-              <div className="feature-card slide-up">
-                <BookOpenCheck className="feature-icon fi" />
-                <div className="feature-title">Active Learning Tools</div>
-                <div className="feature-desc">Auto-generate flashcards and quizzes with spaced repetition.</div>
-              </div>
+<div className="feature-card slide-up">
+  <div className="fi">
+    <BookOpenCheck color="#4f46e5" size={22} strokeWidth={2.2} />
+  </div>
+  <div className="feature-title">Active Learning Tools</div>
+  <div className="feature-desc">Auto-generate flashcards and quizzes with spaced repetition.</div>
+</div>
 
-              <div className="feature-card slide-up">
-                <Search className="feature-icon fi" />
-                <div className="feature-title">Smart Content Retrieval</div>
-                <div className="feature-desc">Find exactly what you need instantly with context-aware search.</div>
-              </div>
+<div className="feature-card slide-up">
+  <div className="fi">
+    <Search color="#4f46e5" size={22} strokeWidth={2.2} />
+  </div>
+  <div className="feature-title">Smart Content Retrieval</div>
+  <div className="feature-desc">Find exactly what you need instantly with context-aware search.</div>
+</div>
 
-              <div className="feature-card slide-up">
-                <Database className="feature-icon fi" />
-                <div className="feature-title">Centralized Storage</div>
-                <div className="feature-desc">Access all your files, sessions and progress data in one secure space.</div>
-              </div>
+<div className="feature-card slide-up">
+  <div className="fi">
+    <Database color="#4f46e5" size={22} strokeWidth={2.2} />
+  </div>
+  <div className="feature-title">Centralized Storage</div>
+  <div className="feature-desc">Access all your files, sessions and progress data in one secure space.</div>
+</div>
 
-              <div className="feature-card slide-up">
-                <LineChart className="feature-icon fi" />
-                <div className="feature-title">Progress Tracking</div>
-                <div className="feature-desc">Identify strengths and gaps with rich analytics and insights.</div>
-              </div>
-            </div>
+<div className="feature-card slide-up">
+  <div className="fi">
+    <LineChart color="#4f46e5" size={22} strokeWidth={2.2} />
+  </div>
+  <div className="feature-title">Progress Tracking</div>
+  <div className="feature-desc">Identify strengths and gaps with rich analytics and insights.</div>
+</div>
 
+  </div>
         </div>
       </section>
 
