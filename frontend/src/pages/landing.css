@@ -237,11 +237,43 @@ body {
 .rotate-in.active { opacity: 1; transform: rotate(0deg) scale(1); }
 .scale-up { opacity: 0; transform: scale(0.85); transition: all 0.8s ease; }
 .scale-up.active { opacity: 1; transform: scale(1); }
-.bounce-in { opacity: 0; transform: translateY(40px); }
-.bounce-in.active { opacity: 1; transform: translateY(0); animation: bounce 0.9s ease; }
-@keyframes bounce {
-  0%   { transform: translateY(40px); }
-  60%  { transform: translateY(-12px); }
-  80%  { transform: translateY(6px); }
-  100% { transform: translateY(0); }
+
+
+.btn-primary.bounce-in,
+.btn-primary.bounce-in.active {
+  animation: none !important;
+  transform: none !important; /* prevents the up/down keyframes effect */
+}
+
+
+.cta-row .btn-primary,
+.cta-row .btn-ghost {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: transform .50s var(--easing), opacity .50s var(--easing);
+}
+
+.cta-row.active .btn-primary,
+.cta-row.active .btn-ghost {
+  opacity: 1;
+  transform: none;
+}
+
+
+/* ===== Breathing space below navbar ===== */
+:root{
+  /* Adjust if your Navbar is taller/shorter */
+  --nav-height: 64px;   /* typical sticky/fixed navbar height */
+  --nav-gap: 24px;      /* extra breathing space */
+}
+
+/* Override earlier hero padding */
+.landing-hero{
+  /* original bottom padding kept (40px) */
+  padding: calc(72px + var(--nav-height) + var(--nav-gap)) 0 40px !important;
+}
+
+/* Nice-to-have: anchor links won't hide under a sticky/fixed navbar */
+html {
+  scroll-padding-top: calc(var(--nav-height) + var(--nav-gap));
 }

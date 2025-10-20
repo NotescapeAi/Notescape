@@ -4,6 +4,8 @@ module.exports = {
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}"
   ],
+  safelist: [
+    'is-scrolled'],
   theme: {
     extend: {
       fontFamily: {

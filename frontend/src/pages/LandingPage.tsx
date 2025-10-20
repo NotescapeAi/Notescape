@@ -16,28 +16,31 @@ import Footer from "../components/Footer";
 import "./landing.css";
 export default function LandingPage() {
   //  Scroll animations trigger
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            entry.target.classList.add("active");
-          } else {
-            entry.target.classList.remove("active"); // remove if you want animation only once
-          }
-        });
-      },
-      { threshold: 0.15 }
-    );
+useEffect(() => {
+  const observer = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add("active");
+          observer.unobserve(entry.target);       // <- key: never retrigger
+        }
+      });
+    },
+    { threshold: 0.15 }
+  );
 
-    document
-      .querySelectorAll(
-        ".reveal, .fade-in, .slide-left, .slide-right, .slide-up, .slide-down, .zoom-in, .flip-up, .rotate-in, .scale-up, .bounce-in"
-      )
-      .forEach((el) => observer.observe(el));
+  document
+    .querySelectorAll(
+      ".reveal, .fade-in, .slide-left, .slide-right, .slide-up, .slide-down, .zoom-in, .flip-up, .rotate-in, .scale-up, .bounce-in"
+    )
+    .forEach((el) => {
+      // Skip CTA buttons entirely
+      if (el.classList.contains("btn-primary")) return;
+      observer.observe(el);
+    });
 
-    return () => observer.disconnect();
-  }, []);
+  return () => observer.disconnect();
+}, []);
 
   return (
     <>
@@ -54,14 +57,14 @@ export default function LandingPage() {
               Instantly convert your notes into flashcards, quizzes and concise summaries
               clear up any concept on demand with an AI coach.
             </p>
-            <div className="cta-row">
-              <GetStartedLink className="btn-primary bounce-in">
+           
+              <GetStartedLink className="btn-primary">
                 Get started
               </GetStartedLink>
               <a className="btn-ghost slide-up" href="#how">
                 Watch Demo
               </a>
-            </div>
+          
           </div>
 
           <div className="hero-media zoom-in">

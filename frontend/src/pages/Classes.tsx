@@ -183,11 +183,13 @@ export default function Classes() {
       const fs = await listFiles(selectedId);
       setFiles(fs ?? []); // null-safe
       setSel({});
-      try {
-        setCards(await listFlashcards(selectedId));
-      } catch {
-        /* ok if empty */
-      }
+  try {
+  const cards = await listFlashcards(selectedId ?? undefined);
+  setCards(Array.isArray(cards) ? cards : []);
+} catch {
+  /* ok if empty */
+}
+
     })();
   }, [selectedId]);
 
