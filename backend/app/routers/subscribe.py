@@ -16,7 +16,7 @@ async def subscribe_user(data: SubscribeRequest, background_tasks: BackgroundTas
 
 def send_email(subscriber_email: str):
     sender = "notescapeai@gmail.com"
-    password = "fyp123*#"  # Use Gmail App Password
+    password = "akxo mjmp cmwr nbwt"  # Use Gmail App Password
     receiver = "notescapeai@gmail.com"
 
     msg = MIMEText(f"New subscriber: {subscriber_email}")
