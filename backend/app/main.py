@@ -16,7 +16,7 @@ from app.routers.contact import router as contact_router
 from app.routers.embeddings import router as embeddings_router
 from app.routers.flashcards import router as flashcards_router
 from app.routers import sr
-
+from app.routes import subscribe
 app = FastAPI(title=settings.api_title)
 
 # CORS
