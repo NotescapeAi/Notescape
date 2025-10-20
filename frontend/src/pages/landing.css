@@ -108,6 +108,7 @@ body {
   border-color: #8b5cf6;
 }
 
+
 /* ===== Hero ===== */
 .landing-hero{ padding: 72px 0 40px; }
 .hero-grid{ display:grid; grid-template-columns: 1.05fr .95fr; gap: 40px; align-items:center; }

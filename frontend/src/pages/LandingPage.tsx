@@ -153,7 +153,7 @@ useEffect(() => {
           </div>
 
           <div className="how-grid">
-            <div className="how-copy slide-left">
+            <div className="how-copy ">
               <h3>3. Practice with Auto-Generated Study Tools</h3>
               <p>Create flashcards and quizzes automatically and track improvements.</p>
             </div>
@@ -170,7 +170,7 @@ useEffect(() => {
               <h3 className="cta-title">Ready to Transform Your Study Habits?</h3>
               <p className="cta-sub">Sign up for free today</p>
             </div>
-            <Link to="/get-started" className="btn-primary slide-up">
+            <Link to="/get-started" className="btn-primary">
               Sign Up for Free
             </Link>
           </div>
