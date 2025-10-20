@@ -1,9 +1,27 @@
 import { Link } from "react-router-dom";
-import { FormEvent } from "react";
+import { FormEvent, useState } from "react";
 import './footer.css';
+
 const Footer: React.FC = () => {
-  const handleSubscribe = (e: FormEvent) => {
+  const [subscribed, setSubscribed] = useState(false);
+  const [email, setEmail] = useState("");
+
+  const handleSubscribe = async (e: FormEvent) => {
     e.preventDefault();
+
+    // Call backend API or email service here
+    try {
+      await fetch("https://your-backend-url.com/api/subscribe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      setSubscribed(true);
+      setEmail("");
+    } catch (error) {
+      console.error("Subscription failed", error);
+      alert("Something went wrong. Please try again later.");
+    }
   };
 
   return (
@@ -17,13 +35,12 @@ const Footer: React.FC = () => {
           <p className="foot-note">The first AI workspace for faster learning.</p>
         </div>
 
-       <div>
-  <h4>Product</h4>
-  <Link to="/">Home</Link>
-  <a href="/#how">How It Works</a>
-  <a href="/#features">Features</a>
-</div>
-
+        <div>
+          <h4>Product</h4>
+          <Link to="/">Home</Link>
+          <a href="/#how">How It Works</a>
+          <a href="/#features">Features</a>
+        </div>
 
         <div>
           <h4>Company</h4>
@@ -35,10 +52,20 @@ const Footer: React.FC = () => {
 
         <div>
           <h4>Subscribe</h4>
-          <form className="subscribe" onSubmit={handleSubscribe}>
-            <input type="email" placeholder="Enter your email" required />
-            <button type="submit">Subscribe</button>
-          </form>
+          {subscribed ? (
+            <p className="text-green-600 font-semibold mt-2">✅ Subscribed!</p>
+          ) : (
+            <form className="subscribe" onSubmit={handleSubscribe}>
+              <input
+                type="email"
+                placeholder="Enter your email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+              <button type="submit">Subscribe</button>
+            </form>
+          )}
         </div>
       </div>
 
