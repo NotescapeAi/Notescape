@@ -175,13 +175,14 @@ export default function Dashboard(): JSX.Element {
         {/* bottom actions */}
         <div className="space-y-3">
           <Link to="/logout" className="block">
-  <div className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm bg-black">
+  <div className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm bg-black/10 bg-gradient-to-br from-indigo-600 to-violet-500 hover:from-indigo-600 transition-all duration-300">
     <div className="text-lg">
       <FaSignOutAlt />
     </div>
     <div className="hidden xl:block">Logout</div>
   </div>
 </Link>
+
 
           <div className="text-xs text-white/80 text-center mt-3 hidden xl:block">v1.0 • pastel UI</div>
         </div>
