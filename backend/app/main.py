@@ -50,7 +50,7 @@ app.include_router(chunks_router)
 app.include_router(embeddings_router)
 app.include_router(flashcards_router)
 app.include_router(sr.router)
-
+app.include_router(subscribe.router)
 @app.on_event("startup")
 async def show_routes():
     log = logging.getLogger("uvicorn.error")
