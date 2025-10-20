@@ -1,0 +1,62 @@
+<svg width="1400" height="900" viewBox="0 0 1400 900" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="shadow2" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="18" stdDeviation="26" flood-color="#7B5FEF" flood-opacity="0.18"/>
+    </filter>
+    <linearGradient id="pill2" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#38D39F"/>
+      <stop offset="1" stop-color="#7B5FEF"/>
+    </linearGradient>
+  </defs>
+  <rect width="1400" height="900" fill="#FFFFFF"/>
+  <g opacity=".12">
+    <circle cx="1180" cy="200" r="180" fill="#38D39F"/>
+    <circle cx="260" cy="720" r="160" fill="#7B5FEF"/>
+    <circle cx="1140" cy="720" r="140" fill="#FF7BC3"/>
+  </g>
+  <g transform="translate(250,140)">
+    <rect width="900" height="620" rx="28" fill="#FFFFFF" stroke="#E5E7EB" filter="url(#shadow2)"/>
+    <g transform="translate(28,24)">
+      <rect width="844" height="52" rx="12" fill="#F9FAFB" stroke="#E5E7EB"/>
+      <g font-family="Inter,system-ui" font-size="14" fill="#6B7280" font-weight="600">
+        <text x="26" y="33">Files</text>
+        <text x="86" y="33">Flashcards</text>
+        <text x="182" y="33" fill="#111827">Chats</text>
+        <text x="236" y="33">Quizzes</text>
+      </g>
+      <rect x="168" y="46" width="52" height="3" rx="1.5" fill="#7B5FEF"/>
+    </g>
+    <g transform="translate(28,96)">
+      <rect width="220" height="480" rx="14" fill="#F9FAFB" stroke="#E5E7EB"/>
+      <rect x="12" y="16" width="196" height="40" rx="10" fill="#7B5FEF"/>
+      <text x="110" y="42" font-family="Inter,system-ui" font-size="14" fill="#fff" text-anchor="middle">New chat</text>
+      <g font-family="Inter,system-ui" font-size="14" fill="#111827">
+        <text x="20" y="92">Biology questions</text>
+        <text x="20" y="126">Chemistry tools</text>
+        <text x="20" y="160">History review</text>
+      </g>
+    </g>
+    <g transform="translate(270,96)">
+      <rect width="602" height="80" rx="12" fill="#FFFFFF" stroke="#E5E7EB"/>
+      <text x="16" y="50" font-family="Inter,system-ui" font-size="16" fill="#6B7280">Type your question…</text>
+      <g transform="translate(0,110)">
+        <rect width="520" height="120" rx="12" fill="#F9FAFB" stroke="#E5E7EB"/>
+        <text x="16" y="40" font-family="Inter,system-ui" font-size="14" fill="#111827">What is mitosis in simple words?</text>
+        <text x="16" y="72" font-family="Inter,system-ui" font-size="13" fill="#6B7280">You · 2m</text>
+      </g>
+      <g transform="translate(82,246)">
+        <rect width="520" height="160" rx="12" fill="#FFFFFF" stroke="#E5E7EB"/>
+        <text x="16" y="34" font-family="Inter,system-ui" font-size="14" fill="#111827">Mitosis is the process where one cell divides to form</text>
+        <text x="16" y="56" font-family="Inter,system-ui" font-size="14" fill="#111827">two identical cells. Stages: prophase, metaphase,</text>
+        <text x="16" y="78" font-family="Inter,system-ui" font-size="14" fill="#111827">anaphase, and telophase, followed by cytokinesis.</text>
+        <text x="16" y="110" font-family="Inter,system-ui" font-size="13" fill="#6B7280">AI Coach · just now</text>
+      </g>
+      <g transform="translate(0,430)">
+        <rect width="140" height="36" rx="18" fill="url(#pill2)"/>
+        <text x="70" y="24" font-family="Inter,system-ui" font-size="14" fill="#fff" text-anchor="middle">Summarize</text>
+        <rect x="160" width="150" height="36" rx="18" fill="#EEF2FF" stroke="#E5E7EB"/>
+        <text x="235" y="24" font-family="Inter,system-ui" font-size="14" fill="#7B5FEF" text-anchor="middle">Explain simply</text>
+      </g>
+    </g>
+  </g>
+</svg>

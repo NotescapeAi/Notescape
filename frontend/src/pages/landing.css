@@ -155,7 +155,7 @@ body {
 .how-grid.reverse{ grid-auto-flow:dense; }
 .how-grid.reverse .how-copy{ order:2; }
 .how-img{
-  width: 100%; max-width: 520px; border-radius: 14px; box-shadow: 0 20px 44px rgb(124, 69, 133);
+  width: 100%; max-width: 520px; 
   margin: 0 auto;
 }
 .how-copy h3{ margin: 0 0 8px; font-weight: 800; }

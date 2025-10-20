@@ -305,37 +305,33 @@ export default function Classes() {
         {/* Main */}
         <section style={{ padding: 20 }}>
           {/* Header */}
-          <div
-            className="cls-header"
-            style={{
-              background:"#fff", border:"1px solid #EEF2F6", borderRadius:14, padding:16,
-              display:"flex", alignItems:"center", justifyContent:"space-between", gap:12, flexWrap:"wrap"
-            }}
-          >
-            <div style={{ display:"flex", alignItems:"center", gap:12, flexWrap:"wrap" }}>
-              <h2 style={{ margin:0 }}>{currentClass ?? "Workspace"}</h2>
-              {busyUpload && <Badge>Uploading…</Badge>}
-              {busyFlow && <Badge>Processing…</Badge>}
-            </div>
+  <div className="cls-header">
+  <div className="cls-head-left">
+    <h2 className="cls-title">{currentClass ?? "Workspace"}</h2>
+    {busyUpload && <span className="cls-badge">Uploading…</span>}
+    {busyFlow && <span className="cls-badge">Processing…</span>}
+  </div>
 
-            {selectedId && (
-              showSelect ? (
-                <div style={{ display:"flex", gap:8 }}>
-                  <Button kind="ghost" onClick={() => { setSelectingForGen(false); setSel({}); }}>Cancel</Button>
-                  <Button kind="primary" onClick={onGenerateFlashcards}>
-                    Confirm ({selectedIds.length})
-                  </Button>
-                </div>
-              ) : (
-                <ClassHeaderButtons
-                  classId={String(selectedId)}
-                  onGenerate={() => setSelectingForGen(true)}  // enter selection mode only
-                />
-              )
-            )}
-          </div>
+  {selectedId && (
+    showSelect ? (
+      <div style={{ display:"flex", gap:8 }}>
+        <Button kind="ghost" onClick={() => { setSelectingForGen(false); setSel({}); }}>
+          Cancel
+        </Button>
+        <Button kind="primary" onClick={onGenerateFlashcards}>
+          Confirm ({selectedIds.length})
+        </Button>
+      </div>
+    ) : (
+      <ClassHeaderButtons
+        classId={String(selectedId)}
+        onGenerate={() => setSelectingForGen(true)}
+      />
+    )
+  )}
+</div>
 
-          <Divider />
+<Divider />
 
           {!selectedId ? (
             <div style={{ background:"#fff", border:"1px solid #EEF2F6", borderRadius:14, padding:24, color:"#667085" }}>
@@ -343,22 +339,8 @@ export default function Classes() {
             </div>
           ) : (
             <>
-              {/* Hidden file chooser (triggered from Files header icon) */}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept={[
-                  "application/pdf",
-                  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                  ".pdf,.pptx,.docx",
-                ].join(",")}
-                style={{ display:"none" }}
-                multiple
-                onChange={onUploadChange}
-              />
-
-
+  
+{/* Hidden chooser stays where it is */}
 <input
   ref={fileInputRef}
   type="file"
@@ -373,32 +355,24 @@ export default function Classes() {
   onChange={onUploadChange}
 />
 
-{/* Files card */}
-<div className="files-card">
-  {/* Toolbar: no overlap, flex with wrap */}
+{/* Files card */}<div className="files-card">
   <div className="files-toolbar">
-    <div className="files-title">
-      <div className="title-text">Files</div>
-      {showSelect && <Badge>{selectedIds.length} selected</Badge>}
-    </div>
-
-    <div className="files-actions">
-      {/* (optional) other buttons can go here later */}
-      <button
-        className="icon-btn"
-        title="Upload files"
-        aria-label="Upload files"
-        onClick={() => fileInputRef.current?.click()}
-      >
-        <UploadIcon />
-      </button>
-    </div>
+    <div className="files-title">Files {showSelect && <span className="cls-badge">{selectedIds.length} selected</span>}</div>
+    {/* You can keep or remove this upload icon — it won’t overlap now */}
+    <button className="icon-btn" title="Upload" aria-label="Upload" onClick={() => fileInputRef.current?.click()}>
+      {/* simple chevron upload */}
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+        stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <path d="M7 10l5-5 5 5"/>
+        <path d="M12 15V5"/>
+      </svg>
+    </button>
   </div>
 
-  {/* Compact list (no Size/Uploaded columns) */}
   <ul className="filelist">
     {(files ?? []).map((f) => (
-      <li key={f.id} className="fileitem">
+      <li key={f.id} className={`fileitem ${showSelect ? "with-check" : ""}`}>
         {showSelect && (
           <input
             className="fileitem-check"
@@ -409,29 +383,27 @@ export default function Classes() {
           />
         )}
 
-        <button
-          className="fileitem-main"
-          title="Open preview"
-          onClick={() => setActiveFile(f)}
-        >
+        <button className="file-main" title="Open preview" onClick={() => setActiveFile(f)}>
           <span className="filename">{f.filename}</span>
-          <Badge>{(f.filename.split(".").pop() || "").toUpperCase()}</Badge>
+          <span className="badge-ext">{(f.filename.split(".").pop() || "").toUpperCase()}</span>
         </button>
 
         <div className="fileitem-actions">
-          <RowMenu
-            onView={() => setActiveFile(f)}
-            onDelete={() => onDeleteFile(f.id, f.filename)}
-          />
+          <div className="rowmenu">
+            <button className="icon-btn" aria-label="More" onClick={(e) => e.currentTarget.nextElementSibling?.classList.toggle('open')}>⋯</button>
+            {/* if you’re using the RowMenu component, keep that instead of this stub */}
+          </div>
         </div>
       </li>
     ))}
 
     {(files?.length ?? 0) === 0 && (
-      <li className="fileitem empty">No files yet. Click the upload icon to add PDFs, PPTX, or DOCX.</li>
+      <li className="fileitem empty">No files yet. Use the upload icon to add PDFs, PPTX, or DOCX.</li>
     )}
   </ul>
 </div>
+
+
 
               {/* Chunk preview dialog */}
               {preview && (

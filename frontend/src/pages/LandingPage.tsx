@@ -141,11 +141,11 @@ useEffect(() => {
               <h3>1. Upload Your Study Materials</h3>
               <p>Drag and drop PDFs, slides or notes. OCR preserves diagrams and handwriting.</p>
             </div>
-            <img src="/step1.png" alt="Upload mock" className="how-img slide-right" />
+            <img src="/step1.svg" alt="Upload mock" className="how-img slide-right" />
           </div>
 
           <div className="how-grid reverse">
-            <img src="/step2.png" alt="AI mock" className="how-img slide-left" />
+            <img src="/step2.svg" alt="AI mock" className="how-img slide-left" />
             <div className="how-copy slide-right">
               <h3>2. Engage with AI-Powered Learning</h3>
               <p>Ask questions, generate summaries and get tailored explanations.</p>
@@ -157,7 +157,7 @@ useEffect(() => {
               <h3>3. Practice with Auto-Generated Study Tools</h3>
               <p>Create flashcards and quizzes automatically and track improvements.</p>
             </div>
-            <img src="/step3.png" alt="Practice mock" className="how-img slide-right" />
+            <img src="/step3.svg" alt="Practice mock" className="how-img slide-right" />
           </div>
         </div>
       </section>
