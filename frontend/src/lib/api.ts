@@ -194,7 +194,6 @@ export async function deleteFile(fileId: string): Promise<void> {
 export async function createChunks(payload: {
   file_ids: string[];
   by: "auto" | "page" | "chars";
-
   size: number;
   overlap: number;
   preview_limit_per_file?: number;
