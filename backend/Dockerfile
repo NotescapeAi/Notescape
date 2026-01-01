@@ -15,7 +15,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # ---- Install CPU-only PyTorch FIRST (small & fast) ----
 ARG TORCH_INDEX=https://download.pytorch.org/whl/cpu
-RUN pip install --no-cache-dir --index-url ${TORCH_INDEX} torch==2.4.1
+RUN pip install --no-cache-dir \
+    --retries 10 \
+    --timeout 1000 \
+    --index-url ${TORCH_INDEX} \
+    torch==2.4.1
+
 
 # ---- Install your project deps (make sure torch is NOT in requirements.txt) ----
 COPY requirements.txt .

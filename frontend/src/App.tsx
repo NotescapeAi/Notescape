@@ -1,4 +1,5 @@
 // src/App.tsx
+
 import React, { Suspense, lazy, useEffect } from "react";
 import {
   BrowserRouter,
@@ -24,6 +25,7 @@ const Settings           = lazy(() => import("./pages/Settings"));
 const LogoutPage         = lazy(() => import("./pages/Logout"));
 const FlashcardsPage     = lazy(() => import("./pages/FlashcardsPage"));
 const Profile            = lazy(() => import("./pages/Profile"));
+const Chatbot            = lazy(() => import("./pages/Chatbot"));
 
 // ⚠️ these two routes must exist for the menu navigation to show a new UI
 const FlashcardsViewMode  = lazy(() => import("./pages/FlashcardsViewMode"));
@@ -83,6 +85,7 @@ function AppRoutes() {
       <Route path="/classes/:classId/flashcards/study"     element={<FlashcardsStudyMode />} />
       <Route path="/classes/:classId/flashcards/bookmarks" element={<FlashcardsBookmarks />} />
       <Route path="/classes/:classId/flashcards"           element={<FlashcardsPage />} />
+      <Route path="/chatbot" element={<Chatbot />} />
 
       <Route path="/dashboard" element={<Dashboard />} />
       <Route path="/settings"  element={<Settings />} />

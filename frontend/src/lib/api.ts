@@ -193,7 +193,8 @@ export async function deleteFile(fileId: string): Promise<void> {
 ========================= */
 export async function createChunks(payload: {
   file_ids: string[];
-  by: "page" | "tokens";
+  by: "auto" | "page" | "chars";
+
   size: number;
   overlap: number;
   preview_limit_per_file?: number;
@@ -242,6 +243,30 @@ export async function ensureClassEmbeddings(classId: number): Promise<void> {
 
 export async function deleteFlashcard(id: number): Promise<void> {
   await http.delete(`/flashcards/${id}`);
+}
+
+
+export type ChatCitation = {
+  chunk_id: number;
+  file_id: string;
+  filename: string;
+  page_start?: number | null;
+  page_end?: number | null;
+};
+
+export type ChatAskRes = {
+  answer: string;
+  citations: ChatCitation[];
+};
+
+export async function chatAsk(payload: {
+  class_id: number;
+  question: string;
+  top_k?: number;
+  file_ids?: string[];
+}): Promise<ChatAskRes> {
+  const { data } = await http.post<ChatAskRes>("/chat/ask", payload);
+  return data;
 }
 
 /* =========================

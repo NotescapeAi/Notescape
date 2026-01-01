@@ -16,7 +16,14 @@ from app.routers.contact import router as contact_router
 from app.routers.embeddings import router as embeddings_router
 from app.routers.flashcards import router as flashcards_router
 from app.routers import sr
-from app.routes import subscribe
+
+from app.routers import subscribe
+
+from app.routers.chat_health import router as chat_health_router
+from app.routers.chat import router as chat_router
+
+
+
 app = FastAPI(title=settings.api_title)
 
 # CORS
@@ -50,7 +57,12 @@ app.include_router(chunks_router)
 app.include_router(embeddings_router)
 app.include_router(flashcards_router)
 app.include_router(sr.router)
+
 app.include_router(subscribe.router)
+
+app.include_router(chat_health_router)
+app.include_router(chat_router)
+
 @app.on_event("startup")
 async def show_routes():
     log = logging.getLogger("uvicorn.error")

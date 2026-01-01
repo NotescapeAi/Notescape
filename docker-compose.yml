@@ -23,10 +23,18 @@ services:
       EMBED_PROVIDER: ${EMBED_PROVIDER:-local}
       EMBED_MODEL: ${EMBED_MODEL:-sentence-transformers/all-MiniLM-L6-v2}
       EMBED_DIM: ${EMBED_DIM:-1536}
+
+      # Existing flashcard/quiz LLM config (unchanged)
       LLM_PROVIDER: ${LLM_PROVIDER:-groq}
       GEN_MODEL: ${GEN_MODEL:-llama-3.1-8b-instant}
       GEN_T: ${GEN_T:-0.2}
+
+      # Groq API Key (shared for flashcards + chatbot)
       GROQ_API_KEY: ${GROQ_API_KEY}
+
+      # ✅ NEW: Chatbot (RAG QnA) model config (added only)
+      CHAT_PROVIDER: ${CHAT_PROVIDER:-groq}
+      CHAT_MODEL: ${CHAT_MODEL:-llama-3.3-70b-versatile}
 
     depends_on:
       - db
