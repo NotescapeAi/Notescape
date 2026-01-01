@@ -250,11 +250,15 @@ export default function Classes() {
     // Don’t show the chunk preview popup during auto-indexing
     await createChunks({
     file_ids: fileIds,
+
     by: "auto",       // ✅ backend supports
     size: 2000,       // chars per chunk (since backend is char-based)
     overlap: 200,
     preview_limit_per_file: 0,
   });
+
+
+
 
     // Build embeddings for this class (includes those new chunks)
     await buildEmbeddings(classId, 2000);
