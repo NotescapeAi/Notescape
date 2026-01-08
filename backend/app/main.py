@@ -16,11 +16,9 @@ from app.routers.contact import router as contact_router
 from app.routers.embeddings import router as embeddings_router
 from app.routers.flashcards import router as flashcards_router
 from app.routers import sr
-
-from app.routers import subscribe
-
 from app.routers.chat_health import router as chat_health_router
 from app.routers.chat import router as chat_router
+from app.routers import subscribe
 
 
 

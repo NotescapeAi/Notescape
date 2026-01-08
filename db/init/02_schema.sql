@@ -17,10 +17,14 @@ CREATE TABLE IF NOT EXISTS files (
   filename TEXT NOT NULL,
   mime_type TEXT,
   storage_url TEXT NOT NULL,
+  storage_key TEXT,                 -- NEW: object key in MinIO/S3
   size_bytes BIGINT,
   uploaded_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-ALTER TABLE files OWNER TO CURRENT_USER;
+ALTER TABLE files ADD COLUMN IF NOT EXISTS storage_key TEXT;
+ALTER TABLE files ADD COLUMN IF NOT EXISTS storage_bucket TEXT DEFAULT 'notescape';
+ALTER TABLE files ADD COLUMN IF NOT EXISTS storage_backend TEXT DEFAULT 's3';
+
 
 -- chunks
 CREATE TABLE IF NOT EXISTS chunks (
@@ -56,3 +60,20 @@ CREATE TABLE IF NOT EXISTS flashcards (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 ALTER TABLE flashcards OWNER TO CURRENT_USER;
+
+
+CREATE TABLE IF NOT EXISTS ocr_jobs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  file_id UUID NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+  status TEXT NOT NULL DEFAULT 'queued', -- queued|running|done|failed
+  engine TEXT NOT NULL DEFAULT 'easyocr',
+  output_json_key TEXT,   -- e.g. processed/ocr/<file_id>/ocr.json
+  output_text_key TEXT,   -- e.g. processed/ocr/<file_id>/ocr.txt
+  error TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  started_at TIMESTAMPTZ,
+  finished_at TIMESTAMPTZ
+);
+
+ALTER TABLE ocr_jobs ADD COLUMN IF NOT EXISTS method TEXT; 
+-- method: 'pdf_text' or 'ocr'

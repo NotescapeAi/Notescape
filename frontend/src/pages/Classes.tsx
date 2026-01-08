@@ -31,7 +31,11 @@ import {
 const ALLOWED_MIME = new Set<string>([
   "application/pdf",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation", // .pptx
+<<<<<<< HEAD
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // .docx
+=======
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",   // .docx
+>>>>>>> 8cc3c6c (User-based access control, views and minio connection)
 ]);
 
 const ALLOWED_EXT = new Set<string>([".pdf", ".pptx", ".docx"]);
@@ -441,8 +445,11 @@ export default function Classes() {
     }
   }
 
+
   /* -------------------- UI -------------------- */
-  const currentClass = selectedId ? classes.find((c) => c.id === selectedId)?.name : null;
+  const currentClass = selectedId
+    ? classes.find((c) => c.id === selectedId)?.name
+    : null;
 
   return (
     <div
@@ -511,7 +518,10 @@ export default function Classes() {
                 multiple
                 onChange={onUploadChange}
               />
-              <ClassHeaderButtons classId={String(selectedId)} onGenerate={() => onGenerateFlashcards()} />
+              <ClassHeaderButtons
+                classId={String(selectedId)}
+                onGenerate={() => onGenerateFlashcards()}
+              />
             </div>
           )}
         </div>
@@ -727,14 +737,7 @@ export default function Classes() {
               >
                 <thead>
                   <tr style={{ background: "#FAFAFB" }}>
-                    <th
-                      style={{
-                        textAlign: "left",
-                        borderBottom: "1px solid #EEF2F6",
-                        width: 42,
-                        padding: "10px 12px",
-                      }}
-                    >
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #EEF2F6", width: 42, padding: "10px 12px" }}>
                       <input
                         type="checkbox"
                         aria-label="Select all"
@@ -783,6 +786,16 @@ export default function Classes() {
                         width: 120,
                       }}
                     >
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #EEF2F6", padding: "10px 12px", width: 120 }}>
+                      Size
+                    </th>
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #EEF2F6", padding: "10px 12px", width: 220 }}>
+                      Uploaded
+                    </th>
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #EEF2F6", padding: "10px 12px", width: 100 }}>
+                      Open
+                    </th>
+                    <th style={{ textAlign: "left", borderBottom: "1px solid #EEF2F6", padding: "10px 12px", width: 120 }}>
                       Actions
                     </th>
                   </tr>
@@ -922,7 +935,8 @@ export default function Classes() {
                                   style={{
                                     margin: 0,
                                     whiteSpace: "pre-wrap",
-                                    fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+                                    fontFamily:
+                                      "ui-monospace, SFMono-Regular, Menlo, monospace",
                                     fontSize: 13,
                                     lineHeight: 1.45,
                                   }}

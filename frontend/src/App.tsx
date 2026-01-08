@@ -8,6 +8,7 @@ import {
   Navigate,
   useLocation,
 } from "react-router-dom";
+import RequireAuth from "./components/RequireAuth";
 
 // lazy-load pages (your originals)
 const LandingPage        = lazy(() => import("./pages/LandingPage"));
@@ -32,9 +33,24 @@ const FlashcardsViewMode  = lazy(() => import("./pages/FlashcardsViewMode"));
 const FlashcardsStudyMode = lazy(() => import("./pages/FlashcardsStudyMode"));
 const FlashcardsBookmarks = lazy(() => import("./pages/FlashcardsBookmarks"));
 
+import { onAuthStateChanged, User } from "firebase/auth";
+import { auth } from "./firebase/firebase"; // adjust path if needed
+import {  useState } from "react";
+
 function GetStartedGate() {
-  const loggedIn = !!localStorage.getItem("auth_token");
-  return <Navigate to={loggedIn ? "/classes" : "/signup"} replace />;
+  const [user, setUser] = useState<User | null>(null);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, (u) => {
+      setUser(u);
+      setReady(true);
+    });
+    return () => unsub();
+  }, []);
+
+  if (!ready) return <div style={{ padding: 24 }}>Loading…</div>;
+  return <Navigate to={user ? "/classes" : "/signup"} replace />;
 }
 
 function NotFound() {
@@ -78,9 +94,11 @@ function AppRoutes() {
       <Route path="/logout"          element={<LogoutPage />} />
 
       {/* app */}
-      <Route path="/classes" element={<Classes />} />
+      <Route path="/classes" element={<RequireAuth><Classes /></RequireAuth>} />
+
 
       {/* Put the specific routes FIRST (good practice, though v6 matches exactly) */}
+<<<<<<< HEAD
       <Route path="/classes/:classId/flashcards/view"      element={<FlashcardsViewMode />} />
       <Route path="/classes/:classId/flashcards/study"     element={<FlashcardsStudyMode />} />
       <Route path="/classes/:classId/flashcards/bookmarks" element={<FlashcardsBookmarks />} />
@@ -89,6 +107,15 @@ function AppRoutes() {
 
       <Route path="/dashboard" element={<Dashboard />} />
       <Route path="/settings"  element={<Settings />} />
+=======
+      <Route path="/classes/:classId/flashcards/view" element={<RequireAuth><FlashcardsViewMode /></RequireAuth>} />
+      <Route path="/classes/:classId/flashcards/study" element={<RequireAuth><FlashcardsStudyMode /></RequireAuth>} />
+      <Route path="/classes/:classId/flashcards/bookmarks" element={<RequireAuth><FlashcardsBookmarks /></RequireAuth>} />
+      <Route path="/classes/:classId/flashcards" element={<RequireAuth><FlashcardsPage /></RequireAuth>} />
+      <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
+      <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />
+      <Route path="/profile" element={<RequireAuth><Profile /></RequireAuth>} />
+>>>>>>> 8cc3c6c (User-based access control, views and minio connection)
 
       {/* legal / info */}
       <Route path="/pricing"   element={<Pricing />} />
