@@ -16,6 +16,7 @@ firebase-admin
 pytesseract==0.3.13
 Pillow==10.4.0
 opencv-python-headless==4.10.0.84
+redis==5.0.8
 
 
 # For GPU CUDA 12.1

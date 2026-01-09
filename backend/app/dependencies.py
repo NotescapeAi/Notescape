@@ -1,5 +1,5 @@
 # backend/app/dependencies.py
-from fastapi import Depends, HTTPException
+from fastapi import Depends, HTTPException, Header
 from fastapi.security import OAuth2PasswordBearer
 import firebase_admin
 from firebase_admin import auth
@@ -19,3 +19,19 @@ async def get_current_user_uid(token: str = Depends(oauth2_scheme)):
         return decoded_token['uid']  # Real Firebase UID
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid token")
+
+
+async def get_request_user_uid(
+    authorization: str | None = Header(default=None),
+    x_user_id: str | None = Header(default=None, alias="X-User-Id"),
+) -> str:
+    if authorization and authorization.lower().startswith("bearer "):
+        token = authorization.split(" ", 1)[1]
+        try:
+            decoded_token = auth.verify_id_token(token)
+            return decoded_token["uid"]
+        except Exception:
+            raise HTTPException(status_code=401, detail="Invalid token")
+    if x_user_id:
+        return x_user_id
+    return "dev-user"

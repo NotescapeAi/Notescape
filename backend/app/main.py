@@ -18,6 +18,7 @@ from app.routers.flashcards import router as flashcards_router
 from app.routers import sr
 from app.routers.chat_health import router as chat_health_router
 from app.routers.chat import router as chat_router
+from app.routers.chat_sessions import router as chat_sessions_router
 from app.routers import subscribe
 
 
@@ -60,6 +61,7 @@ app.include_router(subscribe.router)
 
 app.include_router(chat_health_router)
 app.include_router(chat_router)
+app.include_router(chat_sessions_router)
 
 @app.on_event("startup")
 async def show_routes():

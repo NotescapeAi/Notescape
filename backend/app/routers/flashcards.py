@@ -1,17 +1,33 @@
 from typing import Optional, List, Tuple, Dict  # Importing Tuple here
-from fastapi import APIRouter, HTTPException, Path, Query
+from fastapi import APIRouter, HTTPException, Path, Query, Depends
 from pydantic import BaseModel, Field
 from app.core.db import db_conn
 from app.core.llm import get_embedder, get_card_generator
+from app.core.embedding_cache import embed_texts_cached
+from app.dependencies import get_request_user_uid
 import json
+from datetime import datetime, timedelta, timezone
 
 router = APIRouter(prefix="/api/flashcards", tags=["flashcards"])
+
+
+async def _ensure_class_owner(class_id: int, user_id: str):
+    if user_id == "dev-user":
+        return
+    async with db_conn() as (conn, cur):
+        await cur.execute(
+            "SELECT 1 FROM classes WHERE id=%s AND owner_uid=%s",
+            (class_id, user_id),
+        )
+        if not await cur.fetchone():
+            raise HTTPException(status_code=404, detail="Class not found")
 
 class EnsureEmbeddingsReq(BaseModel):
     limit: Optional[int] = Field(default=500)
 
 class GenerateReq(BaseModel):
     class_id: int
+    file_ids: List[str] = Field(default_factory=list)
     topic: Optional[str] = None
     top_k: int = Field(default=12, ge=1, le=100)
     n_cards: int = Field(default=24, ge=1, le=50)
@@ -20,12 +36,18 @@ class GenerateReq(BaseModel):
 class FlashcardOut(BaseModel):
     id: str
     class_id: int
+    file_id: Optional[str] = None
     source_chunk_id: Optional[int]
     question: str
     answer: str
     hint: Optional[str] = None
     difficulty: Optional[str] = "medium"
     tags: List[str] = []
+    due_at: Optional[str] = None
+    repetitions: Optional[int] = None
+    ease_factor: Optional[float] = None
+    interval_days: Optional[int] = None
+    state: Optional[str] = None
 
 def _vec_literal(vec: List[float]) -> str:
     return "[" + ",".join(str(x) for x in vec) + "]"
@@ -70,66 +92,191 @@ def _maybe_expand_legacy_jsonblob(
     except Exception:
         return None
 
-@router.get("/{class_id}", response_model=List[FlashcardOut])
-async def list_flashcards_for_class(
+class ReviewReq(BaseModel):
+    rating: str = Field(pattern="^(again|hard|good|easy)$")
+
+
+def _sm2_update(ease: float, interval: int, reps: int, lapses: int, rating: str):
+    now = datetime.now(timezone.utc)
+    if rating == "again":
+        ease = max(1.3, ease - 0.2)
+        reps = 0
+        lapses += 1
+        interval = 0
+        due_at = now + timedelta(minutes=10)
+        state = "learning"
+    elif rating == "hard":
+        ease = max(1.3, ease - 0.15)
+        reps += 1
+        interval = 1 if interval == 0 else max(1, round(interval * 1.2))
+        due_at = now + timedelta(days=interval)
+        state = "review"
+    elif rating == "good":
+        reps += 1
+        if reps == 1:
+            interval = 1
+        elif reps == 2:
+            interval = 3
+        else:
+            interval = max(1, round(interval * ease))
+        due_at = now + timedelta(days=interval)
+        state = "review"
+    else:  # easy
+        ease = min(2.8, ease + 0.15)
+        reps += 1
+        if reps == 1:
+            interval = 1
+        elif reps == 2:
+            interval = 4
+        else:
+            interval = max(1, round(interval * ease * 1.3))
+        due_at = now + timedelta(days=interval)
+        state = "review"
+
+    return {
+        "ease_factor": ease,
+        "interval_days": interval,
+        "repetitions": reps,
+        "lapses": lapses,
+        "due_at": due_at,
+        "state": state,
+    }
+
+
+@router.get("/due")
+async def list_due_cards(
     class_id: int,
-    difficulty: Optional[str] = Query(default=None, pattern="^(easy|medium|hard)$"),
+    file_id: Optional[str] = None,
+    limit: int = 30,
+    user_id: str = Depends(get_request_user_uid),
 ):
+    await _ensure_class_owner(class_id, user_id)
     q = """
-      SELECT id::text, class_id, source_chunk_id, question, answer, hint, difficulty, tags
-      FROM flashcards
-      WHERE class_id = %s
-      ORDER BY created_at DESC
+      SELECT f.id::text, f.class_id, f.file_id::text, f.question, f.answer, f.hint, f.difficulty,
+             s.ease_factor, s.interval_days, s.repetitions, s.lapses, s.due_at, s.state
+      FROM flashcards f
+      LEFT JOIN sr_card_state s ON s.card_id = f.id AND s.user_id = %s
+      WHERE f.class_id = %s
+        AND (%s::uuid IS NULL OR f.file_id = %s::uuid)
+        AND (s.due_at IS NULL OR s.due_at <= now())
+      ORDER BY s.due_at NULLS FIRST, f.created_at ASC
+      LIMIT %s
     """
     async with db_conn() as (conn, cur):
-        await cur.execute(q, (class_id,))
+        await cur.execute(q, (user_id, class_id, file_id, file_id, limit))
         rows = await cur.fetchall()
 
-    out: List[FlashcardOut] = []
+    out = []
     for r in rows:
-        expanded = _maybe_expand_legacy_jsonblob(r)
-        if expanded:
-            out.extend(expanded)
-        else:
-            out.append(
-                FlashcardOut(
-                    id=r[0],
-                    class_id=r[1],
-                    source_chunk_id=r[2],
-                    question=r[3],
-                    answer=r[4],
-                    hint=r[5],
-                    difficulty=r[6] or "medium",
-                    tags=r[7] or [],
-                )
-            )
-
-    if difficulty:
-        out = [c for c in out if (c.difficulty or "medium") == difficulty]
+        out.append(
+            {
+                "id": r[0],
+                "class_id": r[1],
+                "file_id": r[2],
+                "question": r[3],
+                "answer": r[4],
+                "hint": r[5],
+                "difficulty": r[6],
+                "ease_factor": r[7] or 2.5,
+                "interval_days": r[8] or 0,
+                "repetitions": r[9] or 0,
+                "lapses": r[10] or 0,
+                "due_at": r[11].isoformat() if r[11] else None,
+                "state": r[12] or "new",
+            }
+        )
     return out
 
-@router.delete("/{card_id}", status_code=204)
-async def delete_flashcard(card_id: str = Path(..., description="flashcards.id (UUID)")):
+
+@router.post("/{card_id}/review")
+async def review_card(
+    card_id: str,
+    payload: ReviewReq,
+    user_id: str = Depends(get_request_user_uid),
+):
     async with db_conn() as (conn, cur):
-        await cur.execute("DELETE FROM flashcards WHERE id::text=%s", (card_id,))
+        await cur.execute(
+            "SELECT ease_factor, interval_days, repetitions, lapses FROM sr_card_state WHERE card_id=%s AND user_id=%s",
+            (card_id, user_id),
+        )
+        row = await cur.fetchone()
+
+        if row:
+            ease, interval, reps, lapses = row
+        else:
+            ease, interval, reps, lapses = 2.5, 0, 0, 0
+
+        updated = _sm2_update(float(ease), int(interval), int(reps), int(lapses), payload.rating)
+
+        await cur.execute(
+            """
+            INSERT INTO sr_card_state (card_id, user_id, ease_factor, interval_days, repetitions, lapses, due_at, state, last_review)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, now())
+            ON CONFLICT (card_id, user_id) DO UPDATE
+            SET ease_factor=EXCLUDED.ease_factor,
+                interval_days=EXCLUDED.interval_days,
+                repetitions=EXCLUDED.repetitions,
+                lapses=EXCLUDED.lapses,
+                due_at=EXCLUDED.due_at,
+                state=EXCLUDED.state,
+                last_review=now()
+            """,
+            (
+                card_id,
+                user_id,
+                updated["ease_factor"],
+                updated["interval_days"],
+                updated["repetitions"],
+                updated["lapses"],
+                updated["due_at"],
+                updated["state"],
+            ),
+        )
         await conn.commit()
-    return
+
+    return {"ok": True, "state": updated}
+
+
+@router.get("/progress")
+async def flashcard_progress(
+    class_id: int,
+    file_id: Optional[str] = None,
+    user_id: str = Depends(get_request_user_uid),
+):
+    await _ensure_class_owner(class_id, user_id)
+    q = """
+      SELECT
+        COUNT(*) AS total,
+        COUNT(*) FILTER (WHERE s.due_at <= now()) AS due_now,
+        COUNT(*) FILTER (WHERE s.due_at <= date_trunc('day', now()) + interval '1 day') AS due_today,
+        COUNT(*) FILTER (WHERE COALESCE(s.repetitions, 0) = 0) AS learning
+      FROM flashcards f
+      LEFT JOIN sr_card_state s ON s.card_id = f.id AND s.user_id = %s
+      WHERE f.class_id = %s
+        AND (%s::uuid IS NULL OR f.file_id = %s::uuid)
+    """
+    async with db_conn() as (conn, cur):
+        await cur.execute(q, (user_id, class_id, file_id, file_id))
+        row = await cur.fetchone()
+    return {"total": row[0], "due_now": row[1], "due_today": row[2], "learning": row[3]}
 
 # ---------- EMBEDDINGS HELPERS ----------
 
-async def _fetch_missing_chunks(limit: Optional[int]) -> List[Tuple[int, str]]:  # (chunk_id, content)
+async def _fetch_missing_chunks(class_id: int, limit: Optional[int]) -> List[Tuple[int, str]]:  # (chunk_id, content)
     q = """
       SELECT fc.id, fc.content
       FROM file_chunks fc
+      JOIN files f ON f.id = fc.file_id
       WHERE fc.chunk_vector IS NULL
+        AND f.class_id = %s
       ORDER BY fc.id
     """
-    params = ()
+    params: List[object] = [class_id]
     if limit:
         q += " LIMIT %s"
-        params = (limit,)
+        params.append(limit)
     async with db_conn() as (conn, cur):
-        await cur.execute(q, params)
+        await cur.execute(q, tuple(params))
         return await cur.fetchall()
 
 async def _insert_embeddings(pairs: List[Tuple[int, List[float]]]):
@@ -143,22 +290,23 @@ async def _insert_embeddings(pairs: List[Tuple[int, List[float]]]):
             )
         await conn.commit()
 
-async def _pick_relevant_chunks(class_id: int, query_vec: List[float], top_k: int) -> List[Tuple[int, str]]:
+async def _pick_relevant_chunks(class_id: int, query_vec: List[float], top_k: int, file_ids: List[str]) -> List[Tuple[int, str, str]]:
     vec_lit = _vec_literal(query_vec)
     q = """
-      SELECT fc.id, fc.content
+      SELECT fc.id, fc.content, f.id::text
       FROM file_chunks fc
       JOIN files f ON f.id = fc.file_id
       WHERE f.class_id = %s
         AND fc.chunk_vector IS NOT NULL
+        AND (cardinality(%s::uuid[]) = 0 OR f.id = ANY(%s::uuid[]))
       ORDER BY fc.chunk_vector <=> %s::vector
       LIMIT %s
     """
     async with db_conn() as (conn, cur):
-        await cur.execute(q, (class_id, vec_lit, top_k))
+        await cur.execute(q, (class_id, file_ids, file_ids, vec_lit, top_k))
         return await cur.fetchall()
 
-async def _insert_flashcards(class_id: int, cards: List[Dict], source_chunk_id: Optional[int]) -> List[str]:
+async def _insert_flashcards(class_id: int, file_id: Optional[str], cards: List[Dict], source_chunk_id: Optional[int]) -> List[str]:
     out_ids: List[str] = []
     async with db_conn() as (conn, cur):
         for c in cards:
@@ -171,11 +319,11 @@ async def _insert_flashcards(class_id: int, cards: List[Dict], source_chunk_id: 
             tags = c.get("tags") or []
             await cur.execute(
                 """
-                INSERT INTO flashcards (class_id, source_chunk_id, question, answer, hint, difficulty, tags, created_by)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, 'llm')
+                INSERT INTO flashcards (class_id, file_id, source_chunk_id, question, answer, hint, difficulty, tags, created_by)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'llm')
                 RETURNING id::text
                 """,
-                (class_id, source_chunk_id, q, a, hint, diff, tags),
+                (class_id, file_id, source_chunk_id, q, a, hint, diff, tags),
             )
             row = await cur.fetchone()
             out_ids.append(row[0])
@@ -186,7 +334,7 @@ async def _insert_flashcards(class_id: int, cards: List[Dict], source_chunk_id: 
 
 @router.post("/ensure-embeddings/{class_id}")
 async def ensure_embeddings(class_id: int, body: EnsureEmbeddingsReq):
-    rows = await _fetch_missing_chunks(body.limit)
+    rows = await _fetch_missing_chunks(class_id, body.limit)
     if not rows:
         return {"inserted": 0, "message": "No missing embeddings."}
     ids = [cid for cid, _ in rows]
@@ -197,13 +345,13 @@ async def ensure_embeddings(class_id: int, body: EnsureEmbeddingsReq):
     for i in range(0, len(txts), B):
         sub_ids = ids[i : i + B]
         sub_txts = txts[i : i + B]
-        vecs = await embedder.embed_texts(sub_txts)
+        vecs = await embed_texts_cached(embedder, sub_txts, ttl_seconds=86400)
         await _insert_embeddings(list(zip(sub_ids, vecs)))
         inserted += len(sub_ids)
     return {"inserted": inserted}
 
 @router.post("/generate", response_model=List[FlashcardOut])   # <-- no trailing slash
-async def generate(req: GenerateReq):
+async def generate(req: GenerateReq, user_id: str = Depends(get_request_user_uid)):
     """
     Generate up to n_cards, enforcing:
     - exact target count (we reprompt until filled, then truncate),
@@ -215,19 +363,33 @@ async def generate(req: GenerateReq):
 
     # --- Retrieval
     qtext = req.topic or "Create high-yield study flashcards for this class content."
-    qvec = (await embedder.embed_texts([qtext]))[0]
-    hits = await _pick_relevant_chunks(req.class_id, qvec, req.top_k)
+    await _ensure_class_owner(req.class_id, user_id)
+    if not req.file_ids:
+        raise HTTPException(status_code=400, detail="file_ids is required")
+
+    async with db_conn() as (conn, cur):
+        await cur.execute(
+            "SELECT id::text FROM files WHERE class_id=%s AND id = ANY(%s::uuid[])",
+            (req.class_id, req.file_ids),
+        )
+        valid_ids = [r[0] for r in await cur.fetchall()]
+
+    if not valid_ids:
+        raise HTTPException(status_code=404, detail="No files found for this class scope.")
+
+    qvec = (await embed_texts_cached(embedder, [qtext]))[0]
+    hits = await _pick_relevant_chunks(req.class_id, qvec, req.top_k, valid_ids)
     if not hits:
         raise HTTPException(status_code=404, detail="No chunks found for this class. Upload content first.")
 
     # Make a few alternative contexts to help reach the target count
     contexts: List[str] = []
-    joined_all = "\n".join("• " + c[:1000] for _, c in hits)
+    joined_all = "\n".join("• " + c[:1000] for _, c, _ in hits)
     contexts.append(joined_all)
     if len(hits) > 4:
         half = len(hits) // 2
-        contexts.append("\n".join("• " + c[:1000] for _, c in hits[:half]))
-        contexts.append("\n".join("• " + c[:1000] for _, c in hits[half:]))
+        contexts.append("\n".join("• " + c[:1000] for _, c, _ in hits[:half]))
+        contexts.append("\n".join("• " + c[:1000] for _, c, _ in hits[half:]))
 
     target = max(1, min(50, req.n_cards or 24))
     collected: List[Dict] = []
@@ -258,7 +420,8 @@ async def generate(req: GenerateReq):
         collected = collected[:target]
 
     source_chunk_id = hits[0][0] if hits else None
-    ids = await _insert_flashcards(req.class_id, collected, source_chunk_id)
+    source_file_id = hits[0][2] if hits else (valid_ids[0] if valid_ids else None)
+    ids = await _insert_flashcards(req.class_id, source_file_id, collected, source_chunk_id)
 
     out: List[FlashcardOut] = []
     for i, c in zip(ids, collected):
@@ -266,6 +429,7 @@ async def generate(req: GenerateReq):
             FlashcardOut(
                 id=i,
                 class_id=req.class_id,
+                file_id=source_file_id,
                 source_chunk_id=source_chunk_id,
                 question=c.get("question", ""),
                 answer=c.get("answer", ""),
@@ -275,3 +439,62 @@ async def generate(req: GenerateReq):
             )
         )
     return out
+
+
+@router.get("/{class_id}", response_model=List[FlashcardOut])
+async def list_flashcards_for_class(
+    class_id: int,
+    difficulty: Optional[str] = Query(default=None, pattern="^(easy|medium|hard)$"),
+    file_id: Optional[str] = Query(default=None),
+    user_id: str = Depends(get_request_user_uid),
+):
+    await _ensure_class_owner(class_id, user_id)
+    q = """
+      SELECT f.id::text, f.class_id, f.file_id::text, f.source_chunk_id, f.question, f.answer, f.hint, f.difficulty, f.tags,
+             s.due_at, s.repetitions, s.ease_factor, s.interval_days, s.state
+      FROM flashcards f
+      LEFT JOIN sr_card_state s ON s.card_id = f.id AND s.user_id = %s
+      WHERE f.class_id = %s
+        AND (%s::uuid IS NULL OR f.file_id = %s::uuid)
+      ORDER BY f.created_at DESC
+    """
+    async with db_conn() as (conn, cur):
+        await cur.execute(q, (user_id, class_id, file_id, file_id))
+        rows = await cur.fetchall()
+
+    out: List[FlashcardOut] = []
+    for r in rows:
+        expanded = _maybe_expand_legacy_jsonblob((r[0], r[1], r[3], r[4], r[5], r[6], r[7], r[8]))
+        if expanded:
+            out.extend(expanded)
+        else:
+            out.append(
+                FlashcardOut(
+                    id=r[0],
+                    class_id=r[1],
+                    file_id=r[2],
+                    source_chunk_id=r[3],
+                    question=r[4],
+                    answer=r[5],
+                    hint=r[6],
+                    difficulty=r[7] or "medium",
+                    tags=r[8] or [],
+                    due_at=r[9].isoformat() if r[9] else None,
+                    repetitions=r[10],
+                    ease_factor=r[11],
+                    interval_days=r[12],
+                    state=r[13],
+                )
+            )
+
+    if difficulty:
+        out = [c for c in out if (c.difficulty or "medium") == difficulty]
+    return out
+
+
+@router.delete("/{card_id}", status_code=204)
+async def delete_flashcard(card_id: str = Path(..., description="flashcards.id (UUID)")):
+    async with db_conn() as (conn, cur):
+        await cur.execute("DELETE FROM flashcards WHERE id::text=%s", (card_id,))
+        await conn.commit()
+    return

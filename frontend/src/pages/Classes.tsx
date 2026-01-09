@@ -1,7 +1,8 @@
 // src/pages/Classes.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 
+import AppSidebar from "../components/AppSidebar";
 import ClassSidebar from "../components/ClassSidebar";
 import ClassHeaderButtons from "../components/ClassHeaderButtons";
 import FileViewer from "../components/FileViewer";
@@ -23,7 +24,7 @@ import {
   listFlashcards,
   type Flashcard,
 
-  // ✅ chat
+  // chat
   chatAsk,
 } from "../lib/api";
 
@@ -31,11 +32,7 @@ import {
 const ALLOWED_MIME = new Set<string>([
   "application/pdf",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation", // .pptx
-<<<<<<< HEAD
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // .docx
-=======
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",   // .docx
->>>>>>> 8cc3c6c (User-based access control, views and minio connection)
 ]);
 
 const ALLOWED_EXT = new Set<string>([".pdf", ".pptx", ".docx"]);
@@ -52,7 +49,7 @@ function isAllowed(file: File) {
 }
 
 function prettyBytes(bytes?: number) {
-  if (!Number.isFinite(bytes ?? NaN)) return "—";
+  if (!Number.isFinite(bytes ?? NaN)) return "-";
   const u = ["B", "KB", "MB", "GB", "TB"];
   let i = 0;
   let n = bytes as number;
@@ -64,7 +61,7 @@ function prettyBytes(bytes?: number) {
 }
 
 function timeLocal(s?: string | null) {
-  if (!s) return "—";
+  if (!s) return "-";
   try {
     return new Date(s).toLocaleString();
   } catch {
@@ -147,13 +144,14 @@ function Divider() {
   return <div style={{ height: 1, background: "#EEF2F6", margin: "12px 0" }} />;
 }
 
-/* -------------------- ✅ Mini Chat types -------------------- */
+/* -------------------- Mini Chat types -------------------- */
 type MiniMsg = { id: string; role: "user" | "assistant"; text: string };
 
 /* -------------------- page -------------------- */
 export default function Classes() {
   const [classes, setClasses] = useState<ClassRow[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [activeTab, setActiveTab] = useState<"documents" | "flashcards" | "chat">("documents");
 
   const [files, setFiles] = useState<FileRow[] | undefined>([]);
   const [sel, setSel] = useState<Record<string, boolean>>({});
@@ -172,7 +170,7 @@ export default function Classes() {
   const [activeFile, setActiveFile] = useState<FileRow | null>(null);
   const [showUploadHint, setShowUploadHint] = useState(false);
 
-  // ✅ Coursera-style mini chat (Whole class only, no saved history)
+  // Coursera-style mini chat (Whole class only, no saved history)
   const [miniChatInput, setMiniChatInput] = useState("");
   const [miniMsgs, setMiniMsgs] = useState<MiniMsg[]>([]);
   const [miniBusy, setMiniBusy] = useState(false);
@@ -199,6 +197,7 @@ export default function Classes() {
       setSel({});
       setCards([]);
       setMiniMsgs([]);
+      setActiveTab("documents");
       return;
     }
     (async () => {
@@ -213,7 +212,21 @@ export default function Classes() {
     })();
   }, [selectedId]);
 
-  // ✅ mini chat auto-scroll
+  // poll file processing status while in-flight
+  useEffect(() => {
+    if (selectedId == null) return;
+    const needsPoll = (files ?? []).some((f) =>
+      ["UPLOADED", "OCR_QUEUED", "OCR_DONE"].includes(String(f.status || ""))
+    );
+    if (!needsPoll) return;
+    const id = setInterval(async () => {
+      const fs = await listFiles(selectedId);
+      setFiles(fs ?? []);
+    }, 5000);
+    return () => clearInterval(id);
+  }, [selectedId, files]);
+
+  // mini chat auto-scroll
   useEffect(() => {
     miniEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [miniMsgs, miniBusy]);
@@ -247,26 +260,6 @@ export default function Classes() {
     return isAllowed(f);
   }
 
-  // ✅ OPTIONAL BUT BEST: auto-index uploaded files for chat (chunks+embeddings)
-  async function autoIndexUploadedFiles(classId: number, fileIds: string[]) {
-    if (!fileIds.length) return;
-
-    // Don’t show the chunk preview popup during auto-indexing
-    await createChunks({
-    file_ids: fileIds,
-
-    by: "auto",       // ✅ backend supports
-    size: 2000,       // chars per chunk (since backend is char-based)
-    overlap: 200,
-    preview_limit_per_file: 0,
-  });
-
-
-
-
-    // Build embeddings for this class (includes those new chunks)
-    await buildEmbeddings(classId, 2000);
-  }
 
   async function uploadMany(fileList: FileList | File[]) {
     if (!selectedId) {
@@ -290,19 +283,7 @@ export default function Classes() {
         setFiles((xs) => [row, ...(xs ?? [])]);
       }
 
-      // ✅ Auto-index after upload (best UX)
-      setBusyFlow(true);
-      try {
-        await autoIndexUploadedFiles(selectedId, uploadedIds);
-      } catch (e: any) {
-        alert(
-          `Uploaded, but indexing failed.\nYou can still generate chunks/embeddings later.\n\n${
-            e?.message ?? ""
-          }`
-        );
-      } finally {
-        setBusyFlow(false);
-      }
+      setBusyFlow(false);
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : "Upload failed");
     } finally {
@@ -355,12 +336,16 @@ export default function Classes() {
     }
   }
 
-  /* -------- pipeline: chunks → embeddings → cards -------- */
+  /* -------- pipeline: chunks -> embeddings -> cards -------- */
   async function onGenerateFlashcards() {
     if (!selectedId) return alert("Select a class first");
     if ((files?.length ?? 0) === 0) return alert("Upload at least one file first");
 
     const ids = selectedIds.length ? selectedIds : (files ?? []).map((f) => f.id);
+    const pending = (files ?? []).filter((f) => ids.includes(f.id) && f.status !== "INDEXED");
+    if (pending.length > 0) {
+      return alert("Some files are still processing. Wait for them to reach INDEXED before generating flashcards.");
+    }
 
     setBusyFlow(true);
     try {
@@ -399,7 +384,7 @@ export default function Classes() {
     }
   }
 
-  /* -------------------- ✅ Coursera Mini Chat (RAG) -------------------- */
+  /* -------------------- Coursera Mini Chat (RAG) -------------------- */
   async function onMiniAsk() {
     if (!selectedId) return alert("Select a class first.");
     const q = miniChatInput.trim();
@@ -427,7 +412,7 @@ export default function Classes() {
       const botMsg: MiniMsg = {
         id: crypto.randomUUID?.() ?? String(Date.now() + 1),
         role: "assistant",
-        text: ans || "I couldn’t find that in your class material.",
+        text: ans || "I couldn't find that in your class material.",
       };
 
       setMiniMsgs((prev) => [...prev, botMsg]);
@@ -452,26 +437,21 @@ export default function Classes() {
     : null;
 
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "320px 1fr",
-        minHeight: "100vh",
-        background: "#FAFAFB",
-      }}
-    >
-      {/* Sidebar */}
-      <ClassSidebar
-        items={classes}
-        selectedId={selectedId}
-        onSelect={(id) => setSelectedId(id)}
-        onCreate={handleCreate}
-        onRename={handleRename}
-        onDelete={handleDeleteClass}
-      />
+    <div style={{ display: "flex", minHeight: "100vh", background: "#F8FAFC" }}>
+      <AppSidebar />
+      <div style={{ flex: 1, display: "grid", gridTemplateColumns: "320px 1fr" }}>
+        {/* Class sidebar */}
+        <ClassSidebar
+          items={classes}
+          selectedId={selectedId}
+          onSelect={(id) => setSelectedId(id)}
+          onCreate={handleCreate}
+          onRename={handleRename}
+          onDelete={handleDeleteClass}
+        />
 
-      {/* Main */}
-      <section style={{ padding: 20 }}>
+        {/* Main */}
+        <section style={{ padding: 20 }}>
         {/* Header */}
         <div
           style={{
@@ -487,13 +467,28 @@ export default function Classes() {
         >
           <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
             <h2 style={{ margin: 0 }}>{currentClass ?? "Workspace"}</h2>
-            {busyUpload && <Badge>Uploading…</Badge>}
-            {busyFlow && <Badge>Processing…</Badge>}
-            {showUploadHint && <Badge>Allowed: PDF • PPTX • DOCX</Badge>}
+            {busyUpload && <Badge>Uploading...</Badge>}
+            {busyFlow && <Badge>Processing...</Badge>}
+            {showUploadHint && <Badge>Allowed: PDF / PPTX / DOCX</Badge>}
           </div>
 
           {selectedId && (
             <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <Link
+                to="/chatbot"
+                style={{
+                  padding: "8px 12px",
+                  borderRadius: 10,
+                  fontSize: 14,
+                  fontWeight: 600,
+                  textDecoration: "none",
+                  color: "#344054",
+                  border: "1px solid #E4E7EC",
+                  background: "#fff",
+                }}
+              >
+                Chatbot
+              </Link>
               <Button
                 kind="default"
                 onClick={() => {
@@ -503,7 +498,7 @@ export default function Classes() {
                 }}
                 title="Choose files"
               >
-                ⬆️ Upload
+                Upload
               </Button>
               <input
                 ref={fileInputRef}
@@ -542,6 +537,30 @@ export default function Classes() {
           </div>
         ) : (
           <>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {(["documents", "flashcards", "chat"] as const).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTab(tab)}
+                  style={{
+                    padding: "8px 12px",
+                    borderRadius: 999,
+                    fontSize: 13,
+                    border: activeTab === tab ? "1px solid #1D2939" : "1px solid #E4E7EC",
+                    background: activeTab === tab ? "#1D2939" : "#fff",
+                    color: activeTab === tab ? "#fff" : "#344054",
+                    cursor: "pointer",
+                  }}
+                >
+                  {tab === "documents" ? "Documents" : tab === "flashcards" ? "Flashcards" : "Chat"}
+                </button>
+              ))}
+            </div>
+
+            <Divider />
+
+            {activeTab === "documents" && (
+              <>
             {/* Dropzone */}
             <div
               onDragOver={onDragOver}
@@ -587,110 +606,6 @@ export default function Classes() {
 
             <Divider />
 
-            {/* ✅ Coursera-style mini chat (whole class only) */}
-            <div
-              style={{
-                background: "#fff",
-                border: "1px solid #EEF2F6",
-                borderRadius: 14,
-                padding: 14,
-              }}
-            >
-              <div style={{ fontWeight: 800, marginBottom: 10 }}>Ask AI (Class)</div>
-
-              {/* scrollable chat area */}
-              <div
-                style={{
-                  height: 260,
-                  overflowY: "auto",
-                  padding: 12,
-                  border: "1px solid #EEF2F6",
-                  borderRadius: 12,
-                  background: "#FAFAFB",
-                }}
-              >
-                {miniMsgs.length === 0 ? (
-                  <div style={{ color: "#667085", fontSize: 13 }}>
-                    Ask from this class material. (No chat history is saved.)
-                  </div>
-                ) : (
-                  miniMsgs.map((m) => (
-                    <div
-                      key={m.id}
-                      style={{
-                        marginBottom: 10,
-                        display: "flex",
-                        justifyContent: m.role === "user" ? "flex-end" : "flex-start",
-                      }}
-                    >
-                      <div
-                        style={{
-                          maxWidth: "80%",
-                          padding: "10px 12px",
-                          borderRadius: 14,
-                          background: m.role === "user" ? "rgba(123,95,239,0.12)" : "#fff",
-                          border: "1px solid #E4E7EC",
-                          whiteSpace: "pre-wrap",
-                          lineHeight: 1.45,
-                        }}
-                      >
-                        {m.text}
-                      </div>
-                    </div>
-                  ))
-                )}
-
-                {miniBusy && <div style={{ color: "#667085", fontSize: 13 }}>Thinking…</div>}
-                <div ref={miniEndRef} />
-              </div>
-
-              {/* input pinned */}
-              <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
-                <textarea
-                  value={miniChatInput}
-                  onChange={(e) => setMiniChatInput(e.target.value)}
-                  rows={2}
-                  placeholder="Ask from this class material..."
-                  style={{
-                    flex: 1,
-                    padding: 10,
-                    borderRadius: 12,
-                    border: "1px solid #E4E7EC",
-                    outline: "none",
-                    resize: "vertical",
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      onMiniAsk();
-                    }
-                  }}
-                />
-
-                <button
-                  onClick={onMiniAsk}
-                  disabled={miniBusy || !miniChatInput.trim()}
-                  style={{
-                    padding: "10px 14px",
-                    borderRadius: 12,
-                    border: "1px solid #7B5FEF",
-                    background: "#7B5FEF",
-                    color: "#fff",
-                    cursor: miniBusy || !miniChatInput.trim() ? "not-allowed" : "pointer",
-                    opacity: miniBusy || !miniChatInput.trim() ? 0.7 : 1,
-                  }}
-                >
-                  {miniBusy ? "…" : "Ask"}
-                </button>
-              </div>
-
-              <div style={{ fontSize: 12, color: "#667085", marginTop: 6 }}>
-                Tip: Enter to send • Shift+Enter for new line
-              </div>
-            </div>
-
-            <Divider />
-
             {/* Files table */}
             <div
               style={{
@@ -722,7 +637,7 @@ export default function Classes() {
                         setSel({});
                       }}
                     >
-                      🗑️ Delete selected
+                      Delete selected
                     </Button>
                   )}
                 </div>
@@ -773,6 +688,16 @@ export default function Classes() {
                         textAlign: "left",
                         borderBottom: "1px solid #EEF2F6",
                         padding: "10px 12px",
+                        width: 140,
+                      }}
+                    >
+                      Status
+                    </th>
+                    <th
+                      style={{
+                        textAlign: "left",
+                        borderBottom: "1px solid #EEF2F6",
+                        padding: "10px 12px",
                         width: 100,
                       }}
                     >
@@ -786,16 +711,6 @@ export default function Classes() {
                         width: 120,
                       }}
                     >
-                    <th style={{ textAlign: "left", borderBottom: "1px solid #EEF2F6", padding: "10px 12px", width: 120 }}>
-                      Size
-                    </th>
-                    <th style={{ textAlign: "left", borderBottom: "1px solid #EEF2F6", padding: "10px 12px", width: 220 }}>
-                      Uploaded
-                    </th>
-                    <th style={{ textAlign: "left", borderBottom: "1px solid #EEF2F6", padding: "10px 12px", width: 100 }}>
-                      Open
-                    </th>
-                    <th style={{ textAlign: "left", borderBottom: "1px solid #EEF2F6", padding: "10px 12px", width: 120 }}>
                       Actions
                     </th>
                   </tr>
@@ -826,20 +741,23 @@ export default function Classes() {
                       <td style={{ padding: "10px 12px" }}>{prettyBytes(f.size_bytes)}</td>
                       <td style={{ padding: "10px 12px" }}>{timeLocal(f.uploaded_at)}</td>
                       <td style={{ padding: "10px 12px" }}>
+                        <StatusPill status={f.status ?? "UPLOADED"} />
+                      </td>
+                      <td style={{ padding: "10px 12px" }}>
                         <Button kind="ghost" onClick={() => setActiveFile(f)} title="Open in viewer">
                           view
                         </Button>
                       </td>
                       <td style={{ padding: "10px 12px" }}>
                         <Button kind="default" onClick={() => onDeleteFile(f.id, f.filename)} title="Delete file">
-                          🗑️ Delete
+                          Delete
                         </Button>
                       </td>
                     </tr>
                   ))}
                   {(files?.length ?? 0) === 0 && (
                     <tr>
-                      <td colSpan={6} style={{ padding: 18, color: "#667085" }}>
+                      <td colSpan={7} style={{ padding: 18, color: "#667085" }}>
                         No files yet. Drop a PDF, PPTX, or DOCX to begin.
                       </td>
                     </tr>
@@ -847,6 +765,129 @@ export default function Classes() {
                 </tbody>
               </table>
             </div>
+              </>
+            )}
+
+            {activeTab === "chat" && (
+              <div
+                style={{
+                  background: "#fff",
+                  border: "1px solid #EEF2F6",
+                  borderRadius: 14,
+                  padding: 14,
+                }}
+              >
+                <div style={{ fontWeight: 800, marginBottom: 10 }}>Ask AI (Class)</div>
+
+                <div
+                  style={{
+                    height: 260,
+                    overflowY: "auto",
+                    padding: 12,
+                    border: "1px solid #EEF2F6",
+                    borderRadius: 12,
+                    background: "#FAFAFB",
+                  }}
+                >
+                  {miniMsgs.length === 0 ? (
+                    <div style={{ color: "#667085", fontSize: 13 }}>
+                      Ask from this class material. (Chat history saved in Chatbot.)
+                    </div>
+                  ) : (
+                    miniMsgs.map((m) => (
+                      <div
+                        key={m.id}
+                        style={{
+                          marginBottom: 10,
+                          display: "flex",
+                          justifyContent: m.role === "user" ? "flex-end" : "flex-start",
+                        }}
+                      >
+                        <div
+                          style={{
+                            maxWidth: "80%",
+                            padding: "10px 12px",
+                            borderRadius: 14,
+                            background: m.role === "user" ? "rgba(17,24,39,0.08)" : "#fff",
+                            border: "1px solid #E4E7EC",
+                            whiteSpace: "pre-wrap",
+                            lineHeight: 1.45,
+                          }}
+                        >
+                          {m.text}
+                        </div>
+                      </div>
+                    ))
+                  )}
+
+                  {miniBusy && <div style={{ color: "#667085", fontSize: 13 }}>Thinking...</div>}
+                  <div ref={miniEndRef} />
+                </div>
+
+                <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
+                  <textarea
+                    value={miniChatInput}
+                    onChange={(e) => setMiniChatInput(e.target.value)}
+                    rows={2}
+                    placeholder="Ask from this class material..."
+                    style={{
+                      flex: 1,
+                      padding: 10,
+                      borderRadius: 12,
+                      border: "1px solid #E4E7EC",
+                      outline: "none",
+                      resize: "vertical",
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        onMiniAsk();
+                      }
+                    }}
+                  />
+
+                  <button
+                    onClick={onMiniAsk}
+                    disabled={miniBusy || !miniChatInput.trim()}
+                    style={{
+                      padding: "10px 14px",
+                      borderRadius: 12,
+                      border: "1px solid #111827",
+                      background: "#111827",
+                      color: "#fff",
+                      cursor: miniBusy || !miniChatInput.trim() ? "not-allowed" : "pointer",
+                      opacity: miniBusy || !miniChatInput.trim() ? 0.7 : 1,
+                    }}
+                  >
+                    {miniBusy ? "..." : "Ask"}
+                  </button>
+                </div>
+
+                <div style={{ fontSize: 12, color: "#667085", marginTop: 6 }}>
+                  Tip: Enter to send; Shift+Enter for new line
+                </div>
+              </div>
+            )}
+
+            {activeTab === "flashcards" && (
+              <div
+                style={{
+                  background: "#fff",
+                  border: "1px solid #EEF2F6",
+                  borderRadius: 14,
+                  padding: 16,
+                }}
+              >
+                <div style={{ fontWeight: 800, marginBottom: 8 }}>Flashcards</div>
+                <div style={{ fontSize: 13, color: "#667085", marginBottom: 12 }}>
+                  Select files in Documents, then use the Generate button to create scoped flashcards.
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <Badge>{selectedIds.length || (files?.length ?? 0)} file(s) in scope</Badge>
+                  <Badge>Due cards available in Flashcards page</Badge>
+                </div>
+              </div>
+            )}
 
             {/* Chunk preview dialog */}
             {preview && (
@@ -899,7 +940,7 @@ export default function Classes() {
                     {preview.map((p) => (
                       <div key={p.file_id} style={{ marginBottom: 18 }}>
                         <div style={{ fontWeight: 800, marginBottom: 6 }}>
-                          File {p.file_id} — {p.total_chunks} chunk(s)
+                          File {p.file_id} - {p.total_chunks} chunk(s)
                         </div>
                         {p.total_chunks === 0 ? (
                           <div
@@ -926,9 +967,9 @@ export default function Classes() {
                               >
                                 <div style={{ fontWeight: 700, marginBottom: 6 }}>
                                   Chunk #{pr.idx}{" "}
-                                  {pr.page_start ? `(pages ${pr.page_start}–${pr.page_end})` : ""}{" "}
+                                  {pr.page_start ? `(pages ${pr.page_start}-${pr.page_end})` : ""}{" "}
                                   <span style={{ fontWeight: 400, color: "#475467", marginLeft: 6 }}>
-                                    · {pr.char_len} chars
+                                    - {pr.char_len} chars
                                   </span>
                                 </div>
                                 <pre
@@ -967,5 +1008,33 @@ export default function Classes() {
         )}
       </section>
     </div>
+  </div>
+  );
+}
+
+function StatusPill({ status }: { status?: string | null }) {
+  const s = (status || "UPLOADED").toUpperCase();
+  const styles: Record<string, React.CSSProperties> = {
+    UPLOADED: { background: "#EEF2FF", color: "#3730A3", border: "1px solid #C7D2FE" },
+    OCR_QUEUED: { background: "#FFFBEB", color: "#92400E", border: "1px solid #FDE68A" },
+    OCR_DONE: { background: "#ECFDF3", color: "#027A48", border: "1px solid #ABEFC6" },
+    INDEXED: { background: "#E8F7FF", color: "#026AA2", border: "1px solid #B9E6FE" },
+    FAILED: { background: "#FEF3F2", color: "#B42318", border: "1px solid #FECDCA" },
+  };
+  const style = styles[s] || styles.UPLOADED;
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        padding: "2px 8px",
+        borderRadius: 999,
+        fontSize: 12,
+        fontWeight: 600,
+        ...style,
+      }}
+    >
+      {s.replace("_", " ")}
+    </span>
   );
 }

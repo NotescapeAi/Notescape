@@ -87,7 +87,7 @@ export default function FlashcardsViewMode() {
     if (!c?.id) return;
     if (!confirm("Delete this flashcard?")) return;
     try {
-      await deleteFlashcard(c.id);
+      await deleteFlashcard(String(c.id));
       setCards((xs) => {
         const next = xs.filter((x) => x.id !== c.id);
         const newIdx = Math.min(Math.max(0, next.length - 1), idx);

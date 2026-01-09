@@ -77,6 +77,7 @@ def extract_text_from_pdf_bytes(pdf_bytes: bytes) -> str:
         texts.append(t)
     return "\n".join(texts)
 
+
 def is_digital_text(text: str, min_chars: int = 200) -> bool:
     return len((text or "").strip()) >= min_chars
 async def run():

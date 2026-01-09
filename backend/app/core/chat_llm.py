@@ -1,11 +1,11 @@
-import os
 from typing import List, Dict, Any, Optional
 
 from groq import Groq
+from app.core.settings import settings
 
 
 def get_chat_client() -> Groq:
-    api_key = os.getenv("GROQ_API_KEY")
+    api_key = settings.groq_api_key
     if not api_key:
         raise RuntimeError("GROQ_API_KEY is missing in environment")
     return Groq(api_key=api_key)
@@ -13,7 +13,7 @@ def get_chat_client() -> Groq:
 
 def get_chat_model() -> str:
     # Chatbot model (separate from flashcards GEN_MODEL)
-    return os.getenv("CHAT_MODEL", "llama-3.3-70b-versatile")
+    return settings.chat_model
 
 
 def chat_completion(

@@ -3,6 +3,7 @@ from typing import Optional, List, Tuple
 from fastapi import APIRouter, Query
 from app.core.db import db_conn
 from app.core.llm import get_embedder
+from app.core.embedding_cache import embed_texts_cached
 
 router = APIRouter(prefix="/api/embeddings", tags=["embeddings"])
 
@@ -47,7 +48,7 @@ async def build_embeddings(
         for i in range(0, len(txts), B):
             sub_ids  = ids[i:i+B]
             sub_txts = txts[i:i+B]
-            vecs = await embedder.embed_texts(sub_txts)
+            vecs = await embed_texts_cached(embedder, sub_txts, ttl_seconds=86400)
             for chunk_id, vec in zip(sub_ids, vecs):
                 await cur.execute(
                     "UPDATE file_chunks SET chunk_vector=%s::vector WHERE id=%s",

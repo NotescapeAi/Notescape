@@ -40,6 +40,9 @@ export type FileRow = {
   uploaded_at?: string | null;
   storage_url: string;
   class_id?: number;
+  status?: string | null;
+  ocr_job_id?: string | null;
+  indexed_at?: string | null;
 };
 
 export type ChunkPreview = {
@@ -55,12 +58,18 @@ export type ChunkPreview = {
 };
 
 export type Flashcard = {
-  id: number;
+  id: string;
   question: string;
   answer: string;
   hint?: string | null;
   tags?: string[] | null;
   class_id?: number;
+  file_id?: string | null;
+  due_at?: string | null;
+  repetitions?: number | null;
+  ease_factor?: number | null;
+  interval_days?: number | null;
+  state?: string | null;
   created_at?: string | null;
   updated_at?: string | null;
 };
@@ -136,8 +145,9 @@ export async function deleteFile(fileId: string): Promise<void> {
 
 
 
-export async function listFlashcards(classId?: number): Promise<Flashcard[]> {
-  const url = typeof classId === "number" ? `/flashcards/${classId}` : `/flashcards`;
+export async function listFlashcards(classId?: number, fileId?: string): Promise<Flashcard[]> {
+  const base = typeof classId === "number" ? `/flashcards/${classId}` : `/flashcards`;
+  const url = fileId ? `${base}?file_id=${fileId}` : base;
   const { data } = await http.get(url);
   if (Array.isArray(data)) return data;
   if (Array.isArray((data as any)?.items)) return (data as any).items;
@@ -155,7 +165,7 @@ export async function generateFlashcards(payload: {
   return Array.isArray(data) ? data : [];
 }
 
-export async function deleteFlashcard(id: number): Promise<void> {
+export async function deleteFlashcard(id: string): Promise<void> {
   await http.delete(`/flashcards/${id}`);
 }
 
@@ -180,6 +190,55 @@ export async function chatAsk(payload: {
   file_ids?: string[];
 }): Promise<ChatAskRes> {
   const { data } = await http.post<ChatAskRes>("/chat/ask", payload);
+  return data;
+}
+
+export type ChatSession = {
+  id: string;
+  class_id: number;
+  title: string;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+export type ChatMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  citations?: any;
+  created_at?: string | null;
+};
+
+export async function createChatSession(payload: { class_id: number; title?: string }): Promise<ChatSession> {
+  const headers = await userHeader();
+  const { data } = await http.post<ChatSession>("/chat/sessions", payload, { headers });
+  return data;
+}
+
+export async function listChatSessions(classId: number): Promise<ChatSession[]> {
+  const headers = await userHeader();
+  const { data } = await http.get<ChatSession[]>(`/chat/sessions?class_id=${classId}`, { headers });
+  return Array.isArray(data) ? data : [];
+}
+
+export async function getChatSession(sessionId: string): Promise<{ session: ChatSession; messages: ChatMessage[] }> {
+  const headers = await userHeader();
+  const { data } = await http.get(`/chat/sessions/${sessionId}`, { headers });
+  return data;
+}
+
+export async function addChatMessages(payload: {
+  session_id: string;
+  user_content: string;
+  assistant_content: string;
+  citations?: any;
+}): Promise<{ ok: boolean }> {
+  const headers = await userHeader();
+  const { data } = await http.post(`/chat/sessions/${payload.session_id}/messages`, {
+    user_content: payload.user_content,
+    assistant_content: payload.assistant_content,
+    citations: payload.citations ?? null,
+  }, { headers });
   return data;
 }
 
@@ -257,10 +316,11 @@ export async function createChunks(payload: {
 export async function buildEmbeddings(
   classId: number,
   limit?: number
-): Promise<{ queued: number }> {
-  const { data } = await http.post<{ queued: number }>(
-    "/embeddings/build",
-    { class_id: classId, limit }
+): Promise<{ inserted: number }> {
+  const params = new URLSearchParams({ class_id: String(classId) });
+  if (typeof limit === "number") params.set("limit", String(limit));
+  const { data } = await http.post<{ inserted: number }>(
+    `/embeddings/build?${params.toString()}`
   );
   return data;
 }
@@ -276,22 +336,36 @@ const SR_BASE = /\/api\/?$/i.test(API_BASE)
   : `${API_BASE.replace(/\/+$/, "")}/api`;
 
 
-export async function listDueCards(classId: number, limit = 9999) {
-  const url = `${SR_BASE}/sr/due/${classId}?limit=${limit}`;
-  const response = await fetch(url, {
-    headers: { "X-User-Id": "dev-user" }, // replace with real user ID if needed
+export async function listDueCards(classId: number, fileId?: string, limit = 9999) {
+  const params = new URLSearchParams({ class_id: String(classId), limit: String(limit) });
+  if (fileId) params.set("file_id", fileId);
+  const headers = await userHeader();
+  const response = await fetch(`${API_BASE}/flashcards/due?${params.toString()}`, {
+    headers,
   });
   if (!response.ok) throw new Error(`Failed to load due cards (HTTP ${response.status})`);
   return response.json();
 }
 
-export async function postReview(reviewData: any) {
-  const response = await fetch(`${SR_BASE}/sr/review`, {
+export async function postReview(cardId: string, rating: "again" | "hard" | "good" | "easy") {
+  const headers = await userHeader();
+  const response = await fetch(`${API_BASE}/flashcards/${cardId}/review`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(reviewData),
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rating }),
   });
   if (!response.ok) throw new Error(`Failed to post review (HTTP ${response.status})`);
+  return response.json();
+}
+
+export async function getFlashcardProgress(classId: number, fileId?: string) {
+  const params = new URLSearchParams({ class_id: String(classId) });
+  if (fileId) params.set("file_id", fileId);
+  const headers = await userHeader();
+  const response = await fetch(`${API_BASE}/flashcards/progress?${params.toString()}`, {
+    headers,
+  });
+  if (!response.ok) throw new Error(`Failed to load progress (HTTP ${response.status})`);
   return response.json();
 }
 

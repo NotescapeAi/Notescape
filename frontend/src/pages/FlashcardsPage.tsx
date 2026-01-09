@@ -5,8 +5,11 @@ import {
   listFlashcards,
   deleteFlashcard,
   listClasses,
+  listFiles,
+  getFlashcardProgress,
   type Flashcard,
 } from "../lib/api";
+import AppSidebar from "../components/AppSidebar";
 import useBookmarks from "../lib/bookmarks";
 import KebabMenu from "../components/KebabMenu";
 import { ArrowLeft } from "lucide-react";
@@ -20,6 +23,14 @@ type UIFlashcard = Flashcard & {
   source_chunk_id?: string | null;  // page references this
   difficulty?: Diff;                // page filters by this
 };
+
+function dueStatus(card: UIFlashcard) {
+  const dueAt = card.due_at ? new Date(card.due_at) : null;
+  if (!dueAt) return "Due";
+  if (dueAt <= new Date()) return "Due";
+  if ((card.repetitions ?? 0) === 0) return "Learning";
+  return "Scheduled";
+}
 
 function expandLegacy(c: UIFlashcard): UIFlashcard[] {
   try {
@@ -61,6 +72,9 @@ export default function FlashcardsPage() {
   const [filter, setFilter] = useState<Diff>("all");
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [files, setFiles] = useState<{ id: string; filename: string }[]>([]);
+  const [fileFilter, setFileFilter] = useState<string>("all");
+  const [progress, setProgress] = useState<{ total: number; due_now: number; due_today: number; learning: number } | null>(null);
 
   // "Bookmark folder" visibility
   const [isBookmarkOpen, setBookmarkOpen] = useState(false);
@@ -79,15 +93,19 @@ export default function FlashcardsPage() {
           return;
         }
 
-        const [cards, classes] = await Promise.all([
-          listFlashcards(id),
+        const [cards, classes, filesRes, prog] = await Promise.all([
+          listFlashcards(id, fileFilter === "all" ? undefined : fileFilter),
           listClasses(),
+          listFiles(id),
+          getFlashcardProgress(id, fileFilter === "all" ? undefined : fileFilter),
         ]);
         if (!mounted) return;
 
         setCardsRaw(Array.isArray(cards) ? (cards as UIFlashcard[]) : []);
         const cls = classes.find((c) => c.id === id);
         setClassName(cls?.name || `Class #${id}`);
+        setFiles((filesRes ?? []).map((f) => ({ id: f.id, filename: f.filename })));
+        setProgress(prog ?? null);
       } catch (e: any) {
         if (!mounted) return;
         setError(e?.message || "Failed to load flashcards");
@@ -98,7 +116,7 @@ export default function FlashcardsPage() {
     return () => {
       mounted = false;
     };
-  }, [id]);
+  }, [id, fileFilter]);
 
   const expanded = useMemo(() => cardsRaw.flatMap(expandLegacy), [cardsRaw]);
   const filtered =
@@ -133,13 +151,9 @@ export default function FlashcardsPage() {
   };
 
   return (
-    <div
-      style={{
-        background: "linear-gradient(180deg,#fafafa,#fff)",
-        minHeight: "100vh",
-        padding: "20px 20px 40px",
-      }}
-    >
+    <div className="min-h-screen flex bg-slate-50">
+      <AppSidebar />
+      <main className="flex-1 p-6">
       {/* Header */}
       <div
         style={{
@@ -202,7 +216,7 @@ export default function FlashcardsPage() {
       </div>
 
       {/* Filters row */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
         {(["all", "easy", "medium", "hard"] as Diff[]).map((d) => (
           <button
             key={d}
@@ -219,6 +233,42 @@ export default function FlashcardsPage() {
             {d.toUpperCase()}
           </button>
         ))}
+        <select
+          value={fileFilter}
+          onChange={(e) => setFileFilter(e.target.value)}
+          style={{
+            padding: "6px 10px",
+            borderRadius: 12,
+            border: "1px solid #e5e7eb",
+            background: "#fff",
+          }}
+        >
+          <option value="all">All files</option>
+          {files.map((f) => (
+            <option key={f.id} value={f.id}>
+              {f.filename}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 16 }}>
+        <div style={{ background: "#fff", border: "1px solid #E5E7EB", borderRadius: 12, padding: 12 }}>
+          <div style={{ fontSize: 12, color: "#6B7280" }}>Due now</div>
+          <div style={{ fontSize: 20, fontWeight: 700 }}>{progress?.due_now ?? 0}</div>
+        </div>
+        <div style={{ background: "#fff", border: "1px solid #E5E7EB", borderRadius: 12, padding: 12 }}>
+          <div style={{ fontSize: 12, color: "#6B7280" }}>Due today</div>
+          <div style={{ fontSize: 20, fontWeight: 700 }}>{progress?.due_today ?? 0}</div>
+        </div>
+        <div style={{ background: "#fff", border: "1px solid #E5E7EB", borderRadius: 12, padding: 12 }}>
+          <div style={{ fontSize: 12, color: "#6B7280" }}>Learning</div>
+          <div style={{ fontSize: 20, fontWeight: 700 }}>{progress?.learning ?? 0}</div>
+        </div>
+        <div style={{ background: "#fff", border: "1px solid #E5E7EB", borderRadius: 12, padding: 12 }}>
+          <div style={{ fontSize: 12, color: "#6B7280" }}>Total</div>
+          <div style={{ fontSize: 20, fontWeight: 700 }}>{progress?.total ?? 0}</div>
+        </div>
       </div>
 
       {/* Bookmark folder drawer */}
@@ -274,6 +324,8 @@ export default function FlashcardsPage() {
                 const startIndex = bookmarkedCards.findIndex(
                   (fc) => String(fc.id) === String(c.id)
                 );
+                const status = dueStatus(c);
+                const nextReview = c.due_at ? new Date(c.due_at).toLocaleString() : "Due now";
 
                 return (
                   <div
@@ -324,6 +376,18 @@ export default function FlashcardsPage() {
                         >
                           {className}
                         </span>
+                        <span
+                          style={{
+                            fontSize: 11,
+                            color: status === "Due" ? "#B42318" : "#344054",
+                            fontWeight: 700,
+                            background: status === "Due" ? "#FEF3F2" : "#F2F4F7",
+                            padding: "3px 10px",
+                            borderRadius: 999,
+                          }}
+                        >
+                          {status}
+                        </span>
                       </div>
 
                       {/* kebab menu (same 4 actions) */}
@@ -349,7 +413,7 @@ export default function FlashcardsPage() {
                             onClick: async () => {
                               if (!confirm("Delete this flashcard?")) return;
                               try {
-                                await deleteFlashcard(c.id as any);
+                                await deleteFlashcard(String(c.id));
                                 setCardsRaw((prev) =>
                                   prev.filter((x) => x.id !== c.id)
                                 );
@@ -372,6 +436,12 @@ export default function FlashcardsPage() {
                       }}
                     >
                       Q: {c.question}
+                    </div>
+                    <div style={{ fontSize: 12, color: "#6B7280", marginBottom: 6 }}>
+                      Next review: {nextReview}
+                    </div>
+                    <div style={{ fontSize: 12, color: "#6B7280", marginBottom: 6 }}>
+                      Reps: {c.repetitions ?? 0} • Ease: {(c.ease_factor ?? 2.5).toFixed(2)}
                     </div>
                     <details>
                       <summary
@@ -455,6 +525,8 @@ export default function FlashcardsPage() {
             const startIndex = visible.findIndex(
               (fc) => String(fc.id) === String(c.id)
             );
+            const status = dueStatus(c);
+            const nextReview = c.due_at ? new Date(c.due_at).toLocaleString() : "Due now";
 
             return (
               <div
@@ -507,6 +579,18 @@ export default function FlashcardsPage() {
                     >
                       {className}
                     </span>
+                    <span
+                      style={{
+                        fontSize: 11,
+                        color: status === "Due" ? "#B42318" : "#344054",
+                        fontWeight: 700,
+                        background: status === "Due" ? "#FEF3F2" : "#F2F4F7",
+                        padding: "3px 10px",
+                        borderRadius: 999,
+                      }}
+                    >
+                      {status}
+                    </span>
                   </div>
 
                   {/* kebab menu with 4 actions */}
@@ -532,7 +616,7 @@ export default function FlashcardsPage() {
                           if (isLegacy) return; // legacy rows: delete original source row instead
                           if (!confirm("Delete this flashcard?")) return;
                           try {
-                            await deleteFlashcard(c.id as any);
+                            await deleteFlashcard(String(c.id));
                             setCardsRaw((prev) =>
                               prev.filter((x) => x.id !== c.id)
                             );
@@ -553,6 +637,12 @@ export default function FlashcardsPage() {
                   }}
                 >
                   Q: {c.question}
+                </div>
+                <div style={{ fontSize: 12, color: "#6B7280", marginBottom: 6 }}>
+                  Next review: {nextReview}
+                </div>
+                <div style={{ fontSize: 12, color: "#6B7280", marginBottom: 6 }}>
+                  Reps: {c.repetitions ?? 0} • Ease: {(c.ease_factor ?? 2.5).toFixed(2)}
                 </div>
                 <details>
                   <summary
@@ -594,6 +684,7 @@ export default function FlashcardsPage() {
           })}
         </div>
       )}
+      </main>
     </div>
   );
 }

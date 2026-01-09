@@ -162,7 +162,7 @@ export default function FlashcardsBookmarks() {
                         onClick: async () => {
                           if (!confirm("Delete this flashcard?")) return;
                           try {
-                            await deleteFlashcard(c.id as any);
+                            await deleteFlashcard(String(c.id));
                             // also drop from local list so UI updates
                             setCardsRaw(prev => prev.filter(x => x.id !== c.id));
                           } catch (err: any) {

@@ -1,10 +1,15 @@
 from typing import List, Dict, Any, Optional
-from fastapi import APIRouter
+import hashlib
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from app.core.chat_llm import chat_completion
 from app.core.llm import get_embedder
+from app.core.embedding_cache import embed_texts_cached
+from app.core.cache import cache_get_json, cache_set_json
+from app.core.settings import settings
 from app.core.db import db_conn  # use your existing DB helper
+from app.dependencies import get_request_user_uid
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -58,11 +63,22 @@ async def _retrieve_chunks(class_id: int, qvec: List[float], top_k: int, file_id
     return rows
 
 
+def _chat_cache_key(user_id: str, class_id: int, question: str, top_k: int, file_ids: Optional[List[str]]) -> str:
+    scope = ",".join(sorted(file_ids or []))
+    h = hashlib.sha256(question.encode("utf-8")).hexdigest()
+    return f"chat:{user_id}:{class_id}:{top_k}:{settings.chat_model}:{scope}:{h}"
+
+
 @router.post("/ask")
-async def ask(req: ChatAskReq):
+async def ask(req: ChatAskReq, user_id: str = Depends(get_request_user_uid)):
+    cache_key = _chat_cache_key(user_id, req.class_id, req.question, req.top_k, req.file_ids)
+    cached = cache_get_json(cache_key)
+    if isinstance(cached, dict) and "answer" in cached:
+        return cached
+
     # 1) Embed the question
     embedder = get_embedder()
-    qvec = (await embedder.embed_texts([req.question]))[0]
+    qvec = (await embed_texts_cached(embedder, [req.question]))[0]
 
     # 2) Retrieve relevant chunks (class mode OR file-only mode)
     rows = await _retrieve_chunks(req.class_id, qvec, req.top_k, req.file_ids)
@@ -106,4 +122,6 @@ async def ask(req: ChatAskReq):
     user = f"Question:\n{req.question}\n\nContext:\n{context}"
     answer = chat_completion(system, user, temperature=0.2).strip()
 
-    return {"answer": answer, "citations": citations}
+    payload = {"answer": answer, "citations": citations}
+    cache_set_json(cache_key, payload, ttl_seconds=600)
+    return payload

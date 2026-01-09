@@ -1,8 +1,8 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 
+
 class Settings(BaseSettings):
-    # loads .env automatically; ignores unknown keys; not case sensitive
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -11,11 +11,23 @@ class Settings(BaseSettings):
     )
 
     api_title: str = Field(default="Notescape API", alias="API_TITLE")
-    cors_origins: str = Field(default="http://localhost:5173", alias="CORS_ORIGINS")
-    database_url: str = Field(
-        default="postgresql://postgres@localhost:5432/notescape",
-        alias="DATABASE_URL",
-    )
-    upload_root: str | None = Field(default=None, alias="UPLOAD_ROOT")
 
-settings = Settings()  # ← IMPORTANT: no kwargs here
+    database_url: str = Field(alias="DATABASE_URL")
+    cors_origins: str = Field(alias="CORS_ORIGINS")
+
+    upload_root: str = Field(alias="UPLOAD_ROOT")
+
+    storage_backend: str = Field(default="s3", alias="STORAGE_BACKEND")
+    s3_endpoint_url: str = Field(alias="S3_ENDPOINT_URL")
+    s3_access_key: str = Field(alias="S3_ACCESS_KEY")
+    s3_secret_key: str = Field(alias="S3_SECRET_KEY")
+    s3_bucket: str = Field(alias="S3_BUCKET")
+    s3_region: str = Field(default="us-east-1", alias="S3_REGION")
+
+    chat_provider: str = Field(default="groq", alias="CHAT_PROVIDER")
+    chat_model: str = Field(default="llama-3.3-70b-versatile", alias="CHAT_MODEL")
+    groq_api_key: str | None = Field(default=None, alias="GROQ_API_KEY")
+    redis_url: str | None = Field(default=None, alias="REDIS_URL")
+
+
+settings = Settings()

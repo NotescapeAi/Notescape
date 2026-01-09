@@ -1,4 +1,3 @@
-import os
 from dataclasses import dataclass
 from app.core.settings import settings
 
@@ -19,9 +18,21 @@ def get_s3_client():
         region_name=settings.s3_region,
     )
 
+def ensure_bucket(s3, bucket: str) -> None:
+    from botocore.exceptions import ClientError
+    try:
+        s3.head_bucket(Bucket=bucket)
+    except ClientError as e:
+        code = (e.response or {}).get("Error", {}).get("Code")
+        if code in ("404", "NoSuchBucket", "NotFound"):
+            s3.create_bucket(Bucket=bucket)
+        else:
+            raise
+
 def put_object(fileobj, key: str, content_type: str | None):
     s3 = get_s3_client()
     bucket = settings.s3_bucket
+    ensure_bucket(s3, bucket)
     extra = {}
     if content_type:
         extra["ContentType"] = content_type
