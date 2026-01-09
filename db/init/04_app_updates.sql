@@ -31,9 +31,17 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   role TEXT NOT NULL CHECK (role IN ('user','assistant')),
   content TEXT NOT NULL,
   citations JSONB,
+  selected_text TEXT,
+  file_id UUID REFERENCES files(id) ON DELETE SET NULL,
+  file_scope JSONB,
+  image_attachment JSONB,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS chat_messages_session_idx ON chat_messages (session_id, created_at ASC);
+ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS selected_text TEXT;
+ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS file_id UUID REFERENCES files(id) ON DELETE SET NULL;
+ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS file_scope JSONB;
+ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS image_attachment JSONB;
 
 -- Spaced repetition SM-2 style fields (keep existing columns)
 ALTER TABLE sr_card_state ADD COLUMN IF NOT EXISTS ease_factor DOUBLE PRECISION NOT NULL DEFAULT 2.5;

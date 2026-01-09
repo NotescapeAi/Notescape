@@ -39,6 +39,7 @@ export type FileRow = {
   id: string;
   filename: string;
   size_bytes: number;
+  mime_type?: string | null;
   uploaded_at?: string | null;
   storage_url: string;
   class_id?: number;
@@ -226,7 +227,8 @@ export async function chatAsk(payload: {
   top_k?: number;
   file_ids?: string[];
 }): Promise<ChatAskRes> {
-  const { data } = await http.post<ChatAskRes>("/chat/ask", payload);
+  const headers = await userHeader();
+  const { data } = await http.post<ChatAskRes>("/chat/ask", payload, { headers });
   return data;
 }
 
@@ -243,6 +245,17 @@ export type ChatMessage = {
   role: "user" | "assistant";
   content: string;
   citations?: any;
+  selected_text?: string | null;
+  file_id?: string | null;
+  file_scope?: string[] | null;
+  image_attachment?: {
+    data_url?: string;
+    content_type?: string;
+    file_id?: string | null;
+    page?: number | null;
+    width?: number | null;
+    height?: number | null;
+  } | null;
   created_at?: string | null;
 };
 
@@ -264,19 +277,77 @@ export async function getChatSession(sessionId: string): Promise<{ session: Chat
   return data;
 }
 
+export async function listChatSessionMessages(sessionId: string): Promise<ChatMessage[]> {
+  const headers = await userHeader();
+  const { data } = await http.get(`/chat/sessions/${sessionId}/messages`, { headers });
+  return Array.isArray(data) ? data : [];
+}
+
 export async function addChatMessages(payload: {
   session_id: string;
   user_content: string;
   assistant_content: string;
   citations?: any;
-}): Promise<{ ok: boolean }> {
+  selected_text?: string | null;
+  file_id?: string | null;
+  file_scope?: string[] | null;
+  image_attachment?: {
+    data_url: string;
+    content_type: string;
+    file_id?: string | null;
+    page?: number | null;
+    width?: number | null;
+    height?: number | null;
+  } | null;
+}): Promise<{ ok: boolean; messages?: ChatMessage[] }> {
   const headers = await userHeader();
   const { data } = await http.post(`/chat/sessions/${payload.session_id}/messages`, {
     user_content: payload.user_content,
     assistant_content: payload.assistant_content,
     citations: payload.citations ?? null,
+    selected_text: payload.selected_text ?? null,
+    file_id: payload.file_id ?? null,
+    file_scope: payload.file_scope ?? null,
+    image_attachment: payload.image_attachment ?? null,
   }, { headers });
   return data;
+}
+
+export async function deleteChatSession(sessionId: string, classId?: number): Promise<{ ok: boolean; session_id: string }> {
+  const headers = await userHeader();
+  const params = classId != null ? `?class_id=${classId}` : "";
+  const { data } = await http.delete(`/chat/sessions/${sessionId}${params}`, { headers });
+  return data;
+}
+
+export async function clearChatSessionMessages(sessionId: string): Promise<{ ok: boolean; session_id: string }> {
+  const headers = await userHeader();
+  const { data } = await http.delete(`/chat/sessions/${sessionId}/messages`, { headers });
+  return data;
+}
+
+export async function ocrImageSnippet(dataUrl: string): Promise<{ text: string }> {
+  const headers = await userHeader();
+  const { data } = await http.post<{ text: string }>("/chat/ocr", { data_url: dataUrl }, { headers });
+  return data;
+}
+
+export type FileChunk = {
+  id: string;
+  idx: number;
+  char_len: number;
+  page_start?: number | null;
+  page_end?: number | null;
+  sample: string;
+};
+
+export async function listFileChunks(fileId: string, opts?: { limit?: number; offset?: number; full?: boolean }): Promise<FileChunk[]> {
+  const params = new URLSearchParams();
+  if (opts?.limit != null) params.set("limit", String(opts.limit));
+  if (opts?.offset != null) params.set("offset", String(opts.offset));
+  if (opts?.full != null) params.set("full", String(opts.full));
+  const { data } = await http.get<FileChunk[]>(`/files/${fileId}/chunks?${params.toString()}`);
+  return Array.isArray(data) ? data : [];
 }
 
 /* =========================

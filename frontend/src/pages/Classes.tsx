@@ -4,9 +4,10 @@ import { Link, useLocation } from "react-router-dom";
 
 import ClassSidebar from "../components/ClassSidebar";
 import ClassHeaderButtons from "../components/ClassHeaderButtons";
-import FileViewer from "../components/FileViewer";
 import PageHeader from "../components/PageHeader";
 import Button from "../components/Button";
+import KebabMenu from "../components/KebabMenu";
+import PdfStudyViewer, { type PdfSelection, type PdfSnip } from "../components/PdfStudyViewer";
 
 import {
   listClasses,
@@ -27,10 +28,13 @@ import {
   chatAsk,
   createChatSession,
   listChatSessions,
-  getChatSession,
+  listChatSessionMessages,
   addChatMessages,
+  deleteChatSession,
+  clearChatSessionMessages,
   type ChatSession,
   type ChatMessage,
+  ocrImageSnippet,
 } from "../lib/api";
 
 const ALLOWED_MIME = new Set<string>([
@@ -49,6 +53,12 @@ function hasAllowedExt(name: string) {
 
 function isAllowed(file: File) {
   return ALLOWED_MIME.has(file.type) || hasAllowedExt(file.name);
+}
+
+function isPdfFile(file?: FileRow | null) {
+  if (!file) return false;
+  if ((file as any).mime_type && String((file as any).mime_type).includes("pdf")) return true;
+  return file.filename.toLowerCase().endsWith(".pdf");
 }
 
 function prettyBytes(bytes?: number) {
@@ -138,6 +148,19 @@ export default function Classes() {
   const [preview, setPreview] = useState<ChunkPreview[] | null>(null);
   const [, setCards] = useState<Flashcard[]>([]);
   const [activeFile, setActiveFile] = useState<FileRow | null>(null);
+  const [chatPanelOpen, setChatPanelOpen] = useState(true);
+  const [chatDrawerOpen, setChatDrawerOpen] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState<{ type: "delete" | "clear"; session: ChatSession } | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const [selectedQuote, setSelectedQuote] = useState<{ text: string; fileId?: string | null } | null>(null);
+  const [pendingSnip, setPendingSnip] = useState<PdfSnip | null>(null);
+  const [selectionMenu, setSelectionMenu] = useState<{
+    text: string;
+    x: number;
+    y: number;
+    fileId?: string | null;
+    page?: number | null;
+  } | null>(null);
 
   const location = useLocation();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -172,6 +195,10 @@ export default function Classes() {
       setActiveSessionId(null);
       setMessages([]);
       setScopeFileIds([]);
+      setActiveFile(null);
+      setSelectedQuote(null);
+      setSelectionMenu(null);
+      setChatDrawerOpen(false);
       return;
     }
     (async () => {
@@ -213,19 +240,36 @@ export default function Classes() {
       setMessages([]);
       return;
     }
+    setMessages([]);
+    setPendingSnip(null);
     (async () => {
-      const detail = await getChatSession(activeSessionId);
-      const msgs = (detail.messages || []).map((m) => ({
+      const msgs = await listChatSessionMessages(activeSessionId);
+      const normalized = (msgs || []).map((m) => ({
         ...m,
         citations: m.citations ?? undefined,
+        selected_text: m.selected_text ?? null,
+        file_id: m.file_id ?? null,
+        file_scope: m.file_scope ?? null,
+        image_attachment: m.image_attachment ?? null,
       }));
-      setMessages(msgs);
+      setMessages(normalized);
     })();
   }, [activeSessionId]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length, chatBusy]);
+
+  useEffect(() => {
+    if (!selectionMenu) return;
+    const clear = () => setSelectionMenu(null);
+    window.addEventListener("scroll", clear, true);
+    window.addEventListener("mousedown", clear);
+    return () => {
+      window.removeEventListener("scroll", clear, true);
+      window.removeEventListener("mousedown", clear);
+    };
+  }, [selectionMenu]);
 
   async function handleCreate(name: string) {
     const row = await createClass({ name, subject: "General" });
@@ -393,9 +437,10 @@ export default function Classes() {
     setActiveSessionId(s.id);
   }
 
-  async function onAsk() {
+  async function onAsk(opts?: { content?: string; attachment?: PdfSnip | null }) {
     if (!selectedId) return;
-    if (!chatInput.trim()) return;
+    const content = (opts?.content ?? chatInput).trim();
+    if (!content) return;
 
     let sessionId = activeSessionId;
     if (!sessionId) {
@@ -405,47 +450,90 @@ export default function Classes() {
       setActiveSessionId(s.id);
     }
 
+    const pendingAttachment = opts?.attachment ?? null;
     const userMsg: Msg = {
       id: crypto.randomUUID?.() ?? String(Date.now()),
       role: "user",
-      content: chatInput.trim(),
+      content,
+      selected_text: selectedQuote?.text ?? null,
+      file_id: selectedQuote?.fileId ?? null,
+      image_attachment: pendingAttachment ?? null,
     };
     setMessages((prev) => [...prev, userMsg]);
     setChatInput("");
     setChatBusy(true);
+    setSelectedQuote(null);
+    setPendingSnip(null);
 
+    let selectedText = selectedQuote?.text ?? null;
+    let assistantText = "Sorry, I couldn't finish that response. Please try again.";
+    let citations: any = null;
     try {
+      let question = selectedText ? `Selected text:\n"${selectedText}"\n\n${userMsg.content}` : userMsg.content;
+      if (pendingAttachment?.data_url && !selectedText) {
+        try {
+          const ocr = await ocrImageSnippet(pendingAttachment.data_url);
+          if (ocr?.text) {
+            selectedText = ocr.text;
+            question = `Snippet text:\n"${ocr.text}"\n\n${userMsg.content}`;
+          }
+        } catch {
+          /* ignore OCR failures */
+        }
+      }
+      const effectiveFileIds = selectedQuote?.fileId
+        ? [selectedQuote.fileId]
+        : pendingAttachment?.file_id
+          ? [pendingAttachment.file_id]
+          : scopeFileIds.length
+            ? scopeFileIds
+            : undefined;
       const res = await chatAsk({
         class_id: selectedId,
-        question: userMsg.content,
+        question,
         top_k: 8,
-        file_ids: scopeFileIds.length ? scopeFileIds : undefined,
+        file_ids: effectiveFileIds,
       });
-      const botMsg: Msg = {
-        id: crypto.randomUUID?.() ?? String(Date.now() + 1),
-        role: "assistant",
-        content: (res.answer || "").trim() || "Not found in the uploaded material.",
-        citations: res.citations ?? [],
-      };
-      setMessages((prev) => [...prev, botMsg]);
-      await addChatMessages({
+      assistantText = (res.answer || "").trim() || "Not found in the uploaded material.";
+      citations = res.citations ?? null;
+    } catch {
+      showToastMessage("Couldn't save that message. Try again.");
+    }
+
+    const botMsg: Msg = {
+      id: crypto.randomUUID?.() ?? String(Date.now() + 1),
+      role: "assistant",
+      content: assistantText,
+      citations: citations ?? undefined,
+    };
+    setMessages((prev) => [...prev, botMsg]);
+    try {
+      const saved = await addChatMessages({
         session_id: sessionId!,
         user_content: userMsg.content,
         assistant_content: botMsg.content,
-        citations: res.citations ?? null,
+        citations,
+        selected_text: selectedText ?? null,
+        file_id: userMsg.file_id ?? pendingAttachment?.file_id ?? null,
+        file_scope: scopeFileIds.length ? scopeFileIds : null,
+        image_attachment: pendingAttachment ?? null,
       });
+      if (Array.isArray(saved?.messages)) {
+        const normalized = saved.messages.map((m) => ({
+          ...m,
+          citations: m.citations ?? undefined,
+          selected_text: m.selected_text ?? null,
+          file_id: m.file_id ?? null,
+          file_scope: m.file_scope ?? null,
+          image_attachment: m.image_attachment ?? null,
+        }));
+        setMessages(normalized);
+      }
       setSessions((prev) =>
         prev.map((s) => (s.id === sessionId ? { ...s, updated_at: new Date().toISOString() } : s))
       );
-    } catch (e: any) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: crypto.randomUUID?.() ?? String(Date.now() + 2),
-          role: "assistant",
-          content: e?.message ?? "Chat failed",
-        },
-      ]);
+    } catch {
+      showToastMessage("Couldn't save that message. Try again.");
     } finally {
       setChatBusy(false);
     }
@@ -458,6 +546,80 @@ export default function Classes() {
       else next.add(fileId);
       return Array.from(next);
     });
+  }
+
+  function handlePdfSelection(sel: PdfSelection) {
+    if (!activeFile) return;
+    if (!sel.text) {
+      setSelectionMenu(null);
+      return;
+    }
+    setSelectionMenu({
+      text: sel.text,
+      x: sel.rect.left + sel.rect.width / 2,
+      y: Math.max(sel.rect.top - 8, 8),
+      fileId: activeFile.id,
+      page: sel.page,
+    });
+  }
+
+  function handlePdfSnip(snip: PdfSnip) {
+    const withFile = { ...snip, file_id: activeFile?.id ?? null };
+    setPendingSnip(withFile);
+    setChatPanelOpen(true);
+    setChatDrawerOpen(true);
+    setSelectionMenu(null);
+  }
+
+  function startQuote(prompt: string, text: string, fileId?: string | null) {
+    setSelectedQuote({ text, fileId: fileId ?? null });
+    setPendingSnip(null);
+    setChatInput(prompt);
+    setChatPanelOpen(true);
+    setChatDrawerOpen(true);
+    setSelectionMenu(null);
+  }
+
+  function showToastMessage(message: string) {
+    setToast(message);
+    window.setTimeout(() => setToast(null), 2500);
+  }
+
+  function handleSendSnip() {
+    if (!pendingSnip) return;
+    const prompt = chatInput.trim() ? chatInput.trim() : "Explain this snippet.";
+    onAsk({ content: prompt, attachment: pendingSnip });
+  }
+
+  async function handleConfirmAction() {
+    if (!confirmDialog) return;
+    const { session, type } = confirmDialog;
+    try {
+      if (type === "delete") {
+        await deleteChatSession(session.id, selectedId ?? undefined);
+        setSessions((prev) => {
+          const next = prev.filter((s) => s.id !== session.id);
+          if (activeSessionId === session.id) {
+            setActiveSessionId(next[0]?.id ?? null);
+            setMessages([]);
+            setChatInput("");
+            setSelectedQuote(null);
+          }
+          return next;
+        });
+      } else {
+        await clearChatSessionMessages(session.id);
+        if (activeSessionId === session.id) {
+          setMessages([]);
+        }
+      }
+    } catch {
+      showToastMessage(
+        type === "delete" ? "Couldn't delete chat. Try again." : "Couldn't clear messages. Try again."
+      );
+    } finally {
+      setConfirmDialog(null);
+    }
   }
 
   const currentClass = selectedId
@@ -652,6 +814,315 @@ export default function Classes() {
                 </div>
               )}
 
+                <div className="mt-6">
+                  {!activeFile ? (
+                    <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm">
+                      Select a document to open the study workspace.
+                    </div>
+                  ) : (
+                    <div className="relative">
+                      <div
+                        className={`grid gap-4 ${
+                          chatPanelOpen ? "xl:grid-cols-[minmax(0,1fr)_360px]" : "grid-cols-1"
+                        }`}
+                      >
+                        <div className="space-y-4">
+                          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+                            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+                              <div>
+                                <div className="text-sm font-semibold text-slate-900">{activeFile.filename}</div>
+                                <div className="text-xs text-slate-500">Document workspace</div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  className="rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-600 xl:hidden"
+                                  onClick={() => setChatDrawerOpen(true)}
+                                >
+                                  Open assistant
+                                </button>
+                                <a
+                                  href={activeFile.storage_url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-600"
+                                >
+                                  Open
+                                </a>
+                                <a
+                                  href={activeFile.storage_url}
+                                  download
+                                  className="rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-600"
+                                >
+                                  Download
+                                </a>
+                                <button
+                                  className="rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-600"
+                                  onClick={() => setActiveFile(null)}
+                                >
+                                  Close
+                                </button>
+                              </div>
+                            </div>
+                            <div className="h-[75vh] bg-slate-50">
+                              {isPdfFile(activeFile) ? (
+                                <PdfStudyViewer
+                                  fileUrl={activeFile.storage_url}
+                                  fileName={activeFile.filename}
+                                  onTextSelect={handlePdfSelection}
+                                  onSnip={handlePdfSnip}
+                                  onSnipError={showToastMessage}
+                                />
+                              ) : (
+                                <div className="flex h-full items-center justify-center px-6 text-center text-sm text-slate-500">
+                                  Preview is available for PDF files. You can open or download this file instead.
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        {chatPanelOpen && (
+                          <aside className="hidden h-[75vh] flex-col rounded-2xl border border-slate-200 bg-white shadow-sm xl:flex">
+                            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+                              <div className="text-sm font-semibold">Study Assistant</div>
+                              <div className="flex items-center gap-2">
+                                <label className="flex items-center gap-2 text-xs text-slate-500">
+                                  <input
+                                    type="checkbox"
+                                    checked={showCitations}
+                                    onChange={() => setShowCitations((v) => !v)}
+                                  />
+                                  Citations
+                                </label>
+                                <button
+                                  className="rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-600"
+                                  onClick={() => setChatPanelOpen(false)}
+                                >
+                                  Collapse
+                                </button>
+                              </div>
+                            </div>
+                            <div className="border-b border-slate-200 px-4 py-3">
+                              <div className="flex items-center gap-2">
+                                <select
+                                  className="h-9 flex-1 rounded-lg border border-slate-200 px-2 text-xs"
+                                  value={activeSessionId ?? ""}
+                                  onChange={(e) => setActiveSessionId(e.target.value)}
+                                >
+                                  <option value="" disabled>
+                                    Select a session
+                                  </option>
+                                  {sessions.map((s) => (
+                                    <option key={s.id} value={s.id}>
+                                      {s.title}
+                                    </option>
+                                  ))}
+                                </select>
+                                <button
+                                  onClick={startNewSession}
+                                  className="h-9 rounded-lg border border-slate-200 px-2 text-xs"
+                                >
+                                  New
+                                </button>
+                              </div>
+                              <div className="mt-2 text-[11px] text-slate-400">
+                                {sessions.length === 0 ? "No sessions yet." : "Pick a session to keep history."}
+                              </div>
+                            </div>
+                            <div className="border-b border-slate-200 px-4 py-3">
+                              <div className="text-xs font-semibold text-slate-600">Scope</div>
+                              <div className="mt-2 flex flex-wrap gap-2">
+                                {(files ?? []).length === 0 ? (
+                                  <span className="text-[11px] text-slate-400">Upload files to enable scope.</span>
+                                ) : (
+                                  (files ?? []).map((f) => {
+                                    const checked = scopeFileIds.includes(f.id);
+                                    return (
+                                      <button
+                                        key={f.id}
+                                        onClick={() => toggleFileScope(f.id)}
+                                        className={`rounded-full border px-3 py-1 text-[11px] ${
+                                          checked
+                                            ? "border-slate-900 bg-slate-900 text-white"
+                                            : "border-slate-200 text-slate-600"
+                                        }`}
+                                      >
+                                        {f.filename}
+                                      </button>
+                                    );
+                                  })
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex-1 overflow-auto p-4 space-y-4">
+                              {messages.length === 0 ? (
+                                <div className="text-sm text-slate-500">
+                                  No messages yet. Ask about the document on the left.
+                                </div>
+                              ) : (
+                                messages.map((m) => {
+                                  const show =
+                                    showCitations && m.role === "assistant" && (m.citations?.length ?? 0) > 0;
+                                  return (
+                                    <div key={m.id} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                                      <div
+                                        className={`max-w-[85%] rounded-2xl border px-4 py-3 text-sm leading-6 ${
+                                          m.role === "user"
+                                            ? "bg-slate-900 text-white border-slate-900"
+                                            : "bg-white border-slate-200"
+                                        }`}
+                                      >
+                                        {m.selected_text && (
+                                          <div
+                                            className={`mb-2 rounded-lg border px-3 py-2 text-xs ${
+                                              m.role === "user"
+                                                ? "border-slate-700/60 bg-slate-800/60 text-slate-100"
+                                                : "border-slate-200 bg-slate-50 text-slate-600"
+                                            }`}
+                                          >
+                                            <div className="text-[10px] uppercase tracking-wide opacity-70">
+                                              Selected text
+                                            </div>
+                                            <div className="mt-1 whitespace-pre-wrap">{m.selected_text}</div>
+                                          </div>
+                                        )}
+                                        {m.image_attachment?.data_url && (
+                                          <div className="mb-2">
+                                            <img
+                                              src={m.image_attachment.data_url}
+                                              alt="Snippet"
+                                              className="max-h-32 rounded-lg border border-slate-200 object-contain"
+                                            />
+                                          </div>
+                                        )}
+                                        <div className="whitespace-pre-wrap">{m.content}</div>
+                                        {show && (
+                                          <div className="mt-3 border-t border-slate-200 pt-2 text-xs text-slate-500">
+                                            {(m.citations ?? []).slice(0, 4).map((c: any, idx: number) => (
+                                              <div key={`${c?.chunk_id ?? idx}`}>
+                                                {c?.filename ?? "Source"}
+                                                {c?.page_start
+                                                  ? ` (p${c.page_start}-${c.page_end ?? c.page_start})`
+                                                  : ""}
+                                              </div>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })
+                              )}
+                              {chatBusy && <div className="text-xs text-slate-400">Thinking...</div>}
+                              <div ref={chatEndRef} />
+                            </div>
+                            <div className="border-t border-slate-200 p-4">
+                              {selectedQuote && (
+                                <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="font-semibold">Quote attached</span>
+                                    <button
+                                      className="rounded-lg border border-amber-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-amber-700"
+                                      onClick={() => setSelectedQuote(null)}
+                                    >
+                                      Clear quote
+                                    </button>
+                                  </div>
+                                  <div className="mt-2 whitespace-pre-wrap text-[11px] text-amber-900">
+                                    {selectedQuote.text}
+                                  </div>
+                                </div>
+                              )}
+                              {pendingSnip && (
+                                <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="font-semibold">Snippet ready</span>
+                                    <div className="flex items-center gap-2">
+                                      <button
+                                        className="rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600"
+                                        onClick={handleSendSnip}
+                                      >
+                                        Send to chat
+                                      </button>
+                                      <button
+                                        className="rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600"
+                                        onClick={() => setPendingSnip(null)}
+                                      >
+                                        Discard
+                                      </button>
+                                    </div>
+                                  </div>
+                                  <img
+                                    src={pendingSnip.data_url}
+                                    alt="Snippet preview"
+                                    className="mt-2 max-h-28 rounded-lg border border-slate-200 object-contain"
+                                  />
+                                </div>
+                              )}
+                              <div className="flex gap-3">
+                                <textarea
+                                  value={chatInput}
+                                  onChange={(e) => setChatInput(e.target.value)}
+                                  className="min-h-[52px] flex-1 resize-none rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/20"
+                                  placeholder="Ask about this document..."
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter" && !e.shiftKey) {
+                                      e.preventDefault();
+                                      onAsk();
+                                    }
+                                  }}
+                                />
+                                <button
+                                  onClick={onAsk}
+                                  disabled={chatBusy || !chatInput.trim()}
+                                  className="h-12 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white disabled:opacity-50"
+                                >
+                                  Send
+                                </button>
+                              </div>
+                              <div className="mt-2 text-xs text-slate-400">Enter to send, Shift+Enter for newline.</div>
+                            </div>
+                          </aside>
+                        )}
+                      </div>
+
+                      {!chatPanelOpen && (
+                        <button
+                          onClick={() => setChatPanelOpen(true)}
+                          className="absolute right-0 top-2 hidden -translate-y-1/2 rounded-l-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm xl:flex"
+                        >
+                          Study Assistant
+                        </button>
+                      )}
+
+                      {selectionMenu && (
+                        <div
+                          className="fixed z-50"
+                          style={{ left: selectionMenu.x, top: selectionMenu.y }}
+                          onMouseDown={(e) => e.stopPropagation()}
+                        >
+                          <div className="flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-1 text-xs shadow-lg">
+                            <button
+                              className="rounded-full px-2 py-1 hover:bg-slate-100"
+                              onClick={() => startQuote("Ask about this part.", selectionMenu.text, selectionMenu.fileId)}
+                            >
+                              Ask
+                            </button>
+                            <button
+                              className="rounded-full px-2 py-1 hover:bg-slate-100"
+                              onClick={() =>
+                                startQuote("Explain this part clearly.", selectionMenu.text, selectionMenu.fileId)
+                              }
+                            >
+                              Explain
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
               {activeTab === "flashcards" && (
                 <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                   <div className="flex items-center justify-between flex-wrap gap-3">
@@ -696,20 +1167,30 @@ export default function Classes() {
                         <div className="text-xs text-slate-500">No sessions yet.</div>
                       ) : (
                         sessions.map((s) => (
-                          <button
+                          <div
                             key={s.id}
-                            onClick={() => setActiveSessionId(s.id)}
-                            className={`w-full rounded-xl border px-3 py-2 text-left text-xs ${
+                            className={`flex items-start justify-between gap-2 rounded-xl border px-3 py-2 text-left text-xs ${
                               s.id === activeSessionId
-                                ? "border-slate-900 bg-slate-50 font-semibold"
+                                ? "border-slate-900 bg-slate-50"
                                 : "border-slate-200 hover:border-slate-300"
                             }`}
                           >
-                            <div className="truncate">{s.title}</div>
-                            <div className="text-[10px] text-slate-400 truncate">
-                              {new Date(s.updated_at || s.created_at || "").toLocaleString()}
-                            </div>
-                          </button>
+                            <button
+                              onClick={() => setActiveSessionId(s.id)}
+                              className="flex-1 text-left"
+                            >
+                              <div className={`truncate ${s.id === activeSessionId ? "font-semibold" : ""}`}>{s.title}</div>
+                              <div className="text-[10px] text-slate-400 truncate">
+                                {new Date(s.updated_at || s.created_at || "").toLocaleString()}
+                              </div>
+                            </button>
+                            <KebabMenu
+                              items={[
+                                { label: "Clear messages", onClick: () => setConfirmDialog({ type: "clear", session: s }) },
+                                { label: "Delete chat", onClick: () => setConfirmDialog({ type: "delete", session: s }) },
+                              ]}
+                            />
+                          </div>
                         ))
                       )}
                     </div>
@@ -725,7 +1206,7 @@ export default function Classes() {
                     </div>
                     <div className="flex-1 overflow-auto p-4 space-y-4">
                       {messages.length === 0 ? (
-                        <div className="text-sm text-slate-500">Ask about your class materials.</div>
+                        <div className="text-sm text-slate-500">No messages yet. Ask about your class materials.</div>
                       ) : (
                         messages.map((m) => {
                           const show = showCitations && m.role === "assistant" && (m.citations?.length ?? 0) > 0;
@@ -738,6 +1219,27 @@ export default function Classes() {
                                     : "bg-white border-slate-200"
                                 }`}
                               >
+                                {m.selected_text && (
+                                  <div
+                                    className={`mb-2 rounded-lg border px-3 py-2 text-xs ${
+                                      m.role === "user"
+                                        ? "border-slate-700/60 bg-slate-800/60 text-slate-100"
+                                        : "border-slate-200 bg-slate-50 text-slate-600"
+                                    }`}
+                                  >
+                                    <div className="text-[10px] uppercase tracking-wide opacity-70">Selected text</div>
+                                    <div className="mt-1 whitespace-pre-wrap">{m.selected_text}</div>
+                                  </div>
+                                )}
+                                {m.image_attachment?.data_url && (
+                                  <div className="mb-2">
+                                    <img
+                                      src={m.image_attachment.data_url}
+                                      alt="Snippet"
+                                      className="max-h-40 rounded-lg border border-slate-200 object-contain"
+                                    />
+                                  </div>
+                                )}
                                 <div className="whitespace-pre-wrap">{m.content}</div>
                                 {show && (
                                   <div className="mt-3 border-t border-slate-200 pt-2 text-xs text-slate-500">
@@ -758,6 +1260,46 @@ export default function Classes() {
                       <div ref={chatEndRef} />
                     </div>
                     <div className="border-t border-slate-200 p-4">
+                      {selectedQuote && (
+                        <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-semibold">Quote attached</span>
+                            <button
+                              className="rounded-lg border border-amber-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-amber-700"
+                              onClick={() => setSelectedQuote(null)}
+                            >
+                              Clear quote
+                            </button>
+                          </div>
+                          <div className="mt-2 whitespace-pre-wrap text-[11px] text-amber-900">{selectedQuote.text}</div>
+                        </div>
+                      )}
+                      {pendingSnip && (
+                        <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-semibold">Snippet ready</span>
+                            <div className="flex items-center gap-2">
+                              <button
+                                className="rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600"
+                                onClick={handleSendSnip}
+                              >
+                                Send to chat
+                              </button>
+                              <button
+                                className="rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600"
+                                onClick={() => setPendingSnip(null)}
+                              >
+                                Discard
+                              </button>
+                            </div>
+                          </div>
+                          <img
+                            src={pendingSnip.data_url}
+                            alt="Snippet preview"
+                            className="mt-2 max-h-32 rounded-lg border border-slate-200 object-contain"
+                          />
+                        </div>
+                      )}
                       <div className="flex gap-3">
                         <textarea
                           value={chatInput}
@@ -865,19 +1407,245 @@ export default function Classes() {
                 </div>
               )}
 
-              {activeFile && (
-                <FileViewer
-                  url={activeFile.storage_url}
-                  name={activeFile.filename}
-                  mime={(activeFile as any).mime || null}
-                  onClose={() => setActiveFile(null)}
-                />
-              )}
             </>
           )}
           </div>
         </section>
       </div>
+
+      {chatDrawerOpen && (
+        <div className="fixed inset-0 z-50 flex xl:hidden">
+          <div className="flex-1 bg-slate-900/40" onClick={() => setChatDrawerOpen(false)} />
+          <aside className="flex w-[min(92vw,360px)] flex-col bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+              <div className="text-sm font-semibold">Study Assistant</div>
+              <div className="flex items-center gap-2">
+                <label className="flex items-center gap-2 text-xs text-slate-500">
+                  <input
+                    type="checkbox"
+                    checked={showCitations}
+                    onChange={() => setShowCitations((v) => !v)}
+                  />
+                  Citations
+                </label>
+                <button
+                  className="rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-600"
+                  onClick={() => setChatDrawerOpen(false)}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+            <div className="border-b border-slate-200 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <select
+                  className="h-9 flex-1 rounded-lg border border-slate-200 px-2 text-xs"
+                  value={activeSessionId ?? ""}
+                  onChange={(e) => setActiveSessionId(e.target.value)}
+                >
+                  <option value="" disabled>
+                    Select a session
+                  </option>
+                  {sessions.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.title}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={startNewSession}
+                  className="h-9 rounded-lg border border-slate-200 px-2 text-xs"
+                >
+                  New
+                </button>
+              </div>
+              <div className="mt-2 text-[11px] text-slate-400">
+                {sessions.length === 0 ? "No sessions yet." : "Pick a session to keep history."}
+              </div>
+            </div>
+            <div className="border-b border-slate-200 px-4 py-3">
+              <div className="text-xs font-semibold text-slate-600">Scope</div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {(files ?? []).length === 0 ? (
+                  <span className="text-[11px] text-slate-400">Upload files to enable scope.</span>
+                ) : (
+                  (files ?? []).map((f) => {
+                    const checked = scopeFileIds.includes(f.id);
+                    return (
+                      <button
+                        key={f.id}
+                        onClick={() => toggleFileScope(f.id)}
+                        className={`rounded-full border px-3 py-1 text-[11px] ${
+                          checked ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 text-slate-600"
+                        }`}
+                      >
+                        {f.filename}
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+            <div className="flex-1 overflow-auto p-4 space-y-4">
+              {messages.length === 0 ? (
+                <div className="text-sm text-slate-500">No messages yet. Ask about the document on the left.</div>
+              ) : (
+                messages.map((m) => {
+                  const show = showCitations && m.role === "assistant" && (m.citations?.length ?? 0) > 0;
+                  return (
+                    <div key={m.id} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                      <div
+                        className={`max-w-[85%] rounded-2xl border px-4 py-3 text-sm leading-6 ${
+                          m.role === "user"
+                            ? "bg-slate-900 text-white border-slate-900"
+                            : "bg-white border-slate-200"
+                        }`}
+                      >
+                        {m.selected_text && (
+                          <div
+                            className={`mb-2 rounded-lg border px-3 py-2 text-xs ${
+                              m.role === "user"
+                                ? "border-slate-700/60 bg-slate-800/60 text-slate-100"
+                                : "border-slate-200 bg-slate-50 text-slate-600"
+                            }`}
+                          >
+                            <div className="text-[10px] uppercase tracking-wide opacity-70">Selected text</div>
+                            <div className="mt-1 whitespace-pre-wrap">{m.selected_text}</div>
+                          </div>
+                        )}
+                        {m.image_attachment?.data_url && (
+                          <div className="mb-2">
+                            <img
+                              src={m.image_attachment.data_url}
+                              alt="Snippet"
+                              className="max-h-32 rounded-lg border border-slate-200 object-contain"
+                            />
+                          </div>
+                        )}
+                        <div className="whitespace-pre-wrap">{m.content}</div>
+                        {show && (
+                          <div className="mt-3 border-t border-slate-200 pt-2 text-xs text-slate-500">
+                            {(m.citations ?? []).slice(0, 4).map((c: any, idx: number) => (
+                              <div key={`${c?.chunk_id ?? idx}`}>
+                                {c?.filename ?? "Source"}
+                                {c?.page_start ? ` (p${c.page_start}-${c.page_end ?? c.page_start})` : ""}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+              {chatBusy && <div className="text-xs text-slate-400">Thinking...</div>}
+              <div ref={chatEndRef} />
+            </div>
+            <div className="border-t border-slate-200 p-4">
+              {selectedQuote && (
+                <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-semibold">Quote attached</span>
+                    <button
+                      className="rounded-lg border border-amber-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-amber-700"
+                      onClick={() => setSelectedQuote(null)}
+                    >
+                      Clear quote
+                    </button>
+                  </div>
+                  <div className="mt-2 whitespace-pre-wrap text-[11px] text-amber-900">{selectedQuote.text}</div>
+                </div>
+              )}
+              {pendingSnip && (
+                <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-semibold">Snippet ready</span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        className="rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600"
+                        onClick={handleSendSnip}
+                      >
+                        Send to chat
+                      </button>
+                      <button
+                        className="rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600"
+                        onClick={() => setPendingSnip(null)}
+                      >
+                        Discard
+                      </button>
+                    </div>
+                  </div>
+                  <img
+                    src={pendingSnip.data_url}
+                    alt="Snippet preview"
+                    className="mt-2 max-h-28 rounded-lg border border-slate-200 object-contain"
+                  />
+                </div>
+              )}
+              <div className="flex gap-3">
+                <textarea
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  className="min-h-[52px] flex-1 resize-none rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/20"
+                  placeholder="Ask about this document..."
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      onAsk();
+                    }
+                  }}
+                />
+                <button
+                  onClick={onAsk}
+                  disabled={chatBusy || !chatInput.trim()}
+                  className="h-12 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white disabled:opacity-50"
+                >
+                  Send
+                </button>
+              </div>
+              <div className="mt-2 text-xs text-slate-400">Enter to send, Shift+Enter for newline.</div>
+            </div>
+          </aside>
+        </div>
+      )}
+
+      {confirmDialog && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+          onClick={() => setConfirmDialog(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="text-lg font-semibold text-slate-900">
+              {confirmDialog.type === "delete" ? "Delete this chat?" : "Clear messages?"}
+            </div>
+            <div className="mt-2 text-sm text-slate-600">
+              {confirmDialog.type === "delete"
+                ? "This will permanently delete the chat and its messages. This can't be undone."
+                : "This will remove all messages in this chat. You can't undo this."}
+            </div>
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <Button onClick={() => setConfirmDialog(null)}>Cancel</Button>
+              <Button
+                className="border-rose-200 bg-rose-50 text-rose-700 hover:border-rose-300"
+                onClick={handleConfirmAction}
+              >
+                {confirmDialog.type === "delete" ? "Delete" : "Clear"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-50 rounded-xl bg-slate-900 px-4 py-2 text-sm text-white shadow-lg">
+          {toast}
+        </div>
+      )}
 
       {showCreate && (
         <div

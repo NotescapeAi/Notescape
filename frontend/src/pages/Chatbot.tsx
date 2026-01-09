@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import AppSidebar from "../components/AppSidebar";
 import PageHeader from "../components/PageHeader";
 import Button from "../components/Button";
@@ -8,7 +9,7 @@ import {
   chatAsk,
   createChatSession,
   listChatSessions,
-  getChatSession,
+  listChatSessionMessages,
   addChatMessages,
   type ClassRow,
   type FileRow,
@@ -19,6 +20,7 @@ import {
 type Msg = ChatMessage & { citations?: any };
 
 export default function Chatbot() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [classes, setClasses] = useState<ClassRow[]>([]);
   const [classId, setClassId] = useState<number | null>(null);
   const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -29,16 +31,32 @@ export default function Chatbot() {
   const [files, setFiles] = useState<FileRow[]>([]);
   const [fileSearch, setFileSearch] = useState("");
   const [input, setInput] = useState("");
+  const [selectedText, setSelectedText] = useState("");
+  const [errorBanner, setErrorBanner] = useState<string | null>(null);
   const [busyAsk, setBusyAsk] = useState(false);
   const [busySessions, setBusySessions] = useState(false);
   const [busyFiles, setBusyFiles] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
+  const convoRef = useRef<HTMLDivElement | null>(null);
+
+  const LS_LAST_CLASS = "chat_last_class_id";
+  const LS_LAST_SESSION = "chat_last_session_by_class";
 
   useEffect(() => {
     (async () => {
-      setClasses(await listClasses());
+      const cls = await listClasses();
+      setClasses(cls);
+      const saved = Number(localStorage.getItem(LS_LAST_CLASS));
+      if (!classId && Number.isFinite(saved) && cls.some((c) => c.id === saved)) {
+        setClassId(saved);
+      }
     })();
   }, []);
+
+  useEffect(() => {
+    if (!classId) return;
+    localStorage.setItem(LS_LAST_CLASS, String(classId));
+  }, [classId]);
 
   useEffect(() => {
     if (!classId) {
@@ -53,12 +71,16 @@ export default function Chatbot() {
       try {
         const sess = await listChatSessions(classId);
         setSessions(sess);
-        setActiveSessionId(sess[0]?.id ?? null);
+        const fromUrl = searchParams.get("session");
+        const stored = JSON.parse(localStorage.getItem(LS_LAST_SESSION) || "{}");
+        const preferred = fromUrl || stored[String(classId)];
+        const next = sess.find((s) => s.id === preferred)?.id ?? sess[0]?.id ?? null;
+        setActiveSessionId(next);
       } finally {
         setBusySessions(false);
       }
     })();
-  }, [classId]);
+  }, [classId, searchParams]);
 
   useEffect(() => {
     if (!classId) return;
@@ -77,14 +99,25 @@ export default function Chatbot() {
       setMessages([]);
       return;
     }
+    setMessages([]);
     (async () => {
-      const detail = await getChatSession(activeSessionId);
-      const msgs = (detail.messages || []).map((m) => ({
+      const msgs = await listChatSessionMessages(activeSessionId);
+      const normalized = (msgs || []).map((m) => ({
         ...m,
         citations: m.citations ?? undefined,
+        selected_text: m.selected_text ?? null,
+        file_scope: m.file_scope ?? null,
+        image_attachment: m.image_attachment ?? null,
       }));
-      setMessages(msgs);
+      setMessages(normalized);
     })();
+    const stored = JSON.parse(localStorage.getItem(LS_LAST_SESSION) || "{}");
+    stored[String(classId ?? "")] = activeSessionId;
+    localStorage.setItem(LS_LAST_SESSION, JSON.stringify(stored));
+    setSearchParams((prev) => {
+      prev.set("session", activeSessionId);
+      return prev;
+    });
   }, [activeSessionId]);
 
   useEffect(() => {
@@ -116,27 +149,33 @@ export default function Chatbot() {
     }
     if (!input.trim()) return;
 
-    let sessionId = activeSessionId;
-    if (!sessionId) {
-      const s = await createChatSession({ class_id: classId, title: "New chat" });
-      setSessions((prev) => [s, ...prev]);
-      sessionId = s.id;
-      setActiveSessionId(s.id);
-    }
+    setErrorBanner(null);
 
     const userMsg: Msg = {
       id: crypto.randomUUID?.() ?? String(Date.now()),
       role: "user",
       content: input.trim(),
     };
+
+    let sessionId = activeSessionId;
+    if (!sessionId) {
+      const title = userMsg.content.slice(0, 48);
+      const s = await createChatSession({ class_id: classId, title });
+      setSessions((prev) => [s, ...prev]);
+      sessionId = s.id;
+      setActiveSessionId(s.id);
+    }
     setMessages((prev) => [...prev, userMsg]);
     setInput("");
     setBusyAsk(true);
 
     try {
+      const question = selectedText
+        ? `Selected text:\n"${selectedText}"\n\n${userMsg.content}`
+        : userMsg.content;
       const res = await chatAsk({
         class_id: classId,
-        question: userMsg.content,
+        question,
         top_k: 8,
         file_ids: scopeFileIds.length ? scopeFileIds : undefined,
       });
@@ -147,24 +186,34 @@ export default function Chatbot() {
         citations: res.citations ?? [],
       };
       setMessages((prev) => [...prev, botMsg]);
-      await addChatMessages({
+      const saved = await addChatMessages({
         session_id: sessionId!,
         user_content: userMsg.content,
         assistant_content: botMsg.content,
         citations: res.citations ?? null,
+        selected_text: selectedText || null,
+        file_scope: scopeFileIds.length ? scopeFileIds : null,
       });
+      if (Array.isArray(saved?.messages)) {
+        const normalized = saved.messages.map((m) => ({
+          ...m,
+          citations: m.citations ?? undefined,
+          selected_text: m.selected_text ?? null,
+          file_scope: m.file_scope ?? null,
+          image_attachment: m.image_attachment ?? null,
+        }));
+        setMessages(normalized);
+      }
+      setSelectedText("");
       setSessions((prev) =>
-        prev.map((s) => (s.id === sessionId ? { ...s, updated_at: new Date().toISOString() } : s))
+        prev.map((s) => {
+          if (s.id !== sessionId) return s;
+          const nextTitle = s.title === "New chat" ? userMsg.content.slice(0, 48) : s.title;
+          return { ...s, title: nextTitle, updated_at: new Date().toISOString() };
+        })
       );
     } catch (e: any) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: crypto.randomUUID?.() ?? String(Date.now() + 2),
-          role: "assistant",
-          content: e?.message ?? "Chat failed",
-        },
-      ]);
+      setErrorBanner("Couldn't save that message. Please try again.");
     } finally {
       setBusyAsk(false);
     }
@@ -236,7 +285,7 @@ export default function Chatbot() {
                         : "border-slate-200 hover:border-slate-300"
                     }`}
                   >
-                    <div className="truncate">{s.title}</div>
+                    <div className="truncate">{s.title || "Chat session"}</div>
                     <div className="text-xs text-slate-400 truncate">
                       {new Date(s.updated_at || s.created_at || "").toLocaleString()}
                     </div>
@@ -254,7 +303,19 @@ export default function Chatbot() {
                 Show citations
               </label>
             </div>
-            <div className="flex-1 overflow-auto p-4 space-y-4">
+            <div
+              ref={convoRef}
+              className="flex-1 overflow-auto p-4 space-y-4"
+              onMouseUp={() => {
+                const sel = window.getSelection()?.toString().trim() || "";
+                setSelectedText(sel.length > 0 ? sel : "");
+              }}
+            >
+              {errorBanner && (
+                <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                  {errorBanner}
+                </div>
+              )}
               {messages.length === 0 ? (
                 <div className="text-sm text-slate-500">Ask anything about your class materials.</div>
               ) : (
@@ -269,15 +330,41 @@ export default function Chatbot() {
                             : "bg-white border-slate-200"
                         }`}
                       >
+                        {m.selected_text && (
+                          <div
+                            className={`mb-2 rounded-lg border px-3 py-2 text-xs ${
+                              m.role === "user"
+                                ? "border-slate-700/60 bg-slate-800/60 text-slate-100"
+                                : "border-slate-200 bg-slate-50 text-slate-600"
+                            }`}
+                          >
+                            <div className="text-[10px] uppercase tracking-wide opacity-70">Selected text</div>
+                            <div className="mt-1 whitespace-pre-wrap">{m.selected_text}</div>
+                          </div>
+                        )}
+                        {m.image_attachment?.data_url && (
+                          <div className="mb-2">
+                            <img
+                              src={m.image_attachment.data_url}
+                              alt="Snippet"
+                              className="max-h-40 rounded-lg border border-slate-200 object-contain"
+                            />
+                          </div>
+                        )}
                         <div className="whitespace-pre-wrap">{m.content}</div>
                         {show && (
                           <div className="mt-3 border-t border-slate-200 pt-2 text-xs text-slate-500">
-                            {(m.citations ?? []).slice(0, 6).map((c: any, idx: number) => (
-                              <div key={`${c?.chunk_id ?? idx}`}>
-                                {c?.filename ?? "Source"}
-                                {c?.page_start ? ` (p${c.page_start}-${c.page_end ?? c.page_start})` : ""}
-                              </div>
-                            ))}
+                          {(m.citations ?? []).slice(0, 6).map((c: any, idx: number) => (
+                            <div key={`${c?.chunk_id ?? idx}`}>
+                              {c?.filename ?? "Source"}
+                              {c?.page_start ? ` (p${c.page_start}-${c.page_end ?? c.page_start})` : ""}
+                            </div>
+                          ))}
+                          {m.selected_text && (
+                            <div className="mt-2 text-[11px] text-slate-400">
+                              Selected: {String(m.selected_text).slice(0, 160)}
+                            </div>
+                          )}
                           </div>
                         )}
                       </div>
@@ -289,6 +376,18 @@ export default function Chatbot() {
               <div ref={endRef} />
             </div>
             <div className="border-t border-slate-200 p-4">
+              {selectedText && (
+                <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-500">
+                  Using selected text
+                  <button
+                    className="text-slate-600"
+                    onClick={() => setSelectedText("")}
+                    aria-label="Clear selected text"
+                  >
+                    ×
+                  </button>
+                </div>
+              )}
               <div className="flex gap-3">
                 <textarea
                   value={input}
@@ -302,13 +401,14 @@ export default function Chatbot() {
                     }
                   }}
                 />
-                <button
+                <Button
+                  variant="primary"
                   onClick={onAsk}
                   disabled={!classId || busyAsk || !input.trim()}
-                  className="h-12 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white disabled:opacity-50"
+                  className="h-12 px-4"
                 >
                   Send
-                </button>
+                </Button>
               </div>
               <div className="mt-2 text-xs text-slate-400">Enter to send, Shift+Enter for newline.</div>
             </div>
