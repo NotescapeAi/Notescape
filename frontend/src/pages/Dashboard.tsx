@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import AppSidebar from "../components/AppSidebar";
+import PageHeader from "../components/PageHeader";
 import { listClasses, listFiles, getFlashcardProgress, type ClassRow } from "../lib/api";
 
 export default function Dashboard() {
@@ -32,14 +33,10 @@ export default function Dashboard() {
     <div className="min-h-screen flex bg-slate-50">
       <AppSidebar />
       <main className="flex-1 p-6 lg:p-8">
-        <div className="flex items-center justify-between flex-wrap gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold">Dashboard</h1>
-            <p className="text-sm text-slate-500">Overview of your study workspace</p>
-          </div>
-        </div>
+        <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6">
+          <PageHeader title="Dashboard" subtitle="Overview of your study workspace" />
 
-        <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="text-xs text-slate-500">Classes</div>
             <div className="text-2xl font-semibold">{loading ? "..." : classes.length}</div>
@@ -54,7 +51,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="lg:col-span-2 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex items-center justify-between">
               <div>
@@ -92,6 +89,7 @@ export default function Dashboard() {
                 ))
               )}
             </div>
+          </div>
           </div>
         </div>
       </main>

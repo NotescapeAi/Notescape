@@ -1,5 +1,7 @@
 # app/core/llm.py
 import os
+import json
+import re
 from typing import List, Callable, Dict, Any
 
 # -----------------------
@@ -102,29 +104,81 @@ class CardGenerator:
     def __init__(self, fn: Callable[[str, str], Any]):
         self._fn = fn
 
-    async def generate(self, joined_context: str, n_cards: int) -> List[Dict[str, Any]]:
+    def _parse_cards(self, raw: str) -> List[Dict[str, Any]]:
+        if not raw:
+            return []
+        text = raw.strip()
+
+        fenced = re.search(r"```(?:json)?\s*(\{.*?\}|\[.*?\])\s*```", text, re.S | re.I)
+        if fenced:
+            text = fenced.group(1).strip()
+        else:
+            start = text.find("{")
+            end = text.rfind("}")
+            if start != -1 and end != -1 and end > start:
+                text = text[start:end + 1]
+            else:
+                start = text.find("[")
+                end = text.rfind("]")
+                if start != -1 and end != -1 and end > start:
+                    text = text[start:end + 1]
+
+        try:
+            data = json.loads(text)
+        except Exception:
+            return []
+
+        if isinstance(data, dict):
+            cards = data.get("cards", [])
+        elif isinstance(data, list):
+            cards = data
+        else:
+            return []
+
+        if not isinstance(cards, list):
+            return []
+
+        out = []
+        for c in cards:
+            if not isinstance(c, dict):
+                continue
+            q = str(c.get("question") or "").strip()
+            a = str(c.get("answer") or "").strip()
+            if not q or not a:
+                continue
+            out.append(
+                {
+                    "question": q,
+                    "answer": a,
+                    "hint": c.get("hint"),
+                    "difficulty": c.get("difficulty") or "medium",
+                    "tags": c.get("tags") or [],
+                }
+            )
+        return out
+
+    async def generate(self, joined_context: str, n_cards: int, style: str = "mixed") -> List[Dict[str, Any]]:
         system = (
             "You create concise, exam-style flashcards. "
             "Return ONLY valid JSON: "
             '{"cards":[{"question":"...","answer":"...","hint":"optional",'
             '"difficulty":"easy|medium|hard","tags":["..."]}]}'
         )
+        style_note = {
+            "definitions": "Focus on crisp definitions and key terms.",
+            "conceptual": "Focus on conceptual understanding and why/how questions.",
+            "qa": "Use direct Q&A style with specific prompts.",
+            "mixed": "Mix definitions, conceptual, and practical Q&A.",
+        }.get(style or "mixed", "Mix definitions, conceptual, and practical Q&A.")
         user = (
             f"Context:\n{joined_context}\n\n"
             f"Make exactly {n_cards} high-yield, fact-checked flashcards. "
-            "Avoid fluff; prefer precise definitions, cause→effect, and contrasts."
+            f"{style_note} "
+            "Avoid fluff; prefer precise definitions, cause-effect, and contrasts."
         )
         raw = await self._fn(system, user)
+        return self._parse_cards(raw)
 
-        import json
-        try:
-            data = json.loads(raw.strip())
-            cards = data.get("cards", [])
-            if not isinstance(cards, list):
-                raise ValueError("cards not a list")
-        except Exception:
-            cards = [{"question": "Summarize the main idea.", "answer": raw, "difficulty": "medium", "tags": []}]
-        return cards
 
 def get_card_generator() -> "CardGenerator":
     if LLM_PROVIDER == "groq":

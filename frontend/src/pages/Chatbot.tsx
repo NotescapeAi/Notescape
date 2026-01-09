@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import AppSidebar from "../components/AppSidebar";
+import PageHeader from "../components/PageHeader";
+import Button from "../components/Button";
 import {
   listClasses,
   listFiles,
@@ -189,35 +191,32 @@ export default function Chatbot() {
     <div className="min-h-screen bg-slate-50 text-slate-900 flex">
       <AppSidebar />
       <main className="flex-1 p-6 lg:p-8">
-        <div className="flex items-center justify-between flex-wrap gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Class Chat</h1>
-            <p className="text-sm text-slate-500">Sessions are saved per class and user.</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <select
-              value={classId ?? ""}
-              onChange={(e) => setClassId(e.target.value ? Number(e.target.value) : null)}
-              className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm shadow-sm"
-            >
-              <option value="">Select class</option>
-              {classes.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-            <button
-              onClick={startNewSession}
-              disabled={!classId}
-              className="h-10 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white shadow-sm disabled:opacity-50"
-            >
-              New chat
-            </button>
-          </div>
-        </div>
+        <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6">
+          <PageHeader
+            title="Class chat"
+            subtitle="Sessions are saved per class and user."
+            actions={
+              <>
+                <select
+                  value={classId ?? ""}
+                  onChange={(e) => setClassId(e.target.value ? Number(e.target.value) : null)}
+                  className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm"
+                >
+                  <option value="">Select class</option>
+                  {classes.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+                <Button variant="primary" disabled={!classId} onClick={startNewSession}>
+                  New chat
+                </Button>
+              </>
+            }
+          />
 
-        <div className="mt-6 grid grid-cols-1 xl:grid-cols-[280px_minmax(0,1fr)_320px] gap-6">
+          <div className="grid grid-cols-1 xl:grid-cols-[280px_minmax(0,1fr)_320px] gap-6">
           <aside className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-sm font-semibold">Sessions</h2>
@@ -355,6 +354,7 @@ export default function Chatbot() {
               )}
             </div>
           </aside>
+          </div>
         </div>
       </main>
     </div>

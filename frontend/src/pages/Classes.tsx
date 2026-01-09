@@ -2,10 +2,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 
-import AppSidebar from "../components/AppSidebar";
 import ClassSidebar from "../components/ClassSidebar";
 import ClassHeaderButtons from "../components/ClassHeaderButtons";
 import FileViewer from "../components/FileViewer";
+import PageHeader from "../components/PageHeader";
+import Button from "../components/Button";
 
 import {
   listClasses,
@@ -23,16 +24,19 @@ import {
   generateFlashcards,
   listFlashcards,
   type Flashcard,
-
-  // chat
   chatAsk,
+  createChatSession,
+  listChatSessions,
+  getChatSession,
+  addChatMessages,
+  type ChatSession,
+  type ChatMessage,
 } from "../lib/api";
 
-/* -------------------- constants / helpers -------------------- */
 const ALLOWED_MIME = new Set<string>([
   "application/pdf",
-  "application/vnd.openxmlformats-officedocument.presentationml.presentation", // .pptx
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // .docx
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 ]);
 
 const ALLOWED_EXT = new Set<string>([".pdf", ".pptx", ".docx"]);
@@ -44,7 +48,6 @@ function hasAllowedExt(name: string) {
 }
 
 function isAllowed(file: File) {
-  // Some browsers mislabel Office docs; accept by extension as a fallback.
   return ALLOWED_MIME.has(file.type) || hasAllowedExt(file.name);
 }
 
@@ -69,85 +72,52 @@ function timeLocal(s?: string | null) {
   }
 }
 
-/* -------------------- small UI atoms -------------------- */
-function Badge({ children }: { children: React.ReactNode }) {
-  return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 6,
-        padding: "2px 8px",
-        fontSize: 12,
-        borderRadius: 999,
-        background: "#F2F4F7",
-        color: "#344054",
-        border: "1px solid #E4E7EC",
-      }}
-    >
-      {children}
-    </span>
-  );
+function StatusPill({ status }: { status?: string | null }) {
+  const s = (status || "UPLOADED").toUpperCase();
+  const base = "inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold";
+  const map: Record<string, string> = {
+    UPLOADED: "border-indigo-200 bg-indigo-50 text-indigo-700",
+    OCR_QUEUED: "border-amber-200 bg-amber-50 text-amber-700",
+    OCR_DONE: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    INDEXED: "border-sky-200 bg-sky-50 text-sky-700",
+    FAILED: "border-rose-200 bg-rose-50 text-rose-700",
+  };
+  return <span className={`${base} ${map[s] || map.UPLOADED}`}>{s.replace("_", " ")}</span>;
 }
 
-function Button({
-  children,
-  onClick,
-  kind = "default",
-  title,
-  disabled,
+function Tabs({
+  active,
+  onChange,
 }: {
-  children: React.ReactNode;
-  onClick?: () => void;
-  kind?: "default" | "primary" | "danger" | "ghost";
-  title?: string;
-  disabled?: boolean;
+  active: "documents" | "flashcards" | "chat";
+  onChange: (t: "documents" | "flashcards" | "chat") => void;
 }) {
-  const styles: Record<string, React.CSSProperties> = {
-    base: {
-      padding: "8px 12px",
-      borderRadius: 10,
-      fontSize: 14,
-      lineHeight: 1.2,
-      cursor: disabled ? "not-allowed" : "pointer",
-      userSelect: "none",
-      border: "1px solid transparent",
-      display: "inline-flex",
-      alignItems: "center",
-      gap: 8,
-      background: "#fff",
-    },
-    default: { borderColor: "#E4E7EC", background: "#fff" },
-    ghost: { borderColor: "transparent", background: "transparent" },
-    primary: { borderColor: "#7B5FEF", background: "#7B5FEF", color: "#fff" },
-    danger: { borderColor: "#FEE4E2", background: "#FEE4E2", color: "#B42318" },
-    disabled: { opacity: 0.6 },
-  };
-  const style = {
-    ...styles.base,
-    ...(styles[kind] || styles.default),
-    ...(disabled ? styles.disabled : {}),
-  };
+  const items: Array<["documents" | "flashcards" | "chat", string]> = [
+    ["documents", "Documents"],
+    ["flashcards", "Flashcards"],
+    ["chat", "Chat"],
+  ];
   return (
-    <button
-      onClick={disabled ? undefined : onClick}
-      title={title}
-      style={style}
-      disabled={disabled}
-    >
-      {children}
-    </button>
+    <div className="flex flex-wrap gap-2">
+      {items.map(([key, label]) => (
+        <button
+          key={key}
+          onClick={() => onChange(key)}
+          className={`rounded-full border px-4 py-1.5 text-sm font-semibold transition ${
+            active === key
+              ? "border-slate-900 bg-slate-900 text-white"
+              : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+          }`}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
   );
 }
 
-function Divider() {
-  return <div style={{ height: 1, background: "#EEF2F6", margin: "12px 0" }} />;
-}
+type Msg = ChatMessage & { citations?: any };
 
-/* -------------------- Mini Chat types -------------------- */
-type MiniMsg = { id: string; role: "user" | "assistant"; text: string };
-
-/* -------------------- page -------------------- */
 export default function Classes() {
   const [classes, setClasses] = useState<ClassRow[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
@@ -168,53 +138,56 @@ export default function Classes() {
   const [preview, setPreview] = useState<ChunkPreview[] | null>(null);
   const [, setCards] = useState<Flashcard[]>([]);
   const [activeFile, setActiveFile] = useState<FileRow | null>(null);
-  const [showUploadHint, setShowUploadHint] = useState(false);
-
-  // Coursera-style mini chat (Whole class only, no saved history)
-  const [miniChatInput, setMiniChatInput] = useState("");
-  const [miniMsgs, setMiniMsgs] = useState<MiniMsg[]>([]);
-  const [miniBusy, setMiniBusy] = useState(false);
-  const miniEndRef = useRef<HTMLDivElement | null>(null);
 
   const location = useLocation();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
+  const [newClassName, setNewClassName] = useState("");
 
-  // load classes once
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<Msg[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatBusy, setChatBusy] = useState(false);
+  const [showCitations, setShowCitations] = useState(false);
+  const [scopeFileIds, setScopeFileIds] = useState<string[]>([]);
+  const chatEndRef = useRef<HTMLDivElement | null>(null);
+
   useEffect(() => {
     (async () => setClasses(await listClasses()))();
   }, []);
 
-  // if we arrived from Flashcards with a class id, auto-select it
   useEffect(() => {
     const st = (location as any)?.state;
     if (st?.selectId) setSelectedId(Number(st.selectId));
   }, [location]);
 
-  // load files + cards on class change
   useEffect(() => {
     if (selectedId == null) {
       setFiles([]);
       setSel({});
       setCards([]);
-      setMiniMsgs([]);
       setActiveTab("documents");
+      setSessions([]);
+      setActiveSessionId(null);
+      setMessages([]);
+      setScopeFileIds([]);
       return;
     }
     (async () => {
       const fs = await listFiles(selectedId);
-      setFiles(fs ?? []); // null-safe
+      setFiles(fs ?? []);
       setSel({});
       try {
         setCards(await listFlashcards(selectedId));
       } catch {
-        /* ok if empty */
+        /* ignore */
       }
     })();
   }, [selectedId]);
 
-  // poll file processing status while in-flight
   useEffect(() => {
-    if (selectedId == null) return;
+    if (!selectedId) return;
     const needsPoll = (files ?? []).some((f) =>
       ["UPLOADED", "OCR_QUEUED", "OCR_DONE"].includes(String(f.status || ""))
     );
@@ -226,18 +199,39 @@ export default function Classes() {
     return () => clearInterval(id);
   }, [selectedId, files]);
 
-  // mini chat auto-scroll
   useEffect(() => {
-    miniEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [miniMsgs, miniBusy]);
+    if (!selectedId) return;
+    (async () => {
+      const sess = await listChatSessions(selectedId);
+      setSessions(sess);
+      setActiveSessionId(sess[0]?.id ?? null);
+    })();
+  }, [selectedId]);
 
-  // Vite dev proxy handles /api and /uploads
-  const API_BASE_FOR_DOWNLOADS = "";
+  useEffect(() => {
+    if (!activeSessionId) {
+      setMessages([]);
+      return;
+    }
+    (async () => {
+      const detail = await getChatSession(activeSessionId);
+      const msgs = (detail.messages || []).map((m) => ({
+        ...m,
+        citations: m.citations ?? undefined,
+      }));
+      setMessages(msgs);
+    })();
+  }, [activeSessionId]);
 
-  /* -------- class CRUD -------- */
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages.length, chatBusy]);
+
   async function handleCreate(name: string) {
     const row = await createClass({ name, subject: "General" });
     setClasses((xs) => [...xs, row]);
+    setShowCreate(false);
+    setNewClassName("");
   }
   async function handleRename(id: number, name: string) {
     const row = await updateClass(id, { name });
@@ -251,15 +245,30 @@ export default function Classes() {
       setFiles([]);
       setSel({});
       setCards([]);
-      setMiniMsgs([]);
+      setSessions([]);
+      setActiveSessionId(null);
+      setMessages([]);
     }
   }
 
-  /* -------- uploads (drag/drop + click) -------- */
+  async function onRenameSelected() {
+    if (!selectedId) return;
+    const current = classes.find((c) => c.id === selectedId)?.name ?? "";
+    const next = window.prompt("Rename class", current);
+    if (!next || !next.trim()) return;
+    await handleRename(selectedId, next.trim());
+  }
+
+  async function onDeleteSelected() {
+    if (!selectedId) return;
+    const current = classes.find((c) => c.id === selectedId)?.name ?? "this class";
+    if (!confirm(`Delete \"${current}\"?`)) return;
+    await handleDeleteClass(selectedId);
+  }
+
   function acceptFile(f: File) {
     return isAllowed(f);
   }
-
 
   async function uploadMany(fileList: FileList | File[]) {
     if (!selectedId) {
@@ -275,15 +284,11 @@ export default function Classes() {
 
     setBusyUpload(true);
 
-    const uploadedIds: string[] = [];
     try {
       for (const f of accepted) {
         const row = await uploadFile(selectedId, f);
-        uploadedIds.push(row.id);
         setFiles((xs) => [row, ...(xs ?? [])]);
       }
-
-      setBusyFlow(false);
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : "Upload failed");
     } finally {
@@ -311,7 +316,6 @@ export default function Classes() {
     await uploadMany(e.dataTransfer.files);
   }
 
-  /* -------- selection helpers -------- */
   function toggleAll(checked: boolean) {
     const m: Record<string, boolean> = {};
     if (checked) (files ?? []).forEach((f) => (m[f.id] = true));
@@ -336,20 +340,22 @@ export default function Classes() {
     }
   }
 
-  /* -------- pipeline: chunks -> embeddings -> cards -------- */
-  async function onGenerateFlashcards() {
+  async function onGenerateFlashcards(opts: {
+    difficulty: "easy" | "medium" | "hard";
+    n_cards: number;
+    style: "mixed" | "definitions" | "conceptual" | "qa";
+  }) {
     if (!selectedId) return alert("Select a class first");
     if ((files?.length ?? 0) === 0) return alert("Upload at least one file first");
 
     const ids = selectedIds.length ? selectedIds : (files ?? []).map((f) => f.id);
     const pending = (files ?? []).filter((f) => ids.includes(f.id) && f.status !== "INDEXED");
     if (pending.length > 0) {
-      return alert("Some files are still processing. Wait for them to reach INDEXED before generating flashcards.");
+      return alert("Some files are still processing. Wait for INDEXED before generating flashcards.");
     }
 
     setBusyFlow(true);
     try {
-      // 1) chunk
       const res: ChunkPreview[] = await createChunks({
         file_ids: ids,
         by: "page",
@@ -359,19 +365,15 @@ export default function Classes() {
       });
       setPreview(res);
 
-      // 2) embeddings
       await buildEmbeddings(selectedId, 1000);
-
-      // 3) generate cards
-      const difficulty =
-        (localStorage.getItem("fc_pref_difficulty") as "easy" | "medium" | "hard") ||
-        "medium";
 
       const created = await generateFlashcards({
         class_id: selectedId,
         file_ids: ids,
         top_k: 12,
-        difficulty,
+        n_cards: opts.n_cards,
+        style: opts.style,
+        difficulty: opts.difficulty,
       });
 
       setCards(created);
@@ -384,657 +386,532 @@ export default function Classes() {
     }
   }
 
-  /* -------------------- Coursera Mini Chat (RAG) -------------------- */
-  async function onMiniAsk() {
-    if (!selectedId) return alert("Select a class first.");
-    const q = miniChatInput.trim();
-    if (!q) return;
+  async function startNewSession() {
+    if (!selectedId) return;
+    const s = await createChatSession({ class_id: selectedId, title: "New chat" });
+    setSessions((prev) => [s, ...prev]);
+    setActiveSessionId(s.id);
+  }
 
-    const userMsg: MiniMsg = {
+  async function onAsk() {
+    if (!selectedId) return;
+    if (!chatInput.trim()) return;
+
+    let sessionId = activeSessionId;
+    if (!sessionId) {
+      const s = await createChatSession({ class_id: selectedId, title: "New chat" });
+      setSessions((prev) => [s, ...prev]);
+      sessionId = s.id;
+      setActiveSessionId(s.id);
+    }
+
+    const userMsg: Msg = {
       id: crypto.randomUUID?.() ?? String(Date.now()),
       role: "user",
-      text: q,
+      content: chatInput.trim(),
     };
-
-    setMiniMsgs((prev) => [...prev, userMsg]);
-    setMiniChatInput("");
-    setMiniBusy(true);
+    setMessages((prev) => [...prev, userMsg]);
+    setChatInput("");
+    setChatBusy(true);
 
     try {
       const res = await chatAsk({
         class_id: selectedId,
-        question: q,
+        question: userMsg.content,
         top_k: 8,
+        file_ids: scopeFileIds.length ? scopeFileIds : undefined,
       });
-
-      const ans = (res?.answer ?? "").trim();
-
-      const botMsg: MiniMsg = {
+      const botMsg: Msg = {
         id: crypto.randomUUID?.() ?? String(Date.now() + 1),
         role: "assistant",
-        text: ans || "I couldn't find that in your class material.",
+        content: (res.answer || "").trim() || "Not found in the uploaded material.",
+        citations: res.citations ?? [],
       };
-
-      setMiniMsgs((prev) => [...prev, botMsg]);
+      setMessages((prev) => [...prev, botMsg]);
+      await addChatMessages({
+        session_id: sessionId!,
+        user_content: userMsg.content,
+        assistant_content: botMsg.content,
+        citations: res.citations ?? null,
+      });
+      setSessions((prev) =>
+        prev.map((s) => (s.id === sessionId ? { ...s, updated_at: new Date().toISOString() } : s))
+      );
     } catch (e: any) {
-      setMiniMsgs((prev) => [
+      setMessages((prev) => [
         ...prev,
         {
           id: crypto.randomUUID?.() ?? String(Date.now() + 2),
           role: "assistant",
-          text: e?.message ?? "Chat failed",
+          content: e?.message ?? "Chat failed",
         },
       ]);
     } finally {
-      setMiniBusy(false);
+      setChatBusy(false);
     }
   }
 
+  function toggleFileScope(fileId: string) {
+    setScopeFileIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(fileId)) next.delete(fileId);
+      else next.add(fileId);
+      return Array.from(next);
+    });
+  }
 
-  /* -------------------- UI -------------------- */
   const currentClass = selectedId
     ? classes.find((c) => c.id === selectedId)?.name
     : null;
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh", background: "#F8FAFC" }}>
-      <AppSidebar />
-      <div style={{ flex: 1, display: "grid", gridTemplateColumns: "320px 1fr" }}>
-        {/* Class sidebar */}
+    <div className="min-h-screen bg-slate-50">
+      <div className="grid grid-cols-[300px_minmax(0,1fr)]">
         <ClassSidebar
           items={classes}
           selectedId={selectedId}
           onSelect={(id) => setSelectedId(id)}
-          onCreate={handleCreate}
-          onRename={handleRename}
-          onDelete={handleDeleteClass}
+          onNew={() => setShowCreate(true)}
         />
 
-        {/* Main */}
-        <section style={{ padding: 20 }}>
-        {/* Header */}
-        <div
-          style={{
-            background: "#fff",
-            border: "1px solid #EEF2F6",
-            borderRadius: 14,
-            padding: 16,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 12,
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-            <h2 style={{ margin: 0 }}>{currentClass ?? "Workspace"}</h2>
-            {busyUpload && <Badge>Uploading...</Badge>}
-            {busyFlow && <Badge>Processing...</Badge>}
-            {showUploadHint && <Badge>Allowed: PDF / PPTX / DOCX</Badge>}
-          </div>
+        <section className="p-6 lg:p-8">
+          <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6">
+            <PageHeader title="Classes" backHref="/dashboard" />
 
-          {selectedId && (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-              <Link
-                to="/chatbot"
-                style={{
-                  padding: "8px 12px",
-                  borderRadius: 10,
-                  fontSize: 14,
-                  fontWeight: 600,
-                  textDecoration: "none",
-                  color: "#344054",
-                  border: "1px solid #E4E7EC",
-                  background: "#fff",
-                }}
-              >
-                Chatbot
-              </Link>
-              <Button
-                kind="default"
-                onClick={() => {
-                  setShowUploadHint(true);
-                  setTimeout(() => setShowUploadHint(false), 2200);
-                  fileInputRef.current?.click();
-                }}
-                title="Choose files"
-              >
-                Upload
-              </Button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept={[
-                  "application/pdf",
-                  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-                  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                  ".pdf,.pptx,.docx",
-                ].join(",")}
-                style={{ display: "none" }}
-                multiple
-                onChange={onUploadChange}
-              />
-              <ClassHeaderButtons
-                classId={String(selectedId)}
-                onGenerate={() => onGenerateFlashcards()}
-              />
-            </div>
-          )}
-        </div>
-
-        <Divider />
-
-        {!selectedId ? (
-          <div
-            style={{
-              background: "#fff",
-              border: "1px solid #EEF2F6",
-              borderRadius: 14,
-              padding: 24,
-              color: "#667085",
-            }}
-          >
-            Select a class from the left to start.
-          </div>
-        ) : (
-          <>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {(["documents", "flashcards", "chat"] as const).map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveTab(tab)}
-                  style={{
-                    padding: "8px 12px",
-                    borderRadius: 999,
-                    fontSize: 13,
-                    border: activeTab === tab ? "1px solid #1D2939" : "1px solid #E4E7EC",
-                    background: activeTab === tab ? "#1D2939" : "#fff",
-                    color: activeTab === tab ? "#fff" : "#344054",
-                    cursor: "pointer",
-                  }}
-                >
-                  {tab === "documents" ? "Documents" : tab === "flashcards" ? "Flashcards" : "Chat"}
-                </button>
-              ))}
-            </div>
-
-            <Divider />
-
-            {activeTab === "documents" && (
+            {!selectedId ? (
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-10 text-center">
+                <div className="text-lg font-semibold text-slate-900">Select a class to get started</div>
+                <div className="mt-2 text-sm text-slate-500">
+                  Create your first class and start uploading materials.
+                </div>
+                <Button variant="primary" className="mt-5" onClick={() => setShowCreate(true)}>
+                  Create class
+                </Button>
+              </div>
+            ) : (
               <>
-            {/* Dropzone */}
-            <div
-              onDragOver={onDragOver}
-              onDragLeave={onDragLeave}
-              onDrop={onDrop}
-              onClick={() => {
-                setShowUploadHint(true);
-                setTimeout(() => setShowUploadHint(false), 2200);
-                fileInputRef.current?.click();
-              }}
-              role="button"
-              title="Drag & drop files here or click to choose"
-              style={{
-                border: `2px dashed ${dropping ? "#7B5FEF" : "#cfd4dc"}`,
-                background: dropping ? "rgba(123,95,239,0.06)" : "#fff",
-                borderRadius: 14,
-                padding: 20,
-                cursor: "pointer",
-                userSelect: "none",
-              }}
-            >
-              <div style={{ fontWeight: 600, marginBottom: 6 }}>Drop files here or click to upload</div>
-              <div style={{ fontSize: 13, color: "#475467" }}>
-                {dropping ? "Allowed: PDF, PPTX, DOCX" : "Multiple files supported"}
-              </div>
-              {invalidDropCount > 0 && (
-                <div
-                  style={{
-                    marginTop: 10,
-                    border: "1px solid #FEE4E2",
-                    background: "#FEF3F2",
-                    color: "#B42318",
-                    borderRadius: 10,
-                    padding: 10,
-                    fontSize: 13,
-                  }}
-                >
-                  Ignored {invalidDropCount} unsupported file{invalidDropCount > 1 ? "s" : ""}. Allowed types:
-                  PDF, PPTX, DOCX.
-                </div>
-              )}
-            </div>
-
-            <Divider />
-
-            {/* Files table */}
-            <div
-              style={{
-                background: "#fff",
-                border: "1px solid #EEF2F6",
-                borderRadius: 14,
-                overflow: "hidden",
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  padding: 12,
-                  borderBottom: "1px solid #EEF2F6",
-                }}
-              >
-                <div style={{ fontWeight: 700 }}>Files</div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <Badge>{selectedIds.length} selected</Badge>
-                  {selectedIds.length > 0 && (
-                    <Button
-                      kind="danger"
-                      onClick={async () => {
-                        const toDelete = (files ?? []).filter((f) => selectedIds.includes(f.id));
-                        if (!confirm(`Delete ${toDelete.length} file(s)?`)) return;
-                        for (const f of toDelete) await onDeleteFile(f.id, f.filename);
-                        setSel({});
-                      }}
-                    >
-                      Delete selected
+                <div className="flex items-center justify-between flex-wrap gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900">{currentClass}</div>
+                    <div className="text-xs text-slate-500">Manage documents and study tools.</div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button size="sm" onClick={onRenameSelected}>
+                      Rename
                     </Button>
-                  )}
+                    <Button size="sm" onClick={onDeleteSelected}>
+                      Delete
+                    </Button>
+                  </div>
                 </div>
-              </div>
 
-              <table
-                style={{
-                  width: "100%",
-                  borderCollapse: "collapse",
-                  fontSize: 14,
-                }}
-              >
-                <thead>
-                  <tr style={{ background: "#FAFAFB" }}>
-                    <th style={{ textAlign: "left", borderBottom: "1px solid #EEF2F6", width: 42, padding: "10px 12px" }}>
-                      <input
-                        type="checkbox"
-                        aria-label="Select all"
-                        checked={(files?.length ?? 0) > 0 && selectedIds.length === (files?.length ?? 0)}
-                        onChange={(e) => toggleAll(e.target.checked)}
-                      />
-                    </th>
-                    <th style={{ textAlign: "left", borderBottom: "1px solid #EEF2F6", padding: "10px 12px" }}>
-                      File
-                    </th>
-                    <th
-                      style={{
-                        textAlign: "left",
-                        borderBottom: "1px solid #EEF2F6",
-                        padding: "10px 12px",
-                        width: 120,
-                      }}
-                    >
-                      Size
-                    </th>
-                    <th
-                      style={{
-                        textAlign: "left",
-                        borderBottom: "1px solid #EEF2F6",
-                        padding: "10px 12px",
-                        width: 220,
-                      }}
-                    >
-                      Uploaded
-                    </th>
-                    <th
-                      style={{
-                        textAlign: "left",
-                        borderBottom: "1px solid #EEF2F6",
-                        padding: "10px 12px",
-                        width: 140,
-                      }}
-                    >
-                      Status
-                    </th>
-                    <th
-                      style={{
-                        textAlign: "left",
-                        borderBottom: "1px solid #EEF2F6",
-                        padding: "10px 12px",
-                        width: 100,
-                      }}
-                    >
-                      Open
-                    </th>
-                    <th
-                      style={{
-                        textAlign: "left",
-                        borderBottom: "1px solid #EEF2F6",
-                        padding: "10px 12px",
-                        width: 120,
-                      }}
-                    >
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(files ?? []).map((f) => (
-                    <tr key={f.id} style={{ borderBottom: "1px solid #F2F4F7" }}>
-                      <td style={{ padding: "10px 12px" }}>
-                        <input
-                          type="checkbox"
-                          checked={!!sel[f.id]}
-                          onChange={(e) => toggleOne(f.id, e.target.checked)}
-                          aria-label={`Select ${f.filename}`}
-                        />
-                      </td>
-                      <td style={{ padding: "10px 12px" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span
-                            style={{ fontWeight: 600, color: "#101828", cursor: "pointer" }}
-                            onClick={() => setActiveFile(f)}
-                            title="Open preview"
-                          >
-                            {f.filename}
-                          </span>
-                          <Badge>{(f.filename.split(".").pop() || "").toUpperCase()}</Badge>
-                        </div>
-                      </td>
-                      <td style={{ padding: "10px 12px" }}>{prettyBytes(f.size_bytes)}</td>
-                      <td style={{ padding: "10px 12px" }}>{timeLocal(f.uploaded_at)}</td>
-                      <td style={{ padding: "10px 12px" }}>
-                        <StatusPill status={f.status ?? "UPLOADED"} />
-                      </td>
-                      <td style={{ padding: "10px 12px" }}>
-                        <Button kind="ghost" onClick={() => setActiveFile(f)} title="Open in viewer">
-                          view
-                        </Button>
-                      </td>
-                      <td style={{ padding: "10px 12px" }}>
-                        <Button kind="default" onClick={() => onDeleteFile(f.id, f.filename)} title="Delete file">
-                          Delete
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                  {(files?.length ?? 0) === 0 && (
-                    <tr>
-                      <td colSpan={7} style={{ padding: 18, color: "#667085" }}>
-                        No files yet. Drop a PDF, PPTX, or DOCX to begin.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-              </>
-            )}
-
-            {activeTab === "chat" && (
-              <div
-                style={{
-                  background: "#fff",
-                  border: "1px solid #EEF2F6",
-                  borderRadius: 14,
-                  padding: 14,
-                }}
-              >
-                <div style={{ fontWeight: 800, marginBottom: 10 }}>Ask AI (Class)</div>
-
-                <div
-                  style={{
-                    height: 260,
-                    overflowY: "auto",
-                    padding: 12,
-                    border: "1px solid #EEF2F6",
-                    borderRadius: 12,
-                    background: "#FAFAFB",
-                  }}
-                >
-                  {miniMsgs.length === 0 ? (
-                    <div style={{ color: "#667085", fontSize: 13 }}>
-                      Ask from this class material. (Chat history saved in Chatbot.)
+                <div className="flex items-center justify-between flex-wrap gap-4">
+                  <Tabs active={activeTab} onChange={setActiveTab} />
+                  <div className="flex items-center gap-3">
+                    {busyUpload && <span className="text-xs text-slate-500">Uploading...</span>}
+                    {busyFlow && <span className="text-xs text-slate-500">Processing...</span>}
+                    <ClassHeaderButtons classId={String(selectedId)} onGenerate={onGenerateFlashcards} />
+                  </div>
+                </div>
+              {activeTab === "documents" && (
+                <div className="mt-6 space-y-4">
+                  <div
+                    onDragOver={onDragOver}
+                    onDragLeave={onDragLeave}
+                    onDrop={onDrop}
+                    onClick={() => fileInputRef.current?.click()}
+                    role="button"
+                    className={`rounded-2xl border-2 border-dashed px-6 py-8 text-center transition ${
+                      dropping ? "border-slate-900 bg-slate-50" : "border-slate-200 bg-white"
+                    }`}
+                  >
+                    <div className="text-base font-semibold text-slate-800">Upload class materials</div>
+                    <div className="mt-1 text-sm text-slate-500">Drag files here or click to select</div>
+                    <div className="mt-4 inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-1 text-xs text-slate-500">
+                      PDF, PPTX, DOCX
                     </div>
-                  ) : (
-                    miniMsgs.map((m) => (
-                      <div
-                        key={m.id}
-                        style={{
-                          marginBottom: 10,
-                          display: "flex",
-                          justifyContent: m.role === "user" ? "flex-end" : "flex-start",
-                        }}
-                      >
-                        <div
-                          style={{
-                            maxWidth: "80%",
-                            padding: "10px 12px",
-                            borderRadius: 14,
-                            background: m.role === "user" ? "rgba(17,24,39,0.08)" : "#fff",
-                            border: "1px solid #E4E7EC",
-                            whiteSpace: "pre-wrap",
-                            lineHeight: 1.45,
-                          }}
-                        >
-                          {m.text}
-                        </div>
+                    {invalidDropCount > 0 && (
+                      <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                        Ignored {invalidDropCount} unsupported file{invalidDropCount > 1 ? "s" : ""}.
                       </div>
-                    ))
-                  )}
+                    )}
+                  </div>
 
-                  {miniBusy && <div style={{ color: "#667085", fontSize: 13 }}>Thinking...</div>}
-                  <div ref={miniEndRef} />
-                </div>
-
-                <div style={{ display: "flex", gap: 10, marginTop: 10 }}>
-                  <textarea
-                    value={miniChatInput}
-                    onChange={(e) => setMiniChatInput(e.target.value)}
-                    rows={2}
-                    placeholder="Ask from this class material..."
-                    style={{
-                      flex: 1,
-                      padding: 10,
-                      borderRadius: 12,
-                      border: "1px solid #E4E7EC",
-                      outline: "none",
-                      resize: "vertical",
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        onMiniAsk();
-                      }
-                    }}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept={[
+                      "application/pdf",
+                      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                      ".pdf,.pptx,.docx",
+                    ].join(",")}
+                    className="hidden"
+                    multiple
+                    onChange={onUploadChange}
                   />
 
-                  <button
-                    onClick={onMiniAsk}
-                    disabled={miniBusy || !miniChatInput.trim()}
-                    style={{
-                      padding: "10px 14px",
-                      borderRadius: 12,
-                      border: "1px solid #111827",
-                      background: "#111827",
-                      color: "#fff",
-                      cursor: miniBusy || !miniChatInput.trim() ? "not-allowed" : "pointer",
-                      opacity: miniBusy || !miniChatInput.trim() ? 0.7 : 1,
-                    }}
-                  >
-                    {miniBusy ? "..." : "Ask"}
-                  </button>
-                </div>
-
-                <div style={{ fontSize: 12, color: "#667085", marginTop: 6 }}>
-                  Tip: Enter to send; Shift+Enter for new line
-                </div>
-              </div>
-            )}
-
-            {activeTab === "flashcards" && (
-              <div
-                style={{
-                  background: "#fff",
-                  border: "1px solid #EEF2F6",
-                  borderRadius: 14,
-                  padding: 16,
-                }}
-              >
-                <div style={{ fontWeight: 800, marginBottom: 8 }}>Flashcards</div>
-                <div style={{ fontSize: 13, color: "#667085", marginBottom: 12 }}>
-                  Select files in Documents, then use the Generate button to create scoped flashcards.
-                </div>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  <Badge>{selectedIds.length || (files?.length ?? 0)} file(s) in scope</Badge>
-                  <Badge>Due cards available in Flashcards page</Badge>
-                </div>
-              </div>
-            )}
-
-            {/* Chunk preview dialog */}
-            {preview && (
-              <div
-                role="dialog"
-                aria-modal="true"
-                style={{
-                  position: "fixed",
-                  inset: 0,
-                  background: "rgba(16,24,40,0.35)",
-                  display: "flex",
-                  alignItems: "flex-end",
-                  zIndex: 50,
-                }}
-                onClick={() => setPreview(null)}
-              >
-                <div
-                  style={{
-                    width: "min(920px, 96vw)",
-                    maxHeight: "80vh",
-                    margin: "0 auto 24px",
-                    background: "#fff",
-                    borderRadius: 16,
-                    boxShadow: "0 20px 50px rgba(16,24,40,.25)",
-                    overflow: "hidden",
-                  }}
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      padding: "12px 16px",
-                      borderBottom: "1px solid #eee",
-                    }}
-                  >
-                    <strong>Chunk Previews</strong>
-                    <Button kind="default" onClick={() => setPreview(null)}>
-                      Close
-                    </Button>
-                  </div>
-                  <div
-                    style={{
-                      padding: 16,
-                      overflow: "auto",
-                      maxHeight: "calc(80vh - 56px)",
-                    }}
-                  >
-                    {preview.map((p) => (
-                      <div key={p.file_id} style={{ marginBottom: 18 }}>
-                        <div style={{ fontWeight: 800, marginBottom: 6 }}>
-                          File {p.file_id} - {p.total_chunks} chunk(s)
-                        </div>
-                        {p.total_chunks === 0 ? (
-                          <div
-                            style={{
-                              border: "1px solid #FDEFC7",
-                              background: "#FFF8E6",
-                              color: "#8B5E00",
-                              borderRadius: 12,
-                              padding: 12,
+                  <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+                    <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+                      <div className="text-sm font-semibold">Documents</div>
+                      <div className="flex items-center gap-2 text-xs text-slate-500">
+                        <span>{selectedIds.length} selected</span>
+                        {selectedIds.length > 0 && (
+                          <button
+                            className="rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700"
+                            onClick={async () => {
+                              const toDelete = (files ?? []).filter((f) => selectedIds.includes(f.id));
+                              if (!confirm(`Delete ${toDelete.length} file(s)?`)) return;
+                              for (const f of toDelete) await onDeleteFile(f.id, f.filename);
+                              setSel({});
                             }}
                           >
-                            No text extracted (could be a scanned or unparseable file).
-                          </div>
-                        ) : (
-                          <div style={{ display: "grid", gap: 10 }}>
-                            {p.previews.map((pr) => (
-                              <div
-                                key={pr.idx}
-                                style={{
-                                  border: "1px solid #E4E7EC",
-                                  borderRadius: 12,
-                                  padding: 12,
-                                }}
-                              >
-                                <div style={{ fontWeight: 700, marginBottom: 6 }}>
-                                  Chunk #{pr.idx}{" "}
-                                  {pr.page_start ? `(pages ${pr.page_start}-${pr.page_end})` : ""}{" "}
-                                  <span style={{ fontWeight: 400, color: "#475467", marginLeft: 6 }}>
-                                    - {pr.char_len} chars
-                                  </span>
-                                </div>
-                                <pre
-                                  style={{
-                                    margin: 0,
-                                    whiteSpace: "pre-wrap",
-                                    fontFamily:
-                                      "ui-monospace, SFMono-Regular, Menlo, monospace",
-                                    fontSize: 13,
-                                    lineHeight: 1.45,
-                                  }}
-                                >
-                                  {pr.sample}
-                                </pre>
-                              </div>
-                            ))}
-                          </div>
+                            Delete selected
+                          </button>
                         )}
                       </div>
-                    ))}
+                    </div>
+                    <div className="overflow-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-slate-50 text-xs text-slate-500">
+                          <tr>
+                            <th className="px-4 py-2 text-left">
+                              <input
+                                type="checkbox"
+                                aria-label="Select all"
+                                checked={(files?.length ?? 0) > 0 && selectedIds.length === (files?.length ?? 0)}
+                                onChange={(e) => toggleAll(e.target.checked)}
+                              />
+                            </th>
+                            <th className="px-4 py-2 text-left">File</th>
+                            <th className="px-4 py-2 text-left">Size</th>
+                            <th className="px-4 py-2 text-left">Uploaded</th>
+                            <th className="px-4 py-2 text-left">Status</th>
+                            <th className="px-4 py-2 text-left">Open</th>
+                            <th className="px-4 py-2 text-left">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(files ?? []).map((f) => (
+                            <tr key={f.id} className="border-t border-slate-100">
+                              <td className="px-4 py-3">
+                                <input
+                                  type="checkbox"
+                                  checked={!!sel[f.id]}
+                                  onChange={(e) => toggleOne(f.id, e.target.checked)}
+                                  aria-label={`Select ${f.filename}`}
+                                />
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    className="font-semibold text-slate-900 hover:underline"
+                                    onClick={() => setActiveFile(f)}
+                                  >
+                                    {f.filename}
+                                  </button>
+                                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] text-slate-500">
+                                    {(f.filename.split(".").pop() || "").toUpperCase()}
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 text-slate-500">{prettyBytes(f.size_bytes)}</td>
+                              <td className="px-4 py-3 text-slate-500">{timeLocal(f.uploaded_at)}</td>
+                              <td className="px-4 py-3">
+                                <StatusPill status={f.status ?? "UPLOADED"} />
+                              </td>
+                              <td className="px-4 py-3">
+                                <button
+                                  className="rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-600"
+                                  onClick={() => setActiveFile(f)}
+                                >
+                                  View
+                                </button>
+                              </td>
+                              <td className="px-4 py-3">
+                                <button
+                                  className="rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-600"
+                                  onClick={() => onDeleteFile(f.id, f.filename)}
+                                >
+                                  Delete
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                          {(files?.length ?? 0) === 0 && (
+                            <tr>
+                              <td colSpan={7} className="px-4 py-6 text-sm text-slate-500">
+                                No documents yet. Upload a PDF, PPTX, or DOCX to begin.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            {/* In-app file viewer (PDF/Office preview in iframe/object) */}
-            {activeFile && (
-              <FileViewer
-                url={`${API_BASE_FOR_DOWNLOADS}${activeFile.storage_url}`}
-                name={activeFile.filename}
-                mime={(activeFile as any).mime || null}
-                onClose={() => setActiveFile(null)}
-              />
-            )}
-          </>
-        )}
-      </section>
+              {activeTab === "flashcards" && (
+                <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                  <div className="flex items-center justify-between flex-wrap gap-3">
+                    <div>
+                      <div className="text-sm font-semibold">Flashcards</div>
+                      <div className="text-xs text-slate-500">
+                        Generate cards from your selected documents or open study mode.
+                      </div>
+                    </div>
+                    <Link
+                      to={`/classes/${selectedId}/flashcards`}
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700"
+                    >
+                      Open flashcards
+                    </Link>
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-500">
+                    <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">
+                      {selectedIds.length || (files?.length ?? 0)} file(s) in scope
+                    </span>
+                    <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">
+                      Use the Generate button above
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {activeTab === "chat" && (
+                <div className="mt-6 grid grid-cols-1 xl:grid-cols-[240px_minmax(0,1fr)_280px] gap-4">
+                  <aside className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm font-semibold">Sessions</div>
+                      <button
+                        onClick={startNewSession}
+                        className="rounded-lg border border-slate-200 px-2 py-1 text-xs"
+                      >
+                        New
+                      </button>
+                    </div>
+                    <div className="mt-3 space-y-2 max-h-[65vh] overflow-auto">
+                      {sessions.length === 0 ? (
+                        <div className="text-xs text-slate-500">No sessions yet.</div>
+                      ) : (
+                        sessions.map((s) => (
+                          <button
+                            key={s.id}
+                            onClick={() => setActiveSessionId(s.id)}
+                            className={`w-full rounded-xl border px-3 py-2 text-left text-xs ${
+                              s.id === activeSessionId
+                                ? "border-slate-900 bg-slate-50 font-semibold"
+                                : "border-slate-200 hover:border-slate-300"
+                            }`}
+                          >
+                            <div className="truncate">{s.title}</div>
+                            <div className="text-[10px] text-slate-400 truncate">
+                              {new Date(s.updated_at || s.created_at || "").toLocaleString()}
+                            </div>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </aside>
+
+                  <section className="rounded-2xl border border-slate-200 bg-white shadow-sm flex flex-col min-h-[60vh]">
+                    <div className="border-b border-slate-200 px-4 py-3 flex items-center justify-between">
+                      <div className="text-sm font-semibold">Conversation</div>
+                      <label className="flex items-center gap-2 text-xs text-slate-500">
+                        <input type="checkbox" checked={showCitations} onChange={() => setShowCitations((v) => !v)} />
+                        Show citations
+                      </label>
+                    </div>
+                    <div className="flex-1 overflow-auto p-4 space-y-4">
+                      {messages.length === 0 ? (
+                        <div className="text-sm text-slate-500">Ask about your class materials.</div>
+                      ) : (
+                        messages.map((m) => {
+                          const show = showCitations && m.role === "assistant" && (m.citations?.length ?? 0) > 0;
+                          return (
+                            <div key={m.id} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                              <div
+                                className={`max-w-[75%] rounded-2xl border px-4 py-3 text-sm leading-6 ${
+                                  m.role === "user"
+                                    ? "bg-slate-900 text-white border-slate-900"
+                                    : "bg-white border-slate-200"
+                                }`}
+                              >
+                                <div className="whitespace-pre-wrap">{m.content}</div>
+                                {show && (
+                                  <div className="mt-3 border-t border-slate-200 pt-2 text-xs text-slate-500">
+                                    {(m.citations ?? []).slice(0, 6).map((c: any, idx: number) => (
+                                      <div key={`${c?.chunk_id ?? idx}`}>
+                                        {c?.filename ?? "Source"}
+                                        {c?.page_start ? ` (p${c.page_start}-${c.page_end ?? c.page_start})` : ""}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                      {chatBusy && <div className="text-xs text-slate-400">Thinking...</div>}
+                      <div ref={chatEndRef} />
+                    </div>
+                    <div className="border-t border-slate-200 p-4">
+                      <div className="flex gap-3">
+                        <textarea
+                          value={chatInput}
+                          onChange={(e) => setChatInput(e.target.value)}
+                          className="min-h-[52px] flex-1 resize-none rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/20"
+                          placeholder="Ask about your notes..."
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" && !e.shiftKey) {
+                              e.preventDefault();
+                              onAsk();
+                            }
+                          }}
+                        />
+                        <button
+                          onClick={onAsk}
+                          disabled={chatBusy || !chatInput.trim()}
+                          className="h-12 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white disabled:opacity-50"
+                        >
+                          Send
+                        </button>
+                      </div>
+                      <div className="mt-2 text-xs text-slate-400">Enter to send, Shift+Enter for newline.</div>
+                    </div>
+                  </section>
+
+                  <aside className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <div className="text-sm font-semibold">File scope</div>
+                    <div className="mt-2 text-xs text-slate-500">Select files to narrow answers.</div>
+                    <div className="mt-3 space-y-2 max-h-[60vh] overflow-auto">
+                      {(files ?? []).length === 0 ? (
+                        <div className="text-xs text-slate-500">Upload documents to enable scope.</div>
+                      ) : (
+                        (files ?? []).map((f) => {
+                          const checked = scopeFileIds.includes(f.id);
+                          return (
+                            <button
+                              key={f.id}
+                              onClick={() => toggleFileScope(f.id)}
+                              className={`w-full rounded-xl border px-3 py-2 text-left text-xs ${
+                                checked ? "border-slate-900 bg-slate-50" : "border-slate-200 hover:border-slate-300"
+                              }`}
+                            >
+                              <div className="flex items-center justify-between">
+                                <span className="truncate font-medium text-slate-800">{f.filename}</span>
+                                <span className="text-[10px] text-slate-400">
+                                  {(f.filename.split(".").pop() || "").toUpperCase()}
+                                </span>
+                              </div>
+                              <div className="text-[10px] text-slate-400">{f.status ?? "UPLOADED"}</div>
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+                  </aside>
+                </div>
+              )}
+
+              {preview && (
+                <div
+                  role="dialog"
+                  aria-modal="true"
+                  className="fixed inset-0 z-50 flex items-end bg-slate-900/40"
+                  onClick={() => setPreview(null)}
+                >
+                  <div
+                    className="mx-auto mb-6 max-h-[80vh] w-[min(920px,96vw)] overflow-hidden rounded-2xl bg-white shadow-2xl"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+                      <strong>Chunk previews</strong>
+                      <button className="rounded-lg border border-slate-200 px-2 py-1 text-xs" onClick={() => setPreview(null)}>
+                        Close
+                      </button>
+                    </div>
+                    <div className="max-h-[calc(80vh-56px)] overflow-auto p-4">
+                      {preview.map((p) => (
+                        <div key={p.file_id} className="mb-6">
+                          <div className="mb-2 text-sm font-semibold">
+                            File {p.file_id} - {p.total_chunks} chunk(s)
+                          </div>
+                          {p.total_chunks === 0 ? (
+                            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                              No text extracted.
+                            </div>
+                          ) : (
+                            <div className="grid gap-3">
+                              {p.previews.map((pr) => (
+                                <div key={pr.idx} className="rounded-xl border border-slate-200 p-3">
+                                  <div className="mb-1 text-xs font-semibold text-slate-600">
+                                    Chunk #{pr.idx} {pr.page_start ? `(pages ${pr.page_start}-${pr.page_end})` : ""}
+                                    <span className="ml-2 font-normal text-slate-400">{pr.char_len} chars</span>
+                                  </div>
+                                  <pre className="m-0 whitespace-pre-wrap text-xs leading-5 text-slate-700">
+                                    {pr.sample}
+                                  </pre>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {activeFile && (
+                <FileViewer
+                  url={activeFile.storage_url}
+                  name={activeFile.filename}
+                  mime={(activeFile as any).mime || null}
+                  onClose={() => setActiveFile(null)}
+                />
+              )}
+            </>
+          )}
+          </div>
+        </section>
+      </div>
+
+      {showCreate && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+          onClick={() => setShowCreate(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="text-lg font-semibold text-slate-900">New class</div>
+            <input
+              value={newClassName}
+              onChange={(e) => setNewClassName(e.target.value)}
+              placeholder="Class name"
+              className="mt-4 h-10 w-full rounded-lg border border-slate-200 px-3 text-sm"
+            />
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <Button onClick={() => setShowCreate(false)}>Cancel</Button>
+              <Button
+                variant="primary"
+                onClick={() => {
+                  if (!newClassName.trim()) return;
+                  handleCreate(newClassName.trim());
+                }}
+              >
+                Create
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
-  </div>
-  );
-}
-
-function StatusPill({ status }: { status?: string | null }) {
-  const s = (status || "UPLOADED").toUpperCase();
-  const styles: Record<string, React.CSSProperties> = {
-    UPLOADED: { background: "#EEF2FF", color: "#3730A3", border: "1px solid #C7D2FE" },
-    OCR_QUEUED: { background: "#FFFBEB", color: "#92400E", border: "1px solid #FDE68A" },
-    OCR_DONE: { background: "#ECFDF3", color: "#027A48", border: "1px solid #ABEFC6" },
-    INDEXED: { background: "#E8F7FF", color: "#026AA2", border: "1px solid #B9E6FE" },
-    FAILED: { background: "#FEF3F2", color: "#B42318", border: "1px solid #FECDCA" },
-  };
-  const style = styles[s] || styles.UPLOADED;
-  return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        padding: "2px 8px",
-        borderRadius: 999,
-        fontSize: 12,
-        fontWeight: 600,
-        ...style,
-      }}
-    >
-      {s.replace("_", " ")}
-    </span>
   );
 }

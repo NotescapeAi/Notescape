@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useParams } from "react-router-dom";
 import AppSidebar from "../components/AppSidebar";
-import { getFlashcardProgress, listDueCards, postReview } from "../lib/api";
+import PageHeader from "../components/PageHeader";
+import Button from "../components/Button";
+import { getFlashcardProgress, listDueCards, listFiles, postReview } from "../lib/api";
 
 type DueCard = {
   id: string;
@@ -9,9 +11,16 @@ type DueCard = {
   answer: string;
   due_at?: string | null;
   state?: string | null;
-  repetitions?: number;
-  ease_factor?: number;
 };
+
+function sanitizeText(value?: string | null) {
+  const text = (value ?? "").trim();
+  if (!text) return "";
+  if (text.startsWith("{") && text.includes("\"cards\"")) {
+    return "This card needs regeneration.";
+  }
+  return text;
+}
 
 export default function FlashcardsStudyMode() {
   const { classId } = useParams();
@@ -21,33 +30,39 @@ export default function FlashcardsStudyMode() {
   const [revealed, setRevealed] = useState(false);
   const [loading, setLoading] = useState(true);
   const [progress, setProgress] = useState<{ total: number; due_now: number; due_today: number; learning: number } | null>(null);
+  const [files, setFiles] = useState<{ id: string; filename: string }[]>([]);
+  const [fileFilter, setFileFilter] = useState<string>("all");
 
   useEffect(() => {
     if (!classNum) return;
     (async () => {
       setLoading(true);
       try {
-        const data = await listDueCards(classNum);
+        const fileId = fileFilter === "all" ? undefined : fileFilter;
+        const data = await listDueCards(classNum, fileId);
         setCards(Array.isArray(data) ? data : []);
-        const prog = await getFlashcardProgress(classNum);
+        const prog = await getFlashcardProgress(classNum, fileId);
         setProgress(prog);
       } finally {
         setLoading(false);
       }
+    })();
+  }, [classNum, fileFilter]);
+
+  useEffect(() => {
+    if (!classNum) return;
+    (async () => {
+      const fs = await listFiles(classNum);
+      setFiles((fs ?? []).map((f) => ({ id: f.id, filename: f.filename })));
     })();
   }, [classNum]);
 
   const current = cards[idx];
   const dueCount = cards.length;
 
-  const nextCard = useMemo(() => {
-    if (cards.length === 0) return null;
-    return cards[(idx + 1) % cards.length];
-  }, [cards, idx]);
-
-  async function handleReview(rating: "again" | "hard" | "good" | "easy") {
+  async function handleReview(confidence: 1 | 2 | 3 | 4 | 5) {
     if (!current) return;
-    await postReview(current.id, rating);
+    await postReview(current.id, confidence);
     const nextCards = cards.filter((c) => c.id !== current.id);
     setCards(nextCards);
     setIdx(0);
@@ -62,20 +77,14 @@ export default function FlashcardsStudyMode() {
     <div className="min-h-screen bg-slate-50 flex">
       <AppSidebar />
       <main className="flex-1 p-6 lg:p-8">
-        <div className="flex items-center justify-between flex-wrap gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold">Study Mode</h1>
-            <p className="text-sm text-slate-500">Review due cards with a stable SM-2 scheduler.</p>
-          </div>
-          <Link
-            to={`/classes/${classId}/flashcards`}
-            className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm shadow-sm"
-          >
-            Back to flashcards
-          </Link>
-        </div>
+        <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6">
+          <PageHeader
+            title="Study mode"
+            subtitle="Review due cards and rate your confidence."
+            backHref={`/classes/${classId}/flashcards`}
+          />
 
-        <div className="mt-5 grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="text-xs text-slate-500">Due now</div>
             <div className="text-2xl font-semibold">{progress?.due_now ?? dueCount}</div>
@@ -90,8 +99,22 @@ export default function FlashcardsStudyMode() {
           </div>
         </div>
 
-        <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          {loading ? (
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="mb-4 flex items-center justify-between gap-2">
+            <select
+              value={fileFilter}
+              onChange={(e) => setFileFilter(e.target.value)}
+              className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm"
+            >
+              <option value="all">All files</option>
+              {files.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.filename}
+                </option>
+              ))}
+            </select>
+          </div>
+            {loading ? (
             <div className="text-sm text-slate-500">Loading cards...</div>
           ) : !current ? (
             <div className="text-sm text-slate-500">No due cards right now. Check back later.</div>
@@ -104,54 +127,39 @@ export default function FlashcardsStudyMode() {
                 <div>{current.state ? current.state.toUpperCase() : "DUE"}</div>
               </div>
 
-              <div className="text-xl font-medium text-slate-800">{current.question}</div>
+              <div className="text-xl font-medium text-slate-800">{sanitizeText(current.question)}</div>
 
               <div className="space-y-3">
-                <button
-                  onClick={() => setRevealed((v) => !v)}
-                  className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white"
-                >
+                <Button variant="primary" onClick={() => setRevealed((v) => !v)}>
                   {revealed ? "Hide answer" : "Show answer"}
-                </button>
+                </Button>
                 {revealed && (
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-                    {current.answer}
+                    {sanitizeText(current.answer)}
                   </div>
                 )}
               </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <button
-                  onClick={() => handleReview("again")}
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
-                >
-                  Again
-                </button>
-                <button
-                  onClick={() => handleReview("hard")}
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
-                >
-                  Hard
-                </button>
-                <button
-                  onClick={() => handleReview("good")}
-                  className="rounded-xl border border-slate-200 bg-slate-900 px-3 py-2 text-sm text-white"
-                >
-                  Good
-                </button>
-                <button
-                  onClick={() => handleReview("easy")}
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm"
-                >
-                  Easy
-                </button>
+                <div className="grid grid-cols-5 gap-2">
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <button
+                      key={n}
+                      onClick={() => handleReview(n as 1 | 2 | 3 | 4 | 5)}
+                    className={`rounded-xl border px-3 py-2 text-sm ${
+                      n === 3 ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white"
+                    }`}
+                  >
+                    {n}
+                  </button>
+                ))}
               </div>
-
-              {nextCard && (
-                <div className="text-xs text-slate-400">Next: {nextCard.question.slice(0, 60)}...</div>
-              )}
+                <div className="flex justify-between text-xs text-slate-400">
+                  <span>Not confident</span>
+                  <span>Very confident</span>
+                </div>
             </div>
           )}
+          </div>
         </div>
       </main>
     </div>

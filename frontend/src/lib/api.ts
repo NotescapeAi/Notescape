@@ -17,7 +17,9 @@ const http = axios.create({
 // Get auth headers for Firebase user
 async function userHeader(): Promise<Record<string, string>> {
   const user = auth.currentUser;
-  if (!user) throw new Error("User not authenticated");
+  if (!user) {
+    return { "X-User-Id": "dev-user" };
+  }
   const token = await user.getIdToken();
   return { Authorization: `Bearer ${token}` };
 }
@@ -148,7 +150,8 @@ export async function deleteFile(fileId: string): Promise<void> {
 export async function listFlashcards(classId?: number, fileId?: string): Promise<Flashcard[]> {
   const base = typeof classId === "number" ? `/flashcards/${classId}` : `/flashcards`;
   const url = fileId ? `${base}?file_id=${fileId}` : base;
-  const { data } = await http.get(url);
+  const headers = await userHeader();
+  const { data } = await http.get(url, { headers });
   if (Array.isArray(data)) return data;
   if (Array.isArray((data as any)?.items)) return (data as any).items;
   if (Array.isArray((data as any)?.cards)) return (data as any).cards;
@@ -159,14 +162,48 @@ export async function generateFlashcards(payload: {
   class_id: number;
   file_ids: string[];
   top_k?: number;
+  n_cards?: number;
+  style?: "mixed" | "definitions" | "conceptual" | "qa";
+  page_start?: number;
+  page_end?: number;
   difficulty?: "easy" | "medium" | "hard";
 }): Promise<Flashcard[]> {
-  const { data } = await http.post<Flashcard[]>("/flashcards/generate", payload);
+  const headers = await userHeader();
+  const { data } = await http.post<Flashcard[]>("/flashcards/generate", payload, { headers });
   return Array.isArray(data) ? data : [];
 }
 
 export async function deleteFlashcard(id: string): Promise<void> {
-  await http.delete(`/flashcards/${id}`);
+  const headers = await userHeader();
+  await http.delete(`/flashcards/${id}`, { headers });
+}
+
+export async function createFlashcard(payload: {
+  class_id: number;
+  question: string;
+  answer: string;
+  file_id?: string | null;
+  hint?: string | null;
+  tags?: string[];
+  difficulty?: "easy" | "medium" | "hard";
+}): Promise<{ id: string }> {
+  const headers = await userHeader();
+  const { data } = await http.post<{ id: string }>("/flashcards", payload, { headers });
+  return data;
+}
+
+export async function updateFlashcard(id: string, payload: {
+  question?: string;
+  answer?: string;
+  file_id?: string | null;
+  hint?: string | null;
+  tags?: string[];
+  difficulty?: "easy" | "medium" | "hard";
+  reset_progress?: boolean;
+}): Promise<{ ok: boolean }> {
+  const headers = await userHeader();
+  const { data } = await http.put<{ ok: boolean }>(`/flashcards/${id}`, payload, { headers });
+  return data;
 }
 
 
@@ -309,7 +346,8 @@ export async function createChunks(payload: {
   overlap: number;
   preview_limit_per_file?: number;
 }): Promise<ChunkPreview[]> {
-  const { data } = await http.post<ChunkPreview[]>("/chunks", payload);
+  const headers = await userHeader();
+  const { data } = await http.post<ChunkPreview[]>("/chunks", payload, { headers });
   return Array.isArray(data) ? data : [];
 }
 
@@ -319,8 +357,11 @@ export async function buildEmbeddings(
 ): Promise<{ inserted: number }> {
   const params = new URLSearchParams({ class_id: String(classId) });
   if (typeof limit === "number") params.set("limit", String(limit));
+  const headers = await userHeader();
   const { data } = await http.post<{ inserted: number }>(
-    `/embeddings/build?${params.toString()}`
+    `/embeddings/build?${params.toString()}`,
+    {},
+    { headers }
   );
   return data;
 }
@@ -347,12 +388,12 @@ export async function listDueCards(classId: number, fileId?: string, limit = 999
   return response.json();
 }
 
-export async function postReview(cardId: string, rating: "again" | "hard" | "good" | "easy") {
+export async function postReview(cardId: string, confidence: 1 | 2 | 3 | 4 | 5) {
   const headers = await userHeader();
   const response = await fetch(`${API_BASE}/flashcards/${cardId}/review`, {
     method: 'POST',
     headers: { ...headers, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ rating }),
+    body: JSON.stringify({ confidence }),
   });
   if (!response.ok) throw new Error(`Failed to post review (HTTP ${response.status})`);
   return response.json();
