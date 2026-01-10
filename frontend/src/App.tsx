@@ -28,14 +28,15 @@ const FlashcardsPage     = lazy(() => import("./pages/FlashcardsPage"));
 const Profile            = lazy(() => import("./pages/Profile"));
 const Chatbot            = lazy(() => import("./pages/Chatbot"));
 
-// ⚠️ these two routes must exist for the menu navigation to show a new UI
+//  these two routes must exist for the menu navigation to show a new UI
 const FlashcardsViewMode  = lazy(() => import("./pages/FlashcardsViewMode"));
 const FlashcardsStudyMode = lazy(() => import("./pages/FlashcardsStudyMode"));
 const FlashcardsBookmarks = lazy(() => import("./pages/FlashcardsBookmarks"));
 
 import { onAuthStateChanged, User } from "firebase/auth";
-import { auth } from "./firebase/firebase"; // adjust path if needed
-import {  useState } from "react";
+import { auth } from "./firebase/firebase";
+import { useState } from "react";
+import { UserProvider } from "./hooks/useUser";
 
 function GetStartedGate() {
   const [user, setUser] = useState<User | null>(null);
@@ -49,7 +50,7 @@ function GetStartedGate() {
     return () => unsub();
   }, []);
 
-  if (!ready) return <div style={{ padding: 24 }}>Loading…</div>;
+  if (!ready) return <div style={{ padding: 24 }}>Loading</div>;
   return <Navigate to={user ? "/classes" : "/signup"} replace />;
 }
 
@@ -75,8 +76,8 @@ function ScrollToTop() {
  * IMPORTANT:
  * Wrap Routes in a component that reads `location` and keys by pathname.
  * This guarantees React mounts the correct element when you navigate
- * from /flashcards → /flashcards/view or /flashcards/study so you don't get
- * the “URL changes but same UI” problem.
+ * from /flashcards  /flashcards/view or /flashcards/study so you don't get
+ * the URL changes but same UI problem.
  */
 function AppRoutes() {
   const location = useLocation();
@@ -127,12 +128,14 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    // ✅ Make sure there is exactly ONE BrowserRouter in the whole app.
-    <BrowserRouter>
-      <ScrollToTop />
-      <Suspense fallback={<div style={{ padding: 24 }}>Loading…</div>}>
-        <AppRoutes />
-      </Suspense>
-    </BrowserRouter>
+    // Make sure there is exactly one BrowserRouter in the whole app.
+    <UserProvider>
+      <BrowserRouter>
+        <ScrollToTop />
+        <Suspense fallback={<div style={{ padding: 24 }}>Loading...</div>}>
+          <AppRoutes />
+        </Suspense>
+      </BrowserRouter>
+    </UserProvider>
   );
 }

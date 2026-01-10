@@ -408,7 +408,66 @@ http.interceptors.request.use((config) => {
 
 
 export async function deleteAccount(): Promise<{ ok: boolean }> {
-  const { data } = await http.delete<{ ok?: boolean }>("/account");
+  const headers = await userHeader();
+  const { data } = await http.delete<{ ok?: boolean }>("/account", { headers });
+  return { ok: data?.ok ?? true };
+}
+
+export type ProfileData = {
+  id: string;
+  email: string;
+  full_name?: string | null;
+  avatar_url?: string | null;
+  provider: string;
+  provider_id: string;
+  display_name?: string | null;
+  dark_mode?: boolean;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export async function getProfile(): Promise<ProfileData> {
+  const headers = await userHeader();
+  const { data } = await http.get<ProfileData>("/profile", { headers });
+  return data;
+}
+
+export async function updateProfile(payload: {
+  display_name?: string;
+  avatar_url?: string | null;
+}): Promise<ProfileData> {
+  const headers = await userHeader();
+  const { data } = await http.patch<ProfileData>("/profile", payload, { headers });
+  return data;
+}
+
+export async function getSettings(): Promise<{ dark_mode: boolean }> {
+  const headers = await userHeader();
+  const { data } = await http.get<{ dark_mode: boolean }>("/settings", { headers });
+  return data;
+}
+
+export async function updateSettings(payload: { dark_mode: boolean }): Promise<{ dark_mode: boolean }> {
+  const headers = await userHeader();
+  const { data } = await http.patch<{ dark_mode: boolean }>("/settings", payload, { headers });
+  return data;
+}
+
+export async function resetFlashcardProgress(): Promise<{ ok: boolean }> {
+  const headers = await userHeader();
+  const { data } = await http.post<{ ok?: boolean }>("/settings/reset-flashcards", {}, { headers });
+  return { ok: data?.ok ?? true };
+}
+
+export async function clearChatHistory(): Promise<{ ok: boolean }> {
+  const headers = await userHeader();
+  const { data } = await http.post<{ ok?: boolean }>("/settings/clear-chat", {}, { headers });
+  return { ok: data?.ok ?? true };
+}
+
+export async function clearEmbeddings(): Promise<{ ok: boolean }> {
+  const headers = await userHeader();
+  const { data } = await http.post<{ ok?: boolean }>("/settings/clear-embeddings", {}, { headers });
   return { ok: data?.ok ?? true };
 }
 /* =========================

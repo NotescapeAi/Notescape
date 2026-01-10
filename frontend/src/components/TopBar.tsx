@@ -1,5 +1,8 @@
-import { Bell, Plus } from "lucide-react";
+import { Bell, ChevronDown, Plus } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import BackLink from "./BackLink";
+import { useUser } from "../hooks/useUser";
 
 type Props = {
   title: string;
@@ -12,10 +15,27 @@ type Props = {
 };
 
 export default function TopBar({ title, breadcrumbs, subtitle, showGreeting, backLabel, backTo, backState }: Props) {
+  const navigate = useNavigate();
+  const { profile } = useUser();
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
   const crumbs = breadcrumbs ?? [];
   const hour = new Date().getHours();
   const greeting =
     hour < 12 ? "Good morning" : hour < 18 ? "Afternoon focus?" : "Evening study session?";
+  const displayName = profile?.display_name || profile?.full_name || profile?.email || "User";
+  const initials = displayName.trim().slice(0, 1).toUpperCase();
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (!menuRef.current) return;
+      if (menuRef.current.contains(e.target as Node)) return;
+      setOpen(false);
+    };
+    window.addEventListener("mousedown", handler);
+    return () => window.removeEventListener("mousedown", handler);
+  }, [open]);
 
   return (
     <div className="flex flex-wrap items-center justify-between gap-4 rounded-[28px] bg-white px-6 py-5 shadow-[0_16px_40px_rgba(15,16,32,0.08)]">
@@ -54,8 +74,45 @@ export default function TopBar({ title, breadcrumbs, subtitle, showGreeting, bac
           <Plus className="h-4 w-4" />
           Quick add
         </button>
-        <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#0F1020] text-sm font-semibold text-white">
-          N
+        <div className="relative" ref={menuRef}>
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            className="flex items-center gap-2 rounded-full border border-[#EFE7FF] bg-white px-2 py-1"
+            aria-label="Open profile menu"
+          >
+            {profile?.avatar_url ? (
+              <img src={profile.avatar_url} alt={displayName} className="h-8 w-8 rounded-full object-cover" />
+            ) : (
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#0F1020] text-xs font-semibold text-white">
+                {initials}
+              </div>
+            )}
+            <ChevronDown className="h-4 w-4 text-[#6B5CA5]" />
+          </button>
+          {open && (
+            <div className="absolute right-0 top-12 z-20 w-48 rounded-2xl border border-[#EFE7FF] bg-white p-2 shadow-[0_12px_30px_rgba(15,16,32,0.12)]">
+              <div className="px-3 py-2 text-xs text-[#6B5CA5]">{displayName}</div>
+              <button
+                className="w-full rounded-xl px-3 py-2 text-left text-sm text-[#0F1020] hover:bg-[#F7F4FF]"
+                onClick={() => navigate("/profile")}
+              >
+                Profile
+              </button>
+              <button
+                className="w-full rounded-xl px-3 py-2 text-left text-sm text-[#0F1020] hover:bg-[#F7F4FF]"
+                onClick={() => navigate("/settings")}
+              >
+                Settings
+              </button>
+              <button
+                className="w-full rounded-xl px-3 py-2 text-left text-sm text-[#EF5F8B] hover:bg-[#FFF3F7]"
+                onClick={() => navigate("/logout")}
+              >
+                Logout
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
