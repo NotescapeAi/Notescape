@@ -4,7 +4,7 @@ import { Link, useLocation } from "react-router-dom";
 
 import ClassSidebar from "../components/ClassSidebar";
 import ClassHeaderButtons from "../components/ClassHeaderButtons";
-import PageHeader from "../components/PageHeader";
+import AppShell from "../layouts/AppShell";
 import Button from "../components/Button";
 import KebabMenu from "../components/KebabMenu";
 import PdfStudyViewer, { type PdfSelection, type PdfSnip } from "../components/PdfStudyViewer";
@@ -627,8 +627,9 @@ export default function Classes() {
     : null;
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <div className="grid grid-cols-[300px_minmax(0,1fr)]">
+    <AppShell title="Classes" breadcrumbs={["Classes"]}>
+      <div className="min-h-screen bg-slate-50">
+        <div className="grid grid-cols-[300px_minmax(0,1fr)]">
         <ClassSidebar
           items={classes}
           selectedId={selectedId}
@@ -638,8 +639,6 @@ export default function Classes() {
 
         <section className="p-6 lg:p-8">
           <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6">
-            <PageHeader title="Classes" backHref="/dashboard" />
-
             {!selectedId ? (
               <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-10 text-center">
                 <div className="text-lg font-semibold text-slate-900">Select a class to get started</div>
@@ -1680,6 +1679,7 @@ export default function Classes() {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </AppShell>
   );
 }

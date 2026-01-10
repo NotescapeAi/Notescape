@@ -1,8 +1,7 @@
 // frontend/src/pages/FlashcardsViewMode.tsx
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useParams } from "react-router-dom";
-import AppSidebar from "../components/AppSidebar";
-import PageHeader from "../components/PageHeader";
+import AppShell from "../layouts/AppShell";
 import Button from "../components/Button";
 import { listFlashcards, type Flashcard } from "../lib/api";
 
@@ -64,34 +63,33 @@ export default function FlashcardsViewMode() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex">
-      <AppSidebar />
-      <main className="flex-1 p-6 lg:p-8">
-        <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6">
-          <PageHeader
-            title="Browse cards"
-            subtitle={state.className ?? "Class"}
-            backHref={`/classes/${classId}/flashcards`}
-          />
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    <AppShell
+      title="Browse cards"
+      breadcrumbs={["Flashcards", "Browse"]}
+      subtitle={state.className ?? "Class"}
+      backLabel="Back to Flashcards"
+      backTo="/classes"
+      backState={{ tab: "flashcards" }}
+    >
+      <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6">
+        <div className="rounded-[24px] bg-white p-6 shadow-[0_12px_30px_rgba(15,16,32,0.08)]">
           {loading ? (
-            <div className="text-sm text-slate-500">Loading cards...</div>
+            <div className="text-sm text-[#6B5CA5]">Loading cards...</div>
           ) : !current ? (
-            <div className="text-sm text-slate-500">No cards available.</div>
+            <div className="text-sm text-[#6B5CA5]">No cards available.</div>
           ) : (
             <div className="space-y-5">
-              <div className="text-xs text-slate-500">
+              <div className="text-xs text-[#6B5CA5]">
                 Card {idx + 1} of {cards.length}
               </div>
-              <div className="text-lg font-semibold text-slate-900">{sanitizeText(current.question)}</div>
+              <div className="text-lg font-semibold text-[#0F1020]">{sanitizeText(current.question)}</div>
 
               <Button variant="primary" onClick={() => setRevealed((v) => !v)}>
                 {revealed ? "Hide answer" : "Show answer"}
               </Button>
 
               {revealed && (
-                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700 whitespace-pre-wrap">
+                <div className="rounded-xl border border-[#EFE7FF] bg-[#F8F5FF] p-4 text-sm text-[#5A4B92] whitespace-pre-wrap">
                   {sanitizeText(current.answer)}
                 </div>
               )}
@@ -102,9 +100,8 @@ export default function FlashcardsViewMode() {
               </div>
             </div>
           )}
-          </div>
         </div>
-      </main>
-    </div>
+      </div>
+    </AppShell>
   );
 }

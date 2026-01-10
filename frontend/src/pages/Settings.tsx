@@ -1,8 +1,7 @@
 // src/pages/Settings.tsx
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
-import AppSidebar from "../components/AppSidebar";
-import PageHeader from "../components/PageHeader";
+import AppShell from "../layouts/AppShell";
 import Button from "../components/Button";
 import { logout as apiLogout, deleteAccount as apiDelete } from "../lib/api";
 
@@ -37,15 +36,11 @@ export default function Settings() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex">
-      <AppSidebar />
-      <main className="flex-1 p-6 lg:p-8">
-        <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6">
-          <PageHeader title="Settings" subtitle="Manage your account and session." />
-
-          <section className="max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+    <AppShell title="Settings" breadcrumbs={["Settings"]} subtitle="Manage your account and session.">
+      <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6">
+          <section className="max-w-2xl rounded-[24px] bg-white p-6 shadow-[0_12px_30px_rgba(15,16,32,0.08)]">
             <h2 className="text-base font-semibold">Account</h2>
-            <p className="text-sm text-slate-500 mt-1">
+            <p className="text-sm text-[#6B5CA5] mt-1">
               Control access and remove your account if needed.
             </p>
 
@@ -53,13 +48,17 @@ export default function Settings() {
               <Button onClick={onLogout} disabled={!!busy}>
                 {busy === "logout" ? "Logging out..." : "Logout"}
               </Button>
-              <Button variant="primary" onClick={onDelete} disabled={!!busy} className="bg-rose-600 hover:bg-rose-500">
+              <Button
+                variant="primary"
+                onClick={onDelete}
+                disabled={!!busy}
+                className="bg-[#EF5F8B] hover:bg-[#E14B78]"
+              >
                 {busy === "delete" ? "Deleting..." : "Delete account"}
               </Button>
             </div>
           </section>
-        </div>
-      </main>
-    </div>
+      </div>
+    </AppShell>
   );
 }

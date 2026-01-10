@@ -8,11 +8,11 @@ type Props = React.ButtonHTMLAttributes<HTMLButtonElement> & {
   size?: Size;
 };
 
-const base = "inline-flex items-center justify-center rounded-lg font-semibold transition disabled:opacity-60";
+const base = "inline-flex items-center justify-center rounded-xl font-semibold transition disabled:opacity-60";
 const variants: Record<Variant, string> = {
-  primary: "bg-slate-900 text-white hover:bg-slate-800",
-  secondary: "border border-slate-200 bg-white text-slate-700 hover:border-slate-300",
-  ghost: "text-slate-600 hover:bg-slate-100",
+  primary: "bg-[#7B5FEF] text-white hover:bg-[#6A4DE6] shadow-[0_10px_24px_rgba(123,95,239,0.35)]",
+  secondary: "border border-[#EFE7FF] bg-white text-[#5A4B92] hover:border-[#E0D6FF]",
+  ghost: "text-[#5A4B92] hover:bg-[#F4F0FF]",
 };
 const sizes: Record<Size, string> = {
   sm: "h-8 px-3 text-xs",

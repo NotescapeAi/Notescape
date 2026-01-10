@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import AppSidebar from "../components/AppSidebar";
-import PageHeader from "../components/PageHeader";
+import AppShell from "../layouts/AppShell";
 import Button from "../components/Button";
 import {
   listClasses,
@@ -237,43 +236,45 @@ export default function Chatbot() {
   const sourcesEnabled = activeSessionId ? showSources[activeSessionId] ?? false : false;
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex">
-      <AppSidebar />
-      <main className="flex-1 p-6 lg:p-8">
-        <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6">
-          <PageHeader
-            title="Class chat"
-            subtitle="Sessions are saved per class and user."
-            actions={
-              <>
-                <select
-                  value={classId ?? ""}
-                  onChange={(e) => setClassId(e.target.value ? Number(e.target.value) : null)}
-                  className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm"
-                >
-                  <option value="">Select class</option>
-                  {classes.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-                <Button variant="primary" disabled={!classId} onClick={startNewSession}>
-                  New chat
-                </Button>
-              </>
-            }
-          />
+    <AppShell
+      title="Study Assistant"
+      breadcrumbs={["Study Assistant"]}
+      subtitle="Sessions are saved per class and user."
+    >
+      <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="text-xs uppercase tracking-[0.3em] text-[#7B5FEF]">Assistant</div>
+            <div className="mt-2 text-lg font-semibold text-[#0F1020]">Class chat</div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={classId ?? ""}
+              onChange={(e) => setClassId(e.target.value ? Number(e.target.value) : null)}
+              className="h-10 rounded-2xl border border-[#EFE7FF] bg-white px-3 text-sm text-[#5A4B92]"
+            >
+              <option value="">Select class</option>
+              {classes.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+            <Button variant="primary" disabled={!classId} onClick={startNewSession}>
+              New chat
+            </Button>
+          </div>
+        </div>
 
-          <div className="grid grid-cols-1 xl:grid-cols-[280px_minmax(0,1fr)_320px] gap-6">
-          <aside className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="grid grid-cols-1 xl:grid-cols-[280px_minmax(0,1fr)_320px] gap-6">
+          <aside className="rounded-[24px] bg-white p-4 shadow-[0_12px_30px_rgba(15,16,32,0.08)]">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-sm font-semibold">Sessions</h2>
-              {busySessions && <span className="text-xs text-slate-400">Loading...</span>}
+              {busySessions && <span className="text-xs text-[#6B5CA5]">Loading...</span>}
             </div>
             <div className="space-y-2 max-h-[70vh] overflow-auto">
               {sessions.length === 0 ? (
-                <div className="text-sm text-slate-500">No sessions yet.</div>
+                <div className="text-sm text-[#6B5CA5]">No sessions yet.</div>
               ) : (
                 sessions.map((s) => (
                   <button
@@ -281,12 +282,12 @@ export default function Chatbot() {
                     onClick={() => setActiveSessionId(s.id)}
                     className={`w-full rounded-xl border px-3 py-2 text-left text-sm ${
                       s.id === activeSessionId
-                        ? "border-slate-900 bg-slate-50 font-semibold"
-                        : "border-slate-200 hover:border-slate-300"
+                        ? "border-[#7B5FEF] bg-[#F4F0FF] font-semibold"
+                        : "border-[#EFE7FF] hover:border-[#E0D6FF]"
                     }`}
                   >
                     <div className="truncate">{s.title || "Chat session"}</div>
-                    <div className="text-xs text-slate-400 truncate">
+                    <div className="text-xs text-[#6B5CA5] truncate">
                       {new Date(s.updated_at || s.created_at || "").toLocaleString()}
                     </div>
                   </button>
@@ -295,10 +296,10 @@ export default function Chatbot() {
             </div>
           </aside>
 
-          <section className="rounded-2xl border border-slate-200 bg-white shadow-sm flex flex-col min-h-[70vh]">
-            <div className="border-b border-slate-200 px-4 py-3 flex items-center justify-between">
+          <section className="rounded-[24px] bg-white shadow-[0_12px_30px_rgba(15,16,32,0.08)] flex flex-col min-h-[70vh]">
+            <div className="border-b border-[#EFE7FF] px-4 py-3 flex items-center justify-between">
               <div className="text-sm font-semibold">Conversation</div>
-              <label className="flex items-center gap-2 text-xs text-slate-500">
+              <label className="flex items-center gap-2 text-xs text-[#6B5CA5]">
                 <input type="checkbox" checked={sourcesEnabled} onChange={toggleSources} />
                 Show citations
               </label>
@@ -312,12 +313,12 @@ export default function Chatbot() {
               }}
             >
               {errorBanner && (
-                <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                <div className="rounded-xl border border-[#EF5F8B]/30 bg-[#EF5F8B]/10 px-3 py-2 text-xs text-[#EF5F8B]">
                   {errorBanner}
                 </div>
               )}
               {messages.length === 0 ? (
-                <div className="text-sm text-slate-500">Ask anything about your class materials.</div>
+                <div className="text-sm text-[#6B5CA5]">Ask anything about your class materials.</div>
               ) : (
                 messages.map((m) => {
                   const show = sourcesEnabled && m.role === "assistant" && (m.citations?.length ?? 0) > 0;
@@ -326,16 +327,16 @@ export default function Chatbot() {
                       <div
                         className={`max-w-[75%] rounded-2xl border px-4 py-3 text-sm leading-6 ${
                           m.role === "user"
-                            ? "bg-slate-900 text-white border-slate-900"
-                            : "bg-white border-slate-200"
+                            ? "bg-[#0F1020] text-white border-[#0F1020]"
+                            : "bg-white border-[#EFE7FF]"
                         }`}
                       >
                         {m.selected_text && (
                           <div
                             className={`mb-2 rounded-lg border px-3 py-2 text-xs ${
                               m.role === "user"
-                                ? "border-slate-700/60 bg-slate-800/60 text-slate-100"
-                                : "border-slate-200 bg-slate-50 text-slate-600"
+                                ? "border-white/20 bg-white/10 text-white/80"
+                                : "border-[#EFE7FF] bg-[#F8F5FF] text-[#5A4B92]"
                             }`}
                           >
                             <div className="text-[10px] uppercase tracking-wide opacity-70">Selected text</div>
@@ -347,13 +348,13 @@ export default function Chatbot() {
                             <img
                               src={m.image_attachment.data_url}
                               alt="Snippet"
-                              className="max-h-40 rounded-lg border border-slate-200 object-contain"
+                              className="max-h-40 rounded-lg border border-[#EFE7FF] object-contain"
                             />
                           </div>
                         )}
                         <div className="whitespace-pre-wrap">{m.content}</div>
                         {show && (
-                          <div className="mt-3 border-t border-slate-200 pt-2 text-xs text-slate-500">
+                          <div className="mt-3 border-t border-[#EFE7FF] pt-2 text-xs text-[#6B5CA5]">
                           {(m.citations ?? []).slice(0, 6).map((c: any, idx: number) => (
                             <div key={`${c?.chunk_id ?? idx}`}>
                               {c?.filename ?? "Source"}
@@ -361,7 +362,7 @@ export default function Chatbot() {
                             </div>
                           ))}
                           {m.selected_text && (
-                            <div className="mt-2 text-[11px] text-slate-400">
+                            <div className="mt-2 text-[11px] text-[#6B5CA5]">
                               Selected: {String(m.selected_text).slice(0, 160)}
                             </div>
                           )}
@@ -372,19 +373,19 @@ export default function Chatbot() {
                   );
                 })
               )}
-              {busyAsk && <div className="text-xs text-slate-400">Thinking...</div>}
+              {busyAsk && <div className="text-xs text-[#6B5CA5]">Thinking...</div>}
               <div ref={endRef} />
             </div>
-            <div className="border-t border-slate-200 p-4">
+            <div className="border-t border-[#EFE7FF] p-4">
               {selectedText && (
-                <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs text-slate-500">
+                <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-[#EFE7FF] bg-[#F8F5FF] px-3 py-1 text-xs text-[#6B5CA5]">
                   Using selected text
                   <button
-                    className="text-slate-600"
+                    className="text-[#5A4B92]"
                     onClick={() => setSelectedText("")}
                     aria-label="Clear selected text"
                   >
-                    ×
+                    
                   </button>
                 </div>
               )}
@@ -392,7 +393,7 @@ export default function Chatbot() {
                 <textarea
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  className="min-h-[52px] flex-1 resize-none rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/20"
+                  className="min-h-[52px] flex-1 resize-none rounded-xl border border-[#EFE7FF] px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#7B5FEF]/20"
                   placeholder="Ask about your notes..."
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !e.shiftKey) {
@@ -410,26 +411,26 @@ export default function Chatbot() {
                   Send
                 </Button>
               </div>
-              <div className="mt-2 text-xs text-slate-400">Enter to send, Shift+Enter for newline.</div>
+              <div className="mt-2 text-xs text-[#6B5CA5]">Enter to send, Shift+Enter for newline.</div>
             </div>
           </section>
 
-          <aside className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <aside className="rounded-[24px] bg-white p-4 shadow-[0_12px_30px_rgba(15,16,32,0.08)]">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-sm font-semibold">File scope</h2>
-              {busyFiles && <span className="text-xs text-slate-400">Loading...</span>}
+              {busyFiles && <span className="text-xs text-[#6B5CA5]">Loading...</span>}
             </div>
             <input
               value={fileSearch}
               onChange={(e) => setFileSearch(e.target.value)}
               placeholder="Search files"
-              className="mb-3 h-9 w-full rounded-lg border border-slate-200 px-3 text-sm"
+              className="mb-3 h-9 w-full rounded-lg border border-[#EFE7FF] px-3 text-sm"
             />
             <div className="space-y-2 max-h-[60vh] overflow-auto">
               {classId == null ? (
-                <div className="text-sm text-slate-500">Select a class to view files.</div>
+                <div className="text-sm text-[#6B5CA5]">Select a class to view files.</div>
               ) : filteredFiles.length === 0 ? (
-                <div className="text-sm text-slate-500">No files found.</div>
+                <div className="text-sm text-[#6B5CA5]">No files found.</div>
               ) : (
                 filteredFiles.map((f) => {
                   const checked = scopeFileIds.includes(f.id);
@@ -438,25 +439,25 @@ export default function Chatbot() {
                       key={f.id}
                       onClick={() => toggleFileScope(f.id)}
                       className={`w-full rounded-xl border px-3 py-2 text-left text-sm ${
-                        checked ? "border-slate-900 bg-slate-50" : "border-slate-200 hover:border-slate-300"
+                        checked ? "border-[#7B5FEF] bg-[#F4F0FF]" : "border-[#EFE7FF] hover:border-[#E0D6FF]"
                       }`}
                     >
                       <div className="flex items-center justify-between">
                         <span className="truncate font-medium">{f.filename}</span>
-                        <span className="text-xs text-slate-400">
+                        <span className="text-xs text-[#6B5CA5]">
                           {(f.filename.split(".").pop() || "").toUpperCase()}
                         </span>
                       </div>
-                      <div className="text-xs text-slate-400">{f.status ?? "UPLOADED"}</div>
+                      <div className="text-xs text-[#6B5CA5]">{f.status ?? "UPLOADED"}</div>
                     </button>
                   );
                 })
               )}
             </div>
           </aside>
-          </div>
         </div>
-      </main>
-    </div>
+      </div>
+    </AppShell>
   );
 }
+

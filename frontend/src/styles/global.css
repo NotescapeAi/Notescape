@@ -4,8 +4,12 @@
 @tailwind utilities;
 
 :root {
-  --ink: #0f172a;
-  --bg: #f8fafc;
+  --ink: #0f1020;
+  --bg: #f8f6ff;
+  --primary: #7b5fef;
+  --accent-pink: #ef5f8b;
+  --soft-lime: #d3ef5f;
+  --mint: #5fefc3;
 }
 
 /* Global reset */
@@ -15,7 +19,7 @@ html, body {
   padding: 0;
   font-family: "Space Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial;
   color: var(--ink);
-  background: var(--bg);  /* light neutral default */
+  background: var(--bg);
   overflow-x: hidden;
 }
 
@@ -24,7 +28,27 @@ html, body {
 body {
   font-family: "Space Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial;
   color: var(--ink);
-  background: linear-gradient(120deg, #f8fafc 0%, #f1f5f9 40%, #e0f2fe 100%);
+  background:
+    radial-gradient(circle at 20% 10%, rgba(123, 95, 239, 0.08), transparent 45%),
+    radial-gradient(circle at 90% 20%, rgba(239, 95, 139, 0.08), transparent 40%),
+    #f8f6ff;
+}
+
+@keyframes hero-gradient-pan {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.animate-hero-gradient {
+  background-size: 200% 200%;
+  animation: hero-gradient-pan 18s ease-in-out infinite;
 }
 
 h1, h2, h3 {

@@ -102,7 +102,7 @@ export async function createClass(payload: {
     const { data } = await http.post<ClassRow>("/classes", payload, { headers });
     return data;
   } catch (err: any) {
-    console.error("❌ Failed to create class:", err.response?.data || err.message);
+    console.error(" Failed to create class:", err.response?.data || err.message);
     throw err;
   }
 }
@@ -140,6 +140,12 @@ export async function uploadFile(classId: number, file: File): Promise<FileRow> 
 
 export async function deleteFile(fileId: string): Promise<void> {
   await http.delete(`/files/${fileId}`);
+}
+
+export async function updateFile(fileId: string, payload: { filename: string }): Promise<{ ok: boolean; id: string; filename: string }> {
+  const headers = await userHeader();
+  const { data } = await http.put<{ ok: boolean; id: string; filename: string }>(`/files/${fileId}`, payload, { headers });
+  return data;
 }
 
 /* =========================
@@ -375,7 +381,7 @@ export async function postContact({
     );
     return res;
   } catch (err) {
-    console.error("❌ EmailJS Error:", err);
+    console.error(" EmailJS Error:", err);
     throw err;
   }
 }
@@ -480,4 +486,5 @@ export async function getFlashcardProgress(classId: number, fileId?: string) {
   if (!response.ok) throw new Error(`Failed to load progress (HTTP ${response.status})`);
   return response.json();
 }
+
 

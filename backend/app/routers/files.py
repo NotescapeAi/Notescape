@@ -3,6 +3,7 @@ import shutil
 import logging
 from uuid import UUID
 from fastapi import APIRouter, UploadFile, File, HTTPException
+from pydantic import BaseModel
 from app.core.db import db_conn
 from pathlib import Path, PurePosixPath
 from app.core.settings import settings
@@ -17,6 +18,10 @@ UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
 
 router = APIRouter(prefix="/api/files", tags=["files"])
 log = logging.getLogger("uvicorn.error")
+
+
+class FileRename(BaseModel):
+    filename: str
 
 
 @router.get("/{class_id:int}")  
@@ -200,6 +205,23 @@ async def delete_file(file_id: UUID):
         await conn.commit()
 
     return {"ok": True}
+
+
+@router.put("/{file_id:uuid}")
+async def rename_file(file_id: UUID, payload: FileRename):
+    new_name = payload.filename.strip()
+    if not new_name:
+        raise HTTPException(status_code=400, detail="Filename is required")
+    async with db_conn() as (conn, cur):
+        await cur.execute("SELECT id FROM files WHERE id=%s", (str(file_id),))
+        if not await cur.fetchone():
+            raise HTTPException(status_code=404, detail="File not found")
+        await cur.execute(
+            "UPDATE files SET filename=%s WHERE id=%s",
+            (new_name, str(file_id)),
+        )
+        await conn.commit()
+    return {"ok": True, "id": str(file_id), "filename": new_name}
 
 @router.get("/{file_id}/download")
 async def get_download_url(file_id: UUID):
