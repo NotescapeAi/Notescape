@@ -37,6 +37,7 @@ import { onAuthStateChanged, User } from "firebase/auth";
 import { auth } from "./firebase/firebase";
 import { useState } from "react";
 import { UserProvider } from "./hooks/useUser";
+import { ThemeProvider } from "./hooks/useTheme";
 
 function GetStartedGate() {
   const [user, setUser] = useState<User | null>(null);
@@ -129,13 +130,15 @@ function AppRoutes() {
 export default function App() {
   return (
     // Make sure there is exactly one BrowserRouter in the whole app.
-    <UserProvider>
-      <BrowserRouter>
-        <ScrollToTop />
-        <Suspense fallback={<div style={{ padding: 24 }}>Loading...</div>}>
-          <AppRoutes />
-        </Suspense>
-      </BrowserRouter>
-    </UserProvider>
+    <ThemeProvider>
+      <UserProvider>
+        <BrowserRouter>
+          <ScrollToTop />
+          <Suspense fallback={<div style={{ padding: 24 }}>Loading...</div>}>
+            <AppRoutes />
+          </Suspense>
+        </BrowserRouter>
+      </UserProvider>
+    </ThemeProvider>
   );
 }

@@ -24,12 +24,12 @@ export default function AppSidebar({ collapsed, onToggle }: Props) {
   const location = useLocation();
   const navigate = useNavigate();
   const isFlashcardsActive = location.pathname.startsWith("/classes") && (location.state as any)?.tab === "flashcards";
-  const shellClass = "bg-white text-[#1A1630] border border-black/5 shadow-[0_12px_30px_rgba(15,16,32,0.06)]";
-  const textMuted = "text-[#6E648D]";
-  const textHover = "hover:text-[#7B5FEF]";
-  const iconMuted = "text-[#7B5FEF]";
-  const iconHover = "group-hover:text-[#7B5FEF]";
-  const activeText = "text-[#7B5FEF]";
+  const shellClass = "bg-[var(--surface)] text-[var(--text)] border border-[var(--border)] shadow-[var(--shadow)]";
+  const textMuted = "text-[var(--muted)]";
+  const textHover = "hover:text-[var(--primary)]";
+  const iconMuted = "text-[var(--primary)]";
+  const iconHover = "group-hover:text-[var(--primary)]";
+  const activeText = "text-[var(--primary)]";
 
   return (
     <aside
@@ -45,7 +45,7 @@ export default function AppSidebar({ collapsed, onToggle }: Props) {
         >
           <div className={`flex ${collapsed ? "w-full flex-col items-center" : "items-center"}`}>
             <div
-              className={`flex h-[52px] w-[52px] items-center justify-center rounded-full bg-[#7B5FEF] text-base font-semibold text-white shadow-[0_12px_28px_rgba(123,95,239,0.35)] ${
+              className={`flex h-[52px] w-[52px] items-center justify-center rounded-full bg-[var(--primary)] text-base font-semibold text-white shadow-[0_12px_28px_rgba(123,95,239,0.35)] ${
                 collapsed ? "mb-2.5" : ""
               }`}
             >
@@ -55,7 +55,7 @@ export default function AppSidebar({ collapsed, onToggle }: Props) {
           <button
             type="button"
             onClick={onToggle}
-            className={`flex h-9 w-9 items-center justify-center rounded-full text-[#7B5FEF] hover:bg-[rgba(123,95,239,0.10)] ${
+            className={`flex h-9 w-9 items-center justify-center rounded-full text-[var(--primary)] hover:bg-[rgba(123,95,239,0.10)] ${
               collapsed ? "mt-1" : ""
             }`}
             aria-label="Toggle sidebar"
@@ -74,7 +74,7 @@ export default function AppSidebar({ collapsed, onToggle }: Props) {
         {!collapsed && (
           <div className="px-1">
             <div className="text-lg font-semibold tracking-tight">Notescape</div>
-            <div className="text-xs text-[#6E648D]">Learning workspace</div>
+            <div className="text-xs text-[var(--muted)]">Learning workspace</div>
           </div>
         )}
 

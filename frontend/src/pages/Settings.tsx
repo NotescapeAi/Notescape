@@ -10,11 +10,11 @@ import {
   clearChatHistory,
   clearEmbeddings,
 } from "../lib/api";
-import { useUser } from "../hooks/useUser";
+import { useTheme } from "../hooks/useTheme";
 
 export default function Settings() {
   const navigate = useNavigate();
-  const { darkMode, saveSettings } = useUser();
+  const { theme, setTheme } = useTheme();
   const [busy, setBusy] = useState<null | "logout" | "delete" | "reset" | "clear-chat" | "clear-embed">(null);
 
   async function onLogout() {
@@ -99,24 +99,27 @@ export default function Settings() {
         <section className="max-w-2xl rounded-[24px] bg-white p-6 shadow-[0_12px_30px_rgba(15,16,32,0.08)]">
           <h2 className="text-base font-semibold">Appearance</h2>
           <p className="mt-1 text-sm text-[#6B5CA5]">Adjust how the workspace looks for you.</p>
-          <div className="mt-4 flex items-center justify-between rounded-2xl border border-[#EFE7FF] px-4 py-3">
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#EFE7FF] px-4 py-3">
             <div>
-              <div className="text-sm font-semibold text-[#0F1020]">Dark mode</div>
-              <div className="text-xs text-[#6B5CA5]">Save your preference across sessions.</div>
+              <div className="text-sm font-semibold text-[#0F1020]">Theme</div>
+              <div className="text-xs text-[#6B5CA5]">Sync with your preference.</div>
             </div>
-            <button
-              type="button"
-              onClick={() => saveSettings({ dark_mode: !darkMode })}
-              className={`h-8 w-14 rounded-full border border-[#EFE7FF] p-1 transition ${
-                darkMode ? "bg-[#7B5FEF]" : "bg-[#F4F0FF]"
-              }`}
-            >
-              <span
-                className={`block h-6 w-6 rounded-full bg-white shadow transition ${
-                  darkMode ? "translate-x-6" : "translate-x-0"
-                }`}
-              />
-            </button>
+            <div className="flex items-center gap-2">
+              {(["light", "dark", "system"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setTheme(mode)}
+                  className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+                    theme === mode
+                      ? "border-[#7B5FEF] bg-[#7B5FEF] text-white"
+                      : "border-[#EFE7FF] bg-white text-[#6B5CA5]"
+                  }`}
+                >
+                  {mode}
+                </button>
+              ))}
+            </div>
           </div>
         </section>
 
@@ -132,7 +135,7 @@ export default function Settings() {
               variant="primary"
               onClick={onDelete}
               disabled={!!busy}
-              className="bg-[#EF5F8B] hover:bg-[#E14B78]"
+              className="bg-[#7B5FEF] hover:bg-[#6A4FE0]"
             >
               {busy === "delete" ? "Deleting..." : "Delete account"}
             </Button>

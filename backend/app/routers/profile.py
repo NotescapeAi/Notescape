@@ -20,6 +20,8 @@ class ProfileUpdate(BaseModel):
 class SettingsUpdate(BaseModel):
     dark_mode: Optional[bool] = None
 
+class PreferencesUpdate(BaseModel):
+    theme: str = Field(min_length=4, max_length=6)
 
 def _map_provider(provider_id: str) -> str:
     if provider_id == "google.com":
@@ -59,6 +61,7 @@ async def _ensure_user_schema():
         await cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS provider TEXT NOT NULL DEFAULT 'google'")
         await cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS provider_id TEXT NOT NULL DEFAULT ''")
         await cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS dark_mode BOOLEAN NOT NULL DEFAULT FALSE")
+        await cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS theme_preference TEXT NOT NULL DEFAULT 'system'")
         await cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now()")
         await conn.commit()
     _schema_checked = True
@@ -95,7 +98,7 @@ async def _upsert_user_from_firebase(user_id: str) -> Dict[str, Any]:
               full_name=EXCLUDED.full_name,
               avatar_url=EXCLUDED.avatar_url,
               updated_at=now()
-            RETURNING id::text, email, full_name, avatar_url, provider, provider_id, display_name, dark_mode, created_at, updated_at
+            RETURNING id::text, email, full_name, avatar_url, provider, provider_id, display_name, dark_mode, theme_preference, created_at, updated_at
             """,
             (
                 email,
@@ -117,6 +120,7 @@ async def _upsert_user_from_firebase(user_id: str) -> Dict[str, Any]:
         "provider_id",
         "display_name",
         "dark_mode",
+        "theme_preference",
         "created_at",
         "updated_at",
     ]
@@ -148,7 +152,7 @@ async def update_profile(payload: ProfileUpdate, user_id: str = Depends(get_requ
                     avatar_url=COALESCE(%s, avatar_url),
                     updated_at=now()
                 WHERE provider=%s AND provider_id=%s
-                RETURNING id::text, email, full_name, avatar_url, provider, provider_id, display_name, dark_mode, created_at, updated_at
+                RETURNING id::text, email, full_name, avatar_url, provider, provider_id, display_name, dark_mode, theme_preference, created_at, updated_at
                 """,
                 (
                     updates.get("display_name"),
@@ -168,9 +172,9 @@ async def update_profile(payload: ProfileUpdate, user_id: str = Depends(get_requ
             "provider_id",
             "display_name",
             "dark_mode",
-            "created_at",
-            "updated_at",
-        ]
+        "created_at",
+        "updated_at",
+    ]
         return dict(zip(cols, row))
     return data
 
@@ -199,6 +203,34 @@ async def update_settings(payload: SettingsUpdate, user_id: str = Depends(get_re
         row = await cur.fetchone()
         await conn.commit()
     return {"dark_mode": bool(row[0])}
+
+
+@router.get("/preferences")
+async def get_preferences(user_id: str = Depends(get_request_user_uid)):
+    data = await _upsert_user_from_firebase(user_id)
+    theme = data.get("theme_preference") or "system"
+    return {"theme": theme}
+
+
+@router.patch("/preferences")
+async def update_preferences(payload: PreferencesUpdate, user_id: str = Depends(get_request_user_uid)):
+    theme = payload.theme.lower().strip()
+    if theme not in {"light", "dark", "system"}:
+        raise HTTPException(status_code=400, detail="Invalid theme")
+    data = await _upsert_user_from_firebase(user_id)
+    async with db_conn() as (conn, cur):
+        await cur.execute(
+            """
+            UPDATE users
+            SET theme_preference=%s, updated_at=now()
+            WHERE provider=%s AND provider_id=%s
+            RETURNING theme_preference
+            """,
+            (theme, data["provider"], data["provider_id"]),
+        )
+        row = await cur.fetchone()
+        await conn.commit()
+    return {"theme": row[0]}
 
 
 @router.post("/settings/reset-flashcards")

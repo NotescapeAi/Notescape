@@ -53,7 +53,7 @@ export default function AppShell({
 
   return (
     <LayoutContext.Provider value={layout}>
-      <div className="min-h-screen bg-[#F8F6FF] text-[#0F1020]">
+      <div className="min-h-screen bg-[var(--bg)] text-[var(--text)]">
         <AppSidebar collapsed={collapsed} onToggle={handleToggle} />
         <div
           className="min-h-screen px-4 py-5 transition-[margin-left] duration-200 ease-in-out lg:px-6"

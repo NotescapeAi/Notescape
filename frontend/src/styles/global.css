@@ -4,12 +4,29 @@
 @tailwind utilities;
 
 :root {
-  --ink: #0f1020;
   --bg: #f8f6ff;
+  --surface: #ffffff;
+  --text: #0f1020;
+  --muted: #6b5ca5;
+  --border: rgba(0, 0, 0, 0.08);
   --primary: #7b5fef;
   --accent-pink: #ef5f8b;
   --soft-lime: #d3ef5f;
   --mint: #5fefc3;
+  --shadow: 0 12px 30px rgba(15, 16, 32, 0.08);
+}
+
+.dark {
+  --bg: #0f1118;
+  --surface: #161a24;
+  --text: #f2f3f7;
+  --muted: #a9a4c3;
+  --border: rgba(255, 255, 255, 0.08);
+  --primary: #7b5fef;
+  --accent-pink: #ef5f8b;
+  --soft-lime: #d3ef5f;
+  --mint: #5fefc3;
+  --shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
 }
 
 /* Global reset */
@@ -18,7 +35,7 @@ html, body {
   margin: 0;
   padding: 0;
   font-family: "Space Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial;
-  color: var(--ink);
+  color: var(--text);
   background: var(--bg);
   overflow-x: hidden;
 }
@@ -27,11 +44,8 @@ html, body {
 /* Body only sets font + color */
 body {
   font-family: "Space Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial;
-  color: var(--ink);
-  background:
-    radial-gradient(circle at 20% 10%, rgba(123, 95, 239, 0.08), transparent 45%),
-    radial-gradient(circle at 90% 20%, rgba(239, 95, 139, 0.08), transparent 40%),
-    #f8f6ff;
+  color: var(--text);
+  background: var(--bg);
 }
 
 @keyframes hero-gradient-pan {
@@ -53,4 +67,63 @@ body {
 
 h1, h2, h3 {
   font-family: "Fraunces", "Space Grotesk", ui-serif, Georgia, serif;
+}
+
+.dark .bg-white {
+  background-color: var(--surface) !important;
+}
+
+.dark .bg-\[\#F8F6FF\] {
+  background-color: var(--bg) !important;
+}
+
+.dark .bg-\[\#F7F4FF\] {
+  background-color: var(--surface) !important;
+}
+
+.dark .bg-\[\#F4F0FF\] {
+  background-color: rgba(123, 95, 239, 0.12) !important;
+}
+
+.dark .bg-\[\#FCFBFF\] {
+  background-color: var(--surface) !important;
+}
+
+.dark .text-\[\#0F1020\] {
+  color: var(--text) !important;
+}
+
+.dark .text-\[\#6B5CA5\],
+.dark .text-\[\#5A4B92\] {
+  color: var(--muted) !important;
+}
+
+.dark .border-\[\#EFE7FF\],
+.dark .border-\[\#E7E0FF\] {
+  border-color: var(--border) !important;
+}
+
+.dark .bg-slate-50 {
+  background-color: var(--surface) !important;
+}
+
+.dark .bg-slate-900 {
+  background-color: #0c0e14 !important;
+}
+
+.dark .text-slate-900,
+.dark .text-slate-800 {
+  color: var(--text) !important;
+}
+
+.dark .text-slate-700,
+.dark .text-slate-600,
+.dark .text-slate-500,
+.dark .text-slate-400 {
+  color: var(--muted) !important;
+}
+
+.dark .border-slate-200,
+.dark .border-slate-300 {
+  border-color: var(--border) !important;
 }

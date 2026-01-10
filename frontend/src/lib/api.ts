@@ -453,6 +453,20 @@ export async function updateSettings(payload: { dark_mode: boolean }): Promise<{
   return data;
 }
 
+export async function getPreferences(): Promise<{ theme: "light" | "dark" | "system" }> {
+  const headers = await userHeader();
+  const { data } = await http.get<{ theme: "light" | "dark" | "system" }>("/preferences", { headers });
+  return data;
+}
+
+export async function updatePreferences(payload: {
+  theme: "light" | "dark" | "system";
+}): Promise<{ theme: "light" | "dark" | "system" }> {
+  const headers = await userHeader();
+  const { data } = await http.patch<{ theme: "light" | "dark" | "system" }>("/preferences", payload, { headers });
+  return data;
+}
+
 export async function resetFlashcardProgress(): Promise<{ ok: boolean }> {
   const headers = await userHeader();
   const { data } = await http.post<{ ok?: boolean }>("/settings/reset-flashcards", {}, { headers });

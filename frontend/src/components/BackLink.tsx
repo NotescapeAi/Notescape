@@ -14,7 +14,7 @@ export default function BackLink({ label, to, state }: Props) {
     <button
       type="button"
       onClick={() => (to ? navigate(to, { state }) : navigate(-1))}
-      className="inline-flex items-center gap-2 text-sm font-semibold text-[#5A4B92] hover:text-[#7B5FEF]"
+      className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--muted)] hover:text-[var(--primary)]"
       aria-label={label}
     >
       <ChevronLeft className="h-4 w-4" />
