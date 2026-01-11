@@ -2,6 +2,7 @@ import uuid
 import shutil
 import logging
 import json
+import asyncio
 from uuid import UUID
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from pydantic import BaseModel
@@ -88,6 +89,44 @@ async def _queue_ocr_job(file_id: str, output_prefix: str, engine: str = "tesser
         "output_text_key": output_text_key,
     }
 
+async def _process_pdf_async(
+    file_id: str,
+    safe_name: str,
+    local_path: Path,
+    class_id: int,
+    owner_uid: str,
+    storage_backend: str,
+    storage_key: str | None,
+):
+    status = "UPLOADED"
+    ocr_job_id = None
+    try:
+        is_digital, _ = detect_digital_pdf(str(local_path), max_pages=3, min_chars=200)
+        if is_digital:
+            page_texts = extract_page_texts(str(local_path))
+            full_text = "\n".join(page_texts)
+            cache_key = f"filetext:{file_id}:{storage_key or local_path.stat().st_size}"
+            cache_set(cache_key, full_text.encode("utf-8"), ttl_seconds=86400)
+            total = await index_file(file_id, page_texts=page_texts)
+            status = "INDEXED" if total > 0 else "FAILED"
+            await _update_file_status(file_id, status, error=None, indexed=total > 0)
+        else:
+            output_prefix = build_s3_document_prefix("public", owner_uid, class_id, file_id)
+            queued = await _queue_ocr_job(file_id, output_prefix)
+            ocr_job_id = queued["job_id"]
+            status = "OCR_QUEUED"
+            await _update_file_status(file_id, status, ocr_job_id=ocr_job_id)
+    except Exception as e:
+        log.error(f"[files] processing failed for {file_id}: {e}")
+        await _update_file_status(file_id, "FAILED", error=str(e))
+    finally:
+        if storage_backend.lower() == "s3":
+            try:
+                if local_path.exists():
+                    local_path.unlink()
+            except Exception:
+                pass
+
 
 @router.post("/{class_id:int}")
 async def upload_file(class_id: int, file: UploadFile = File(...)):
@@ -168,32 +207,25 @@ async def upload_file(class_id: int, file: UploadFile = File(...)):
         )
         await conn.commit()
 
-    # 4) conditional OCR + indexing (PDF only)
+    # 4) conditional OCR + indexing (PDF only) - run async to keep uploads fast
     status = "UPLOADED"
     ocr_job_id = None
-    try:
-        if safe_name.lower().endswith(".pdf"):
-            is_digital, sample_text = detect_digital_pdf(str(local_path), max_pages=3, min_chars=200)
-            if is_digital:
-                page_texts = extract_page_texts(str(local_path))
-                full_text = "\n".join(page_texts)
-                cache_key = f"filetext:{file_id}:{storage_key or size_bytes}"
-                cache_set(cache_key, full_text.encode("utf-8"), ttl_seconds=86400)
-                total = await index_file(file_id, page_texts=page_texts)
-                status = "INDEXED" if total > 0 else "FAILED"
-                await _update_file_status(file_id, status, error=None, indexed=total > 0)
-            else:
-                output_prefix = build_s3_document_prefix("public", owner_uid, class_id, file_id)
-                queued = await _queue_ocr_job(file_id, output_prefix)
-                ocr_job_id = queued["job_id"]
-                status = "OCR_QUEUED"
-                await _update_file_status(file_id, status, ocr_job_id=ocr_job_id)
-        else:
-            await _update_file_status(file_id, status)
-    except Exception as e:
-        log.error(f"[files] processing failed for {file_id}: {e}")
-        await _update_file_status(file_id, "FAILED", error=str(e))
-        status = "FAILED"
+    if safe_name.lower().endswith(".pdf"):
+        status = "PROCESSING"
+        await _update_file_status(file_id, status)
+        asyncio.create_task(
+            _process_pdf_async(
+                file_id=file_id,
+                safe_name=safe_name,
+                local_path=local_path,
+                class_id=class_id,
+                owner_uid=owner_uid,
+                storage_backend=storage_backend,
+                storage_key=storage_key,
+            )
+        )
+    else:
+        await _update_file_status(file_id, status)
 
     return {
         "id": file_id,
