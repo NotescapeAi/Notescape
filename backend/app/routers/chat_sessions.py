@@ -23,6 +23,7 @@ async def _ensure_chat_schema():
               id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
               user_id TEXT NOT NULL,
               class_id INT NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+              document_id UUID REFERENCES files(id) ON DELETE SET NULL,
               title TEXT NOT NULL DEFAULT 'New chat',
               created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
               updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -38,6 +39,8 @@ async def _ensure_chat_schema():
               content TEXT NOT NULL,
               citations JSONB,
               selected_text TEXT,
+              page_number INT,
+              bounding_box JSONB,
               file_id UUID REFERENCES files(id) ON DELETE SET NULL,
               file_scope JSONB,
               image_attachment JSONB,
@@ -45,11 +48,16 @@ async def _ensure_chat_schema():
             )
             """
         )
+        await cur.execute("ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS document_id UUID REFERENCES files(id) ON DELETE SET NULL")
         await cur.execute("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS selected_text TEXT")
+        await cur.execute("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS page_number INT")
+        await cur.execute("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS bounding_box JSONB")
         await cur.execute("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS file_id UUID REFERENCES files(id) ON DELETE SET NULL")
         await cur.execute("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS file_scope JSONB")
         await cur.execute("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS image_attachment JSONB")
-        await cur.execute("CREATE INDEX IF NOT EXISTS chat_sessions_user_class_idx ON chat_sessions (user_id, class_id, updated_at DESC)")
+        await cur.execute(
+            "CREATE INDEX IF NOT EXISTS chat_sessions_user_class_doc_idx ON chat_sessions (user_id, class_id, document_id, updated_at DESC)"
+        )
         await cur.execute("CREATE INDEX IF NOT EXISTS chat_messages_session_idx ON chat_messages (session_id, created_at ASC)")
         await conn.commit()
     async with db_conn() as (conn, cur):
@@ -61,7 +69,7 @@ async def _ensure_chat_schema():
             """
         )
         cols = {r[0] for r in await cur.fetchall()}
-    required = {"selected_text", "file_id", "file_scope", "image_attachment"}
+    required = {"selected_text", "page_number", "bounding_box", "file_id", "file_scope", "image_attachment"}
     _schema_checked = required.issubset(cols)
     if not _schema_checked:
         log.warning(f"[chat] schema incomplete, missing: {sorted(list(required - cols))}")
@@ -69,6 +77,7 @@ async def _ensure_chat_schema():
 
 class ChatSessionCreate(BaseModel):
     class_id: int
+    document_id: Optional[str] = None
     title: Optional[str] = Field(default="New chat")
 
 
@@ -77,6 +86,8 @@ class ChatMessageCreate(BaseModel):
     assistant_content: str
     citations: Optional[List[Dict[str, Any]]] = None
     selected_text: Optional[str] = None
+    page_number: Optional[int] = None
+    bounding_box: Optional[Dict[str, Any]] = None
     file_id: Optional[str] = None
     file_scope: Optional[List[str]] = None
     image_attachment: Optional[Dict[str, Any]] = None
@@ -97,37 +108,49 @@ async def _ensure_class_owner(class_id: int, user_id: str):
 async def create_session(payload: ChatSessionCreate, user_id: str = Depends(get_request_user_uid)):
     await _ensure_chat_schema()
     await _ensure_class_owner(payload.class_id, user_id)
+    if payload.document_id:
+        async with db_conn() as (conn, cur):
+            await cur.execute(
+                "SELECT 1 FROM files WHERE id=%s AND class_id=%s",
+                (payload.document_id, payload.class_id),
+            )
+            if not await cur.fetchone():
+                raise HTTPException(status_code=404, detail="File not found in class")
     async with db_conn() as (conn, cur):
         await cur.execute(
             """
-            INSERT INTO chat_sessions (user_id, class_id, title)
-            VALUES (%s, %s, %s)
-            RETURNING id::text, class_id, title, created_at, updated_at
+            INSERT INTO chat_sessions (user_id, class_id, document_id, title)
+            VALUES (%s, %s, %s, %s)
+            RETURNING id::text, class_id, document_id::text, title, created_at, updated_at
             """,
-            (user_id, payload.class_id, payload.title or "New chat"),
+            (user_id, payload.class_id, payload.document_id, payload.title or "New chat"),
         )
         row = await cur.fetchone()
         await conn.commit()
-    cols = ["id", "class_id", "title", "created_at", "updated_at"]
+    cols = ["id", "class_id", "document_id", "title", "created_at", "updated_at"]
     return dict(zip(cols, row))
 
 
 @router.get("/sessions")
-async def list_sessions(class_id: int, user_id: str = Depends(get_request_user_uid)):
+async def list_sessions(
+    class_id: int,
+    document_id: Optional[str] = Query(default=None),
+    user_id: str = Depends(get_request_user_uid),
+):
     await _ensure_chat_schema()
     await _ensure_class_owner(class_id, user_id)
     async with db_conn() as (conn, cur):
         await cur.execute(
             """
-            SELECT id::text, class_id, title, created_at, updated_at
+            SELECT id::text, class_id, document_id::text, title, created_at, updated_at
             FROM chat_sessions
-            WHERE user_id=%s AND class_id=%s
+            WHERE user_id=%s AND class_id=%s AND (%s::uuid IS NULL OR document_id=%s::uuid)
             ORDER BY updated_at DESC
             """,
-            (user_id, class_id),
+            (user_id, class_id, document_id, document_id),
         )
         rows = await cur.fetchall()
-    cols = ["id", "class_id", "title", "created_at", "updated_at"]
+    cols = ["id", "class_id", "document_id", "title", "created_at", "updated_at"]
     return [dict(zip(cols, r)) for r in rows]
 
 
@@ -137,7 +160,7 @@ async def get_session(session_id: str, user_id: str = Depends(get_request_user_u
     async with db_conn() as (conn, cur):
         await cur.execute(
             """
-            SELECT id::text, class_id, title, created_at, updated_at
+            SELECT id::text, class_id, document_id::text, title, created_at, updated_at
             FROM chat_sessions
             WHERE id=%s AND user_id=%s
             """,
@@ -149,7 +172,7 @@ async def get_session(session_id: str, user_id: str = Depends(get_request_user_u
         if _schema_checked:
             await cur.execute(
                 """
-                SELECT id::text, role, content, citations, selected_text, file_id::text, file_scope, image_attachment, created_at
+                SELECT id::text, role, content, citations, selected_text, page_number, bounding_box, file_id::text, file_scope, image_attachment, created_at
                 FROM chat_messages
                 WHERE session_id=%s
                 ORDER BY created_at ASC
@@ -167,9 +190,21 @@ async def get_session(session_id: str, user_id: str = Depends(get_request_user_u
                 (session_id,),
             )
         msgs = await cur.fetchall()
-    sess_cols = ["id", "class_id", "title", "created_at", "updated_at"]
+    sess_cols = ["id", "class_id", "document_id", "title", "created_at", "updated_at"]
     msg_cols = (
-        ["id", "role", "content", "citations", "selected_text", "file_id", "file_scope", "image_attachment", "created_at"]
+        [
+            "id",
+            "role",
+            "content",
+            "citations",
+            "selected_text",
+            "page_number",
+            "bounding_box",
+            "file_id",
+            "file_scope",
+            "image_attachment",
+            "created_at",
+        ]
         if _schema_checked
         else ["id", "role", "content", "citations", "created_at"]
     )
@@ -196,7 +231,7 @@ async def list_session_messages(session_id: str, user_id: str = Depends(get_requ
         if _schema_checked:
             await cur.execute(
                 """
-                SELECT id::text, role, content, citations, selected_text, file_id::text, file_scope, image_attachment, created_at
+                SELECT id::text, role, content, citations, selected_text, page_number, bounding_box, file_id::text, file_scope, image_attachment, created_at
                 FROM chat_messages
                 WHERE session_id=%s
                 ORDER BY created_at ASC
@@ -216,7 +251,19 @@ async def list_session_messages(session_id: str, user_id: str = Depends(get_requ
         msgs = await cur.fetchall()
     log.info(f"[chat] list_messages session_id={session_id} count={len(msgs)}")
     msg_cols = (
-        ["id", "role", "content", "citations", "selected_text", "file_id", "file_scope", "image_attachment", "created_at"]
+        [
+            "id",
+            "role",
+            "content",
+            "citations",
+            "selected_text",
+            "page_number",
+            "bounding_box",
+            "file_id",
+            "file_scope",
+            "image_attachment",
+            "created_at",
+        ]
         if _schema_checked
         else ["id", "role", "content", "citations", "created_at"]
     )
@@ -274,15 +321,17 @@ async def add_messages(session_id: str, payload: ChatMessageCreate, user_id: str
     file_scope_json = Json(payload.file_scope) if payload.file_scope is not None else None
     image_attachment_json = Json(payload.image_attachment) if payload.image_attachment is not None else None
     citations_json = Json(payload.citations) if payload.citations is not None else None
+    bounding_box_json = Json(payload.bounding_box) if payload.bounding_box is not None else None
     async with db_conn() as (conn, cur):
         await cur.execute(
-            "SELECT class_id FROM chat_sessions WHERE id=%s AND user_id=%s",
+            "SELECT class_id, document_id::text FROM chat_sessions WHERE id=%s AND user_id=%s",
             (session_id, user_id),
         )
         row = await cur.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Session not found")
         class_id = row[0]
+        document_id = row[1]
         if payload.file_id:
             await cur.execute(
                 "SELECT 1 FROM files WHERE id=%s AND class_id=%s",
@@ -290,18 +339,29 @@ async def add_messages(session_id: str, payload: ChatMessageCreate, user_id: str
             )
             if not await cur.fetchone():
                 raise HTTPException(status_code=404, detail="File not found in class")
+        if document_id and payload.file_id and payload.file_id != document_id:
+            raise HTTPException(status_code=404, detail="File not found in session scope")
         if _schema_checked:
             await cur.execute(
                 """
-                INSERT INTO chat_messages (session_id, role, content, citations, selected_text, file_id, file_scope, image_attachment)
-                VALUES (%s, 'user', %s, NULL, %s, %s, %s, %s)
+                INSERT INTO chat_messages (session_id, role, content, citations, selected_text, page_number, bounding_box, file_id, file_scope, image_attachment)
+                VALUES (%s, 'user', %s, NULL, %s, %s, %s, %s, %s, %s)
                 """,
-                (session_id, payload.user_content, payload.selected_text, payload.file_id, file_scope_json, image_attachment_json),
+                (
+                    session_id,
+                    payload.user_content,
+                    payload.selected_text,
+                    payload.page_number,
+                    bounding_box_json,
+                    payload.file_id,
+                    file_scope_json,
+                    image_attachment_json,
+                ),
             )
             await cur.execute(
                 """
-                INSERT INTO chat_messages (session_id, role, content, citations, selected_text, file_id, file_scope, image_attachment)
-                VALUES (%s, 'assistant', %s, %s, NULL, NULL, %s, NULL)
+                INSERT INTO chat_messages (session_id, role, content, citations, selected_text, page_number, bounding_box, file_id, file_scope, image_attachment)
+                VALUES (%s, 'assistant', %s, %s, NULL, NULL, NULL, %s, NULL)
                 """,
                 (session_id, payload.assistant_content, citations_json, file_scope_json),
             )
@@ -329,7 +389,7 @@ async def add_messages(session_id: str, payload: ChatMessageCreate, user_id: str
         if _schema_checked:
             await cur.execute(
                 """
-                SELECT id::text, role, content, citations, selected_text, file_id::text, file_scope, image_attachment, created_at
+                SELECT id::text, role, content, citations, selected_text, page_number, bounding_box, file_id::text, file_scope, image_attachment, created_at
                 FROM chat_messages
                 WHERE session_id=%s
                 ORDER BY created_at ASC
@@ -349,7 +409,19 @@ async def add_messages(session_id: str, payload: ChatMessageCreate, user_id: str
         msgs = await cur.fetchall()
     log.info(f"[chat] add_messages session_id={session_id} saved=2 total={len(msgs)}")
     msg_cols = (
-        ["id", "role", "content", "citations", "selected_text", "file_id", "file_scope", "image_attachment", "created_at"]
+        [
+            "id",
+            "role",
+            "content",
+            "citations",
+            "selected_text",
+            "page_number",
+            "bounding_box",
+            "file_id",
+            "file_scope",
+            "image_attachment",
+            "created_at",
+        ]
         if _schema_checked
         else ["id", "role", "content", "citations", "created_at"]
     )

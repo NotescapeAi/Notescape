@@ -7,6 +7,7 @@ import {
   listClasses,
   listFiles,
   getFlashcardProgress,
+  getMasteryStats,
   createFlashcard,
   updateFlashcard,
   type Flashcard,
@@ -75,6 +76,13 @@ export default function FlashcardsPage() {
   const [files, setFiles] = useState<{ id: string; filename: string }[]>([]);
   const [fileFilter, setFileFilter] = useState<string>("all");
   const [progress, setProgress] = useState<{ total: number; due_now: number; due_today: number; learning: number } | null>(null);
+  const [masteryStats, setMasteryStats] = useState<{
+    total_unique: number;
+    mastered_count: number;
+    mastery_percent: number;
+    total_reviews: number;
+    average_rating: number;
+  } | null>(null);
 
   const [formOpen, setFormOpen] = useState(false);
   const [editingCard, setEditingCard] = useState<Flashcard | null>(null);
@@ -90,11 +98,12 @@ export default function FlashcardsPage() {
 
   async function loadData(currentFileFilter: string) {
     if (!id) return;
-    const [cards, classes, filesRes, prog] = await Promise.all([
+    const [cards, classes, filesRes, prog, mastery] = await Promise.all([
       listFlashcards(id, currentFileFilter === "all" ? undefined : currentFileFilter),
       listClasses(),
       listFiles(id),
       getFlashcardProgress(id, currentFileFilter === "all" ? undefined : currentFileFilter),
+      getMasteryStats(id, currentFileFilter === "all" ? undefined : currentFileFilter),
     ]);
 
     setCardsRaw(Array.isArray(cards) ? cards : []);
@@ -102,6 +111,7 @@ export default function FlashcardsPage() {
     setClassName(cls?.name || `Class #${id}`);
     setFiles((filesRes ?? []).map((f) => ({ id: f.id, filename: f.filename })));
     setProgress(prog ?? null);
+    setMasteryStats(mastery ?? null);
   }
 
   useEffect(() => {
@@ -294,6 +304,23 @@ export default function FlashcardsPage() {
 
         <div className="mt-2 grid grid-cols-1 md:grid-cols-4 gap-3">
           {[
+            { label: "Mastery", value: `${masteryStats?.mastery_percent ?? 0}%` },
+            { label: "Mastered cards", value: masteryStats?.mastered_count ?? 0 },
+            { label: "Avg rating", value: masteryStats?.average_rating?.toFixed?.(2) ?? "0.00" },
+            { label: "Reviews", value: masteryStats?.total_reviews ?? 0 },
+          ].map((stat) => (
+            <div
+              key={stat.label}
+              className="rounded-[22px] surface p-4 shadow-[0_12px_30px_rgba(15,16,32,0.08)]"
+            >
+              <div className="text-xs text-muted">{stat.label}</div>
+              <div className="text-2xl font-semibold text-main">{stat.value}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-2 grid grid-cols-1 md:grid-cols-4 gap-3">
+          {[
             { label: "Due now", value: progress?.due_now ?? 0 },
             { label: "Due today", value: progress?.due_today ?? 0 },
             { label: "Learning", value: progress?.learning ?? 0 },
@@ -404,7 +431,7 @@ export default function FlashcardsPage() {
                   <textarea
                     value={formState.question}
                     onChange={(e) => setFormState((s) => ({ ...s, question: e.target.value }))}
-                    className="mt-1 w-full rounded-xl border border-token px-3 py-2 text-sm"
+                  className="mt-1 w-full rounded-xl border border-token surface px-3 py-2 text-sm text-main placeholder:text-muted"
                     rows={3}
                   />
                 </div>
@@ -413,7 +440,7 @@ export default function FlashcardsPage() {
                   <textarea
                     value={formState.answer}
                     onChange={(e) => setFormState((s) => ({ ...s, answer: e.target.value }))}
-                    className="mt-1 w-full rounded-xl border border-token px-3 py-2 text-sm"
+                  className="mt-1 w-full rounded-xl border border-token surface px-3 py-2 text-sm text-main placeholder:text-muted"
                     rows={4}
                   />
                 </div>
@@ -422,7 +449,7 @@ export default function FlashcardsPage() {
                   <input
                     value={formState.hint}
                     onChange={(e) => setFormState((s) => ({ ...s, hint: e.target.value }))}
-                    className="mt-1 h-10 w-full rounded-xl border border-token px-3 text-sm"
+                  className="mt-1 h-10 w-full rounded-xl border border-token surface px-3 text-sm text-main placeholder:text-muted"
                   />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -433,7 +460,7 @@ export default function FlashcardsPage() {
                       onChange={(e) =>
                         setFormState((s) => ({ ...s, difficulty: e.target.value as FormState["difficulty"] }))
                       }
-                      className="mt-1 h-10 w-full rounded-xl border border-token px-3 text-sm"
+                      className="mt-1 h-10 w-full rounded-xl border border-token surface px-3 text-sm text-main placeholder:text-muted"
                     >
                       <option value="easy">Easy</option>
                       <option value="medium">Medium</option>
@@ -445,7 +472,7 @@ export default function FlashcardsPage() {
                     <select
                       value={formState.file_id}
                       onChange={(e) => setFormState((s) => ({ ...s, file_id: e.target.value }))}
-                      className="mt-1 h-10 w-full rounded-xl border border-token px-3 text-sm"
+                      className="mt-1 h-10 w-full rounded-xl border border-token surface px-3 text-sm text-main placeholder:text-muted"
                     >
                       <option value="">No file</option>
                       {files.map((f) => (
@@ -461,7 +488,7 @@ export default function FlashcardsPage() {
                   <input
                     value={formState.tags}
                     onChange={(e) => setFormState((s) => ({ ...s, tags: e.target.value }))}
-                    className="mt-1 h-10 w-full rounded-xl border border-token px-3 text-sm"
+                  className="mt-1 h-10 w-full rounded-xl border border-token surface px-3 text-sm text-main placeholder:text-muted"
                   />
                 </div>
                 {editingCard && (

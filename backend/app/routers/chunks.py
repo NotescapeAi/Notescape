@@ -7,11 +7,13 @@ from urllib.parse import urlparse
 import regex as re
 from uuid import UUID
 import logging
+from io import BytesIO
 
 from pypdf import PdfReader
 
 from app.core.db import db_conn
 from app.core.settings import settings
+from app.core.storage import get_object_bytes
 
 router = APIRouter(prefix="/api", tags=["chunks"])
 log = logging.getLogger("uvicorn.error")
@@ -96,10 +98,7 @@ def _chunk_text(text: str, size: int, overlap: int) -> List[str]:
     return out
 
 
-def _read_pdf_pages(abs_pdf_path: Path) -> List[str]:
-    if not abs_pdf_path.exists():
-        return []
-    reader = PdfReader(str(abs_pdf_path))
+def _read_pdf_pages_from_reader(reader: PdfReader) -> List[str]:
     if getattr(reader, "is_encrypted", False):
         try:
             reader.decrypt("")  # empty password PDFs
@@ -116,6 +115,18 @@ def _read_pdf_pages(abs_pdf_path: Path) -> List[str]:
             log.error(f"Error extracting text from page: {p} | {str(e)}")
             out.append("")
     return out
+
+def _read_pdf_pages(abs_pdf_path: Path) -> List[str]:
+    if not abs_pdf_path.exists():
+        return []
+    reader = PdfReader(str(abs_pdf_path))
+    return _read_pdf_pages_from_reader(reader)
+
+def _read_pdf_pages_from_bytes(data: bytes) -> List[str]:
+    if not data:
+        return []
+    reader = PdfReader(BytesIO(data))
+    return _read_pdf_pages_from_reader(reader)
 
 def _rel_from_storage_url(storage_url: str) -> PurePosixPath:
     """
@@ -182,9 +193,12 @@ async def create_chunks(payload: ChunkRequest, request: Request) -> List[ChunkPr
             results.append(ChunkPreview(file_id=fid_str, total_chunks=0, previews=[], note="Invalid file id"))
             continue
 
-        # Fetch storage_url (and filename if available)
+        # Fetch storage_url + storage_key
         async with db_conn() as (conn, cur):
-            await cur.execute("SELECT storage_url FROM files WHERE id=%s", (fid,))
+            await cur.execute(
+                "SELECT storage_url, storage_key, storage_backend, mime_type FROM files WHERE id=%s",
+                (fid,),
+            )
             row = await cur.fetchone()
 
         if not row:
@@ -192,26 +206,52 @@ async def create_chunks(payload: ChunkRequest, request: Request) -> List[ChunkPr
             continue
 
         storage_url: str = row[0]
-        rel = _rel_from_storage_url(storage_url)
+        storage_key: str | None = row[1]
+        storage_backend: str | None = row[2]
+        mime_type: str | None = row[3]
 
-        # Candidate paths (first one should usually exist)
-        candidates = [
-            (uploads_root / Path(rel.as_posix())).resolve(),
-            (uploads_root / rel.name).resolve(),  # just the filename as a fallback
-        ]
-
-        abs_path = next((p for p in candidates if p.exists()), None)
-        if not abs_path:
-            tried = " | ".join(str(c) for c in candidates)
-            log.warning(f"[chunks] no file on disk for {fid_str}. Tried: {tried}")
+        if mime_type and "pdf" not in mime_type.lower():
             results.append(ChunkPreview(
-                file_id=fid_str, total_chunks=0, previews=[],
-                note=f"File not found on disk. Tried: {tried}"
+                file_id=fid_str,
+                total_chunks=0,
+                previews=[],
+                note="This file type is not supported for text extraction yet."
             ))
             continue
 
-        # Extract page texts
-        pages = _read_pdf_pages(abs_path)
+        pages: List[str] = []
+        if storage_backend and storage_backend.lower() == "s3" and storage_key:
+            try:
+                data = get_object_bytes(storage_key)
+                pages = _read_pdf_pages_from_bytes(data)
+            except Exception as e:
+                log.error(f"[chunks] failed to read s3 object for {fid_str}: {e}")
+                results.append(ChunkPreview(
+                    file_id=fid_str, total_chunks=0, previews=[],
+                    note="Could not read the PDF from storage."
+                ))
+                continue
+        else:
+            rel = _rel_from_storage_url(storage_url)
+
+            # Candidate paths (first one should usually exist)
+            candidates = [
+                (uploads_root / Path(rel.as_posix())).resolve(),
+                (uploads_root / rel.name).resolve(),  # just the filename as a fallback
+            ]
+
+            abs_path = next((p for p in candidates if p.exists()), None)
+            if not abs_path:
+                tried = " | ".join(str(c) for c in candidates)
+                log.warning(f"[chunks] no file on disk for {fid_str}. Tried: {tried}")
+                results.append(ChunkPreview(
+                    file_id=fid_str, total_chunks=0, previews=[],
+                    note=f"File not found on disk. Tried: {tried}"
+                ))
+                continue
+
+            # Extract page texts
+            pages = _read_pdf_pages(abs_path)
 
         # Build chunks
         chunks: List[str] = []

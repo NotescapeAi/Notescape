@@ -34,7 +34,7 @@ const ContactPage = () => {
   };
 
   return (
-    <div className="bg-gradient-to-br from-purple-50 via-white to-purple-100 min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col bg-[var(--bg)]">
       <Navbar />
 
       <main className="flex-1 w-full px-4 sm:px-6 lg:px-8 py-16 pb-32">
@@ -45,12 +45,12 @@ const ContactPage = () => {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.8, ease: "easeOut" }}
         >
-          <h1 className="text-[42px] font-bold text-purple-700 mb-6">
+          <h1 className="text-[42px] font-bold text-main mb-6">
             Contact & Support
           </h1>
 
           <motion.p
-            className="text-gray-700 text-lg max-w-2xl mx-auto"
+            className="text-muted text-lg max-w-2xl mx-auto"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.4, duration: 0.8 }}
@@ -71,39 +71,39 @@ const ContactPage = () => {
             className="surface-80 backdrop-blur-md shadow-2xl rounded-2xl p-8 sm:p-10 space-y-6 border border-token"
           >
             <div>
-              <label className="block text-gray-700 font-semibold mb-2">Name</label>
+              <label className="block text-muted font-semibold mb-2">Name</label>
               <input
                 type="text"
                 name="name"
                 value={formData.name}
                 onChange={handleChange}
                 required
-                className="w-full border border-token rounded-lg px-4 py-3 focus:ring-2 focus:ring-[var(--ring)] focus:border-[var(--primary)] outline-none transition"
+                className="w-full border border-token surface text-main placeholder:text-muted rounded-lg px-4 py-3 focus:ring-2 focus:ring-[var(--ring)] focus:border-[var(--primary)] outline-none transition"
                 placeholder="Enter your name"
               />
             </div>
 
             <div>
-              <label className="block text-gray-700 font-semibold mb-2">Email</label>
+              <label className="block text-muted font-semibold mb-2">Email</label>
               <input
                 type="email"
                 name="email"
                 value={formData.email}
                 onChange={handleChange}
                 required
-                className="w-full border border-token rounded-lg px-4 py-3 focus:ring-2 focus:ring-[var(--ring)] focus:border-[var(--primary)] outline-none transition"
+                className="w-full border border-token surface text-main placeholder:text-muted rounded-lg px-4 py-3 focus:ring-2 focus:ring-[var(--ring)] focus:border-[var(--primary)] outline-none transition"
                 placeholder="Enter your email"
               />
             </div>
 
             <div>
-              <label className="block text-gray-700 font-semibold mb-2">Message</label>
+              <label className="block text-muted font-semibold mb-2">Message</label>
               <textarea
                 name="message"
                 value={formData.message}
                 onChange={handleChange}
                 required
-                className="w-full border border-token rounded-lg px-4 py-3 h-40 focus:ring-2 focus:ring-[var(--ring)] focus:border-[var(--primary)] outline-none transition resize-none"
+                className="w-full border border-token surface text-main placeholder:text-muted rounded-lg px-4 py-3 h-40 focus:ring-2 focus:ring-[var(--ring)] focus:border-[var(--primary)] outline-none transition resize-none"
                 placeholder="Write your message here..."
               />
             </div>
@@ -113,7 +113,7 @@ const ContactPage = () => {
               disabled={status === "loading"}
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              className="w-full bg-purple-600 text-inverse px-8 py-3 rounded-lg font-semibold text-lg shadow-md hover:bg-purple-700 hover:shadow-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full bg-[var(--primary)] text-inverse px-8 py-3 rounded-lg font-semibold text-lg shadow-md hover:opacity-90 hover:shadow-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {status === "loading" ? "Sending..." : "Send Message"}
             </motion.button>
@@ -121,22 +121,22 @@ const ContactPage = () => {
             {/* Animated feedback messages */}
             {status === "success" && (
               <motion.p
-                className="text-green-600 font-medium mt-4 text-center"
+                className="text-emerald-500 font-medium mt-4 text-center"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ duration: 0.6 }}
               >
-                ✅ Your message has been sent successfully!
+                Your message has been sent successfully.
               </motion.p>
             )}
             {status === "error" && (
               <motion.p
-                className="text-red-600 font-medium mt-4 text-center"
+                className="text-rose-500 font-medium mt-4 text-center"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ duration: 0.6 }}
               >
-                ❌ Something went wrong. Please try again.
+                Something went wrong. Please try again.
               </motion.p>
             )}
           </form>

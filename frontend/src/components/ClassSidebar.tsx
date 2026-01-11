@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { ChevronLeft } from "lucide-react";
 import type { ClassRow } from "../lib/api";
 import Button from "./Button";
 
@@ -8,9 +9,18 @@ type Props = {
   selectedId: number | null;
   onSelect: (id: number) => void;
   onNew: () => void;
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
 };
 
-export default function ClassSidebar({ items, selectedId, onSelect, onNew }: Props) {
+export default function ClassSidebar({
+  items,
+  selectedId,
+  onSelect,
+  onNew,
+  collapsed = false,
+  onToggleCollapse,
+}: Props) {
   const [q, setQ] = useState("");
   const chips = [
     "from-[var(--primary)] to-[var(--accent-pink)]",
@@ -26,22 +36,62 @@ export default function ClassSidebar({ items, selectedId, onSelect, onNew }: Pro
   }, [items, q]);
 
   return (
-    <aside className="h-full w-[320px] shrink-0 rounded-[28px] surface shadow-token">
-      <div className="border-b border-token px-5 py-5">
-        <div className="text-xs uppercase tracking-[0.3em] text-[var(--primary)]">My Classes</div>
-        <div className="mt-1 text-2xl font-semibold text-main">Your Classes</div>
-        <div className="text-xs text-muted">{items.length} active</div>
-        <div className="mt-4 flex items-center gap-2">
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search classes"
-            className="h-10 w-full rounded-2xl border border-token surface px-3 text-sm"
-          />
+    <aside
+      className={`h-full shrink-0 rounded-[28px] surface shadow-token transition-[width] duration-200 ${
+        collapsed ? "w-[84px]" : "w-[300px]"
+      }`}
+    >
+      <div className="border-b border-token px-4 py-5">
+        <div className="flex items-center justify-between gap-2">
+          <div className={`${collapsed ? "text-center w-full" : ""}`}>
+            {!collapsed && (
+              <div className="text-xs uppercase tracking-[0.3em] text-[var(--primary)]">Classes</div>
+            )}
+            <div className={`mt-1 font-semibold text-main ${collapsed ? "text-sm" : "text-2xl"}`}>
+              Your Classes
+            </div>
+            <div className="text-xs text-muted">{items.length} active</div>
+          </div>
+          <button
+            onClick={onToggleCollapse}
+            aria-label="Collapse My Classes panel"
+            className="h-8 w-8 rounded-full text-[var(--primary)] hover:bg-[rgba(123,95,239,0.12)]"
+            type="button"
+          >
+            <ChevronLeft
+              className="mx-auto h-4 w-4"
+              style={{
+                transition: "transform 0.25s ease",
+                transform: collapsed ? "rotate(180deg)" : "rotate(0deg)",
+              }}
+            />
+          </button>
         </div>
-        <Button variant="primary" className="mt-4 w-full rounded-2xl" onClick={onNew}>
-          New class
-        </Button>
+        {!collapsed && (
+          <>
+            <div className="mt-4 flex items-center gap-2">
+              <input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Search classes"
+                className="h-10 w-full rounded-2xl border border-token surface px-3 text-sm"
+              />
+            </div>
+            <Button variant="primary" className="mt-4 w-full rounded-2xl" onClick={onNew}>
+              New class
+            </Button>
+          </>
+        )}
+        {collapsed && (
+          <button
+            onClick={onNew}
+            className="mt-4 flex h-10 w-full items-center justify-center rounded-2xl border border-token text-base text-[var(--primary)]"
+            title="New class"
+            type="button"
+          >
+            +
+          </button>
+        )}
       </div>
 
       <div className="p-4">
@@ -50,7 +100,7 @@ export default function ClassSidebar({ items, selectedId, onSelect, onNew }: Pro
             {q ? "No classes match your search." : "No classes yet."}
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className={`space-y-3 ${collapsed ? "flex flex-col items-center" : ""}`}>
             {filtered.map((c, idx) => {
               const isActive = c.id === selectedId;
               const chip = chips[idx % chips.length];
@@ -58,11 +108,12 @@ export default function ClassSidebar({ items, selectedId, onSelect, onNew }: Pro
                 <button
                   key={c.id}
                   onClick={() => onSelect(c.id)}
+                  title={collapsed ? c.name : undefined}
                   className={`w-full rounded-2xl border px-4 py-3 text-left text-sm transition ${
                     isActive
                       ? "border-strong surface shadow-token"
                       : "border-token surface-80 hover:border-token"
-                  }`}
+                  } ${collapsed ? "flex w-12 flex-col items-center px-2 py-2 text-center" : ""}`}
                 >
                   <div className="flex items-center gap-3">
                     <span
@@ -70,10 +121,12 @@ export default function ClassSidebar({ items, selectedId, onSelect, onNew }: Pro
                     >
                       {c.name.slice(0, 2).toUpperCase()}
                     </span>
-                    <div>
-                      <div className="font-semibold text-main truncate">{c.name}</div>
-                      <div className="text-xs text-muted">{c.subject ?? "General"}</div>
-                    </div>
+                    {!collapsed && (
+                      <div>
+                        <div className="font-semibold text-main truncate">{c.name}</div>
+                        <div className="text-xs text-muted">{c.subject ?? "General"}</div>
+                      </div>
+                    )}
                   </div>
                 </button>
               );

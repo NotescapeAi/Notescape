@@ -93,15 +93,15 @@ export default function Dashboard() {
   ];
 
   return (
-    <AppShell title="Your Workspace" breadcrumbs={["Dashboard"]} showGreeting>
+    <AppShell title="Dashboard">
       <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6">
         <section className="grid grid-cols-1 gap-4 lg:grid-cols-[1.2fr_1fr]">
           <div className="relative overflow-hidden rounded-[28px] bg-gradient-to-br from-[var(--primary)] via-[var(--primary)] to-[var(--accent-pink)] p-8 text-inverse shadow-[0_24px_60px_rgba(123,95,239,0.32)] animate-hero-gradient">
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.22),_transparent_55%)]" />
             <div className="relative space-y-3">
-              <div className="text-xs uppercase tracking-[0.35em] text-inverse opacity-80">Continue where you left off</div>
-              <h2 className="text-3xl font-semibold">Pick up the next concept, right now.</h2>
-              <p className="text-sm text-inverse opacity-80">Resume your last class or jump into flashcards due today.</p>
+              <div className="text-xs uppercase tracking-[0.35em] text-inverse opacity-80">Continue</div>
+              <h2 className="text-3xl font-semibold">Pick up the next concept.</h2>
+              <p className="text-sm text-inverse opacity-80">Resume your last class or jump into due cards.</p>
               <Link
                 to="/classes"
                 className="inline-flex items-center gap-2 rounded-full surface px-5 py-2.5 text-sm font-semibold text-[var(--primary)] shadow-lg"

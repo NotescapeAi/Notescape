@@ -102,7 +102,7 @@ export default function Profile() {
                   type="text"
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
-                  className="mt-1 h-10 w-full rounded-lg border border-token px-3 text-sm"
+                  className="mt-1 h-10 w-full rounded-lg border border-token surface px-3 text-sm text-main placeholder:text-muted"
                 />
               </div>
               <div>
@@ -111,7 +111,7 @@ export default function Profile() {
                   type="email"
                   value={profile?.email || ""}
                   readOnly
-                  className="mt-1 h-10 w-full rounded-lg border border-token px-3 text-sm"
+                  className="mt-1 h-10 w-full rounded-lg border border-token surface px-3 text-sm text-main placeholder:text-muted"
                 />
               </div>
               <div>
@@ -120,7 +120,7 @@ export default function Profile() {
                   type="text"
                   value={avatarUrl}
                   onChange={(e) => setAvatarUrl(e.target.value)}
-                  className="mt-1 h-10 w-full rounded-lg border border-token px-3 text-sm"
+                  className="mt-1 h-10 w-full rounded-lg border border-token surface px-3 text-sm text-main placeholder:text-muted"
                   placeholder="Optional"
                 />
               </div>

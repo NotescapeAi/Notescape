@@ -1,4 +1,4 @@
-import { Bell, ChevronDown, Moon, Sun } from "lucide-react";
+import { ChevronDown, Moon, Sun } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import BackLink from "./BackLink";
@@ -37,7 +37,7 @@ export default function TopBar({ title, breadcrumbs, subtitle, showGreeting, bac
   }, [open]);
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-4 rounded-[28px] bg-[var(--surface)] px-6 py-5 shadow-[var(--shadow)]">
+    <div className="sticky top-4 z-30 flex flex-wrap items-center justify-between gap-4 rounded-[28px] bg-[var(--surface)] px-6 py-5 shadow-[var(--shadow)]">
       <div>
         {backLabel && (
           <div className="mb-2">
@@ -66,13 +66,6 @@ export default function TopBar({ title, breadcrumbs, subtitle, showGreeting, bac
           title="Theme"
         >
           {resolvedTheme === "dark" ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-        </button>
-        <button
-          type="button"
-          className="flex h-11 w-11 items-center justify-center rounded-full text-[var(--muted)] hover:bg-[rgba(123,95,239,0.12)]"
-          aria-label="Notifications"
-        >
-          <Bell className="h-5 w-5" />
         </button>
         <div className="relative" ref={menuRef}>
           <button

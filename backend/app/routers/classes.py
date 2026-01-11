@@ -1,14 +1,19 @@
 # backend/app/routers/classes.py
 from fastapi import APIRouter, HTTPException, Depends
+from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 import logging
+from pathlib import Path, PurePosixPath
 from app.core.db import db_conn
 from app.dependencies import get_current_user_uid
+from app.core.settings import settings
+from app.core.storage import presign_get_url
 
 logging.getLogger("uvicorn.error").info(f"Loaded classes router from {__file__}")
 
 router = APIRouter(prefix="/api/classes", tags=["classes"])
+UPLOAD_ROOT = Path(settings.upload_root)
 
 class ClassCreate(BaseModel):
     name: str
@@ -87,4 +92,79 @@ async def delete_class(class_id: int, user_uid: str = Depends(get_current_user_u
         )
         await conn.commit()
     return
+
+@router.get("/{class_id}/documents/{document_id}/download")
+async def download_document(
+    class_id: int,
+    document_id: str,
+    user_uid: str = Depends(get_current_user_uid),
+):
+    async with db_conn() as (conn, cur):
+        await cur.execute(
+            """
+            SELECT files.storage_key, files.storage_url, files.mime_type, files.filename, files.storage_backend
+            FROM files
+            JOIN classes ON classes.id = files.class_id
+            WHERE files.id=%s AND files.class_id=%s AND classes.owner_uid=%s
+            """,
+            (document_id, class_id, user_uid),
+        )
+        row = await cur.fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    storage_key, storage_url, mime_type, filename, storage_backend = row
+
+    if storage_backend and storage_backend.lower() == "s3" and storage_key:
+        url = presign_get_url(storage_key, expires_seconds=3600)
+        return RedirectResponse(url=url, status_code=307)
+
+    rel = None
+    if storage_key and not str(storage_key).startswith("notescape/"):
+        rel = PurePosixPath(str(storage_key))
+    elif storage_url:
+        storage_url = str(storage_url)
+        if storage_url.startswith("/uploads/"):
+            rel = PurePosixPath(storage_url).relative_to("/uploads")
+        elif storage_url.startswith("uploads/"):
+            rel = PurePosixPath(storage_url).relative_to("uploads")
+
+    if not rel:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    file_path = (UPLOAD_ROOT / Path(rel.as_posix())).resolve()
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+
+    return FileResponse(file_path, media_type=mime_type, filename=filename)
+
+@router.get("/{class_id}/documents/{document_id}/view-url")
+async def get_document_view_url(
+    class_id: int,
+    document_id: str,
+    user_uid: str = Depends(get_current_user_uid),
+):
+    async with db_conn() as (conn, cur):
+        await cur.execute(
+            """
+            SELECT files.storage_key, files.storage_backend, files.mime_type
+            FROM files
+            JOIN classes ON classes.id = files.class_id
+            WHERE files.id=%s AND files.class_id=%s AND classes.owner_uid=%s
+            """,
+            (document_id, class_id, user_uid),
+        )
+        row = await cur.fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    storage_key, storage_backend, mime_type = row
+    if storage_backend and storage_backend.lower() == "s3" and storage_key:
+        url = presign_get_url(storage_key, expires_seconds=300)
+        return {"url": url, "content_type": mime_type}
+
+    url = f"/api/classes/{class_id}/documents/{document_id}/download"
+    return {"url": url, "content_type": mime_type}
 

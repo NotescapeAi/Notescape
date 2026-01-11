@@ -22,8 +22,11 @@ type Props = {
   fileUrl: string;
   fileName: string;
   onTextSelect?: (selection: PdfSelection) => void;
+  onContextSelect?: (selection: PdfSelection) => void;
   onSnip?: (snip: PdfSnip) => void;
   onSnipError?: (message: string) => void;
+  onToggleFocus?: () => void;
+  isFocusMode?: boolean;
 };
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
@@ -31,7 +34,16 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   import.meta.url
 ).toString();
 
-export default function PdfStudyViewer({ fileUrl, fileName, onTextSelect, onSnip, onSnipError }: Props) {
+export default function PdfStudyViewer({
+  fileUrl,
+  fileName,
+  onTextSelect,
+  onContextSelect,
+  onSnip,
+  onSnipError,
+  onToggleFocus,
+  isFocusMode,
+}: Props) {
   const [numPages, setNumPages] = useState(1);
   const [pageNumber, setPageNumber] = useState(1);
   const [snipMode, setSnipMode] = useState(false);
@@ -43,7 +55,7 @@ export default function PdfStudyViewer({ fileUrl, fileName, onTextSelect, onSnip
     height: number;
   } | null>(null);
   const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
-  const [pageWidth, setPageWidth] = useState(820);
+  const [pageWidth, setPageWidth] = useState(980);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const pageRef = useRef<HTMLDivElement | null>(null);
   const overlayRef = useRef<HTMLDivElement | null>(null);
@@ -58,7 +70,7 @@ export default function PdfStudyViewer({ fileUrl, fileName, onTextSelect, onSnip
     if (!el) return;
     const update = () => {
       const width = el.clientWidth;
-      if (width > 0) setPageWidth(Math.min(820, width - 24));
+      if (width > 0) setPageWidth(Math.min(1400, width - 32));
     };
     update();
     const observer = new ResizeObserver(update);
@@ -68,8 +80,9 @@ export default function PdfStudyViewer({ fileUrl, fileName, onTextSelect, onSnip
 
   const pageLabel = useMemo(() => `${pageNumber} / ${numPages}`, [pageNumber, numPages]);
 
-  function handleSelection() {
-    if (!onTextSelect || snipMode) return;
+  function handleSelection(callback?: (selection: PdfSelection) => void) {
+    if (snipMode) return;
+    if (!onTextSelect && !callback) return;
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0) return;
     const text = selection.toString().trim();
@@ -79,7 +92,15 @@ export default function PdfStudyViewer({ fileUrl, fileName, onTextSelect, onSnip
     if (!container || !container.contains(range.commonAncestorContainer)) return;
     const rect = range.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) return;
-    onTextSelect({ text, rect, page: pageNumber });
+    const payload = { text, rect, page: pageNumber };
+    onTextSelect?.(payload);
+    callback?.(payload);
+  }
+
+  function handleContextMenu(e: React.MouseEvent<HTMLDivElement>) {
+    if (snipMode) return;
+    e.preventDefault();
+    handleSelection(onContextSelect);
   }
 
   function beginSnip(e: React.MouseEvent<HTMLDivElement>) {
@@ -158,7 +179,7 @@ export default function PdfStudyViewer({ fileUrl, fileName, onTextSelect, onSnip
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between border-b border-token surface px-4 py-2 text-xs text-muted">
+      <div className="sticky top-0 z-10 flex items-center justify-between border-b border-token surface px-4 py-2 text-xs text-muted">
         <div className="font-semibold">{fileName}</div>
         <div className="flex items-center gap-2">
           <button
@@ -193,12 +214,20 @@ export default function PdfStudyViewer({ fileUrl, fileName, onTextSelect, onSnip
           >
             {snipMode ? "Cancel snip" : "Snip"}
           </button>
+          {onToggleFocus && (
+            <button
+              className={`rounded-lg border px-2 py-1 ${isFocusMode ? "border-strong bg-inverse text-inverse" : "border-token"}`}
+              onClick={onToggleFocus}
+            >
+              {isFocusMode ? "Exit focus" : "Focus"}
+            </button>
+          )}
         </div>
       </div>
       <div
         ref={containerRef}
         className={`relative flex-1 overflow-auto ${snipMode ? "cursor-crosshair select-none" : ""}`}
-        onMouseUp={handleSelection}
+        onContextMenu={handleContextMenu}
       >
         <div
           ref={pageRef}
@@ -211,7 +240,7 @@ export default function PdfStudyViewer({ fileUrl, fileName, onTextSelect, onSnip
             <iframe
               title={fileName}
               src={`${fileUrl}#toolbar=1&navpanes=0&view=FitH`}
-              className="h-[70vh] w-full rounded-lg border border-token surface"
+              className="h-[82vh] w-full rounded-lg border border-token surface"
             />
           ) : (
             <Document

@@ -23,6 +23,8 @@
   --accent-pink: #ef5f8b;
   --accent-pink-soft: rgba(239, 95, 139, 0.12);
   --accent-pink-weak: rgba(239, 95, 139, 0.06);
+  --accent-lime: #d3ef5f;
+  --accent-mint: #5fefc3;
   --soft-lime: #d3ef5f;
   --mint: #5fefc3;
   --shadow: 0 12px 30px rgba(15, 16, 32, 0.08);
@@ -48,6 +50,8 @@
   --accent-pink: #ef5f8b;
   --accent-pink-soft: rgba(239, 95, 139, 0.2);
   --accent-pink-weak: rgba(239, 95, 139, 0.12);
+  --accent-lime: #d3ef5f;
+  --accent-mint: #5fefc3;
   --soft-lime: #d3ef5f;
   --mint: #5fefc3;
   --shadow: 0 12px 30px rgba(0, 0, 0, 0.35);

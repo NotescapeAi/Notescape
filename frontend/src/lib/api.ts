@@ -77,6 +77,30 @@ export type Flashcard = {
   updated_at?: string | null;
 };
 
+export type MasteryCard = {
+  id: string;
+  question: string;
+  answer: string;
+  hint?: string | null;
+  difficulty?: string | null;
+  tags?: string[] | null;
+};
+
+export type MasterySession = {
+  session_id: string;
+  current_index?: number;
+  total_cards?: number;
+  total_unique?: number;
+  mastered_count?: number;
+  mastery_percent?: number;
+  total_reviews?: number;
+  average_rating?: number;
+  session_seconds?: number;
+  done?: boolean;
+  ended?: boolean;
+  current_card?: MasteryCard | null;
+};
+
 export type ContactPayload = {
   name: string;
   email: string;
@@ -127,6 +151,15 @@ export async function deleteClass(id: number): Promise<void> {
 export async function listFiles(classId: number): Promise<FileRow[]> {
   const { data } = await http.get<FileRow[]>(`/files/${classId}`);
   return Array.isArray(data) ? data : [];
+}
+
+export async function getDocumentViewUrl(classId: number, documentId: string): Promise<{ url: string; content_type?: string | null }> {
+  const headers = await userHeader();
+  const { data } = await http.get<{ url: string; content_type?: string | null }>(
+    `/classes/${classId}/documents/${documentId}/view-url`,
+    { headers }
+  );
+  return data;
 }
 
 export async function uploadFile(classId: number, file: File): Promise<FileRow> {
@@ -241,6 +274,7 @@ export async function chatAsk(payload: {
 export type ChatSession = {
   id: string;
   class_id: number;
+  document_id?: string | null;
   title: string;
   created_at?: string | null;
   updated_at?: string | null;
@@ -252,6 +286,8 @@ export type ChatMessage = {
   content: string;
   citations?: any;
   selected_text?: string | null;
+  page_number?: number | null;
+  bounding_box?: { x: number; y: number; width: number; height: number } | null;
   file_id?: string | null;
   file_scope?: string[] | null;
   image_attachment?: {
@@ -265,15 +301,20 @@ export type ChatMessage = {
   created_at?: string | null;
 };
 
-export async function createChatSession(payload: { class_id: number; title?: string }): Promise<ChatSession> {
+export async function createChatSession(payload: {
+  class_id: number;
+  document_id?: string | null;
+  title?: string;
+}): Promise<ChatSession> {
   const headers = await userHeader();
   const { data } = await http.post<ChatSession>("/chat/sessions", payload, { headers });
   return data;
 }
 
-export async function listChatSessions(classId: number): Promise<ChatSession[]> {
+export async function listChatSessions(classId: number, documentId?: string | null): Promise<ChatSession[]> {
   const headers = await userHeader();
-  const { data } = await http.get<ChatSession[]>(`/chat/sessions?class_id=${classId}`, { headers });
+  const doc = documentId ? `&document_id=${documentId}` : "";
+  const { data } = await http.get<ChatSession[]>(`/chat/sessions?class_id=${classId}${doc}`, { headers });
   return Array.isArray(data) ? data : [];
 }
 
@@ -295,6 +336,8 @@ export async function addChatMessages(payload: {
   assistant_content: string;
   citations?: any;
   selected_text?: string | null;
+  page_number?: number | null;
+  bounding_box?: { x: number; y: number; width: number; height: number } | null;
   file_id?: string | null;
   file_scope?: string[] | null;
   image_attachment?: {
@@ -312,6 +355,8 @@ export async function addChatMessages(payload: {
     assistant_content: payload.assistant_content,
     citations: payload.citations ?? null,
     selected_text: payload.selected_text ?? null,
+    page_number: payload.page_number ?? null,
+    bounding_box: payload.bounding_box ?? null,
     file_id: payload.file_id ?? null,
     file_scope: payload.file_scope ?? null,
     image_attachment: payload.image_attachment ?? null,
@@ -484,6 +529,60 @@ export async function clearEmbeddings(): Promise<{ ok: boolean }> {
   const { data } = await http.post<{ ok?: boolean }>("/settings/clear-embeddings", {}, { headers });
   return { ok: data?.ok ?? true };
 }
+
+export async function startMasterySession(payload: {
+  class_id: number;
+  file_ids?: string[];
+}): Promise<MasterySession> {
+  const headers = await userHeader();
+  const { data } = await http.post<MasterySession>("/flashcards/mastery/session/start", payload, { headers });
+  return data;
+}
+
+export async function getMasterySession(sessionId: string): Promise<MasterySession> {
+  const headers = await userHeader();
+  const { data } = await http.get<MasterySession>(`/flashcards/mastery/session/${sessionId}`, { headers });
+  return data;
+}
+
+export async function reviewMasteryCard(payload: {
+  session_id: string;
+  card_id: string;
+  rating: 1 | 2 | 3 | 4 | 5;
+  response_time_ms?: number;
+}): Promise<MasterySession> {
+  const headers = await userHeader();
+  const { data } = await http.post<MasterySession>(
+    `/flashcards/mastery/session/${payload.session_id}/review`,
+    {
+      card_id: payload.card_id,
+      rating: payload.rating,
+      response_time_ms: payload.response_time_ms ?? null,
+    },
+    { headers }
+  );
+  return data;
+}
+
+export async function endMasterySession(sessionId: string): Promise<{ ok: boolean; session_id: string }> {
+  const headers = await userHeader();
+  const { data } = await http.post<{ ok: boolean; session_id: string }>(
+    `/flashcards/mastery/session/${sessionId}/end`,
+    {},
+    { headers }
+  );
+  return data;
+}
+
+export async function resetMasteryProgress(classId: number): Promise<{ ok: boolean }> {
+  const headers = await userHeader();
+  const { data } = await http.post<{ ok: boolean }>(
+    `/flashcards/mastery/reset?class_id=${classId}`,
+    {},
+    { headers }
+  );
+  return data;
+}
 /* =========================
    Chunks & Embeddings
 ========================= */
@@ -558,6 +657,20 @@ export async function getFlashcardProgress(classId: number, fileId?: string) {
   });
   if (!response.ok) throw new Error(`Failed to load progress (HTTP ${response.status})`);
   return response.json();
+}
+
+export async function getMasteryStats(classId: number, fileId?: string) {
+  const params = new URLSearchParams({ class_id: String(classId) });
+  if (fileId) params.set("file_id", fileId);
+  const headers = await userHeader();
+  const { data } = await http.get(`/flashcards/mastery/stats?${params.toString()}`, { headers });
+  return data as {
+    total_unique: number;
+    mastered_count: number;
+    mastery_percent: number;
+    total_reviews: number;
+    average_rating: number;
+  };
 }
 
 

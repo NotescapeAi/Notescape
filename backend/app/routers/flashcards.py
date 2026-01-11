@@ -32,6 +32,68 @@ async def _ensure_file_in_class(file_id: str, class_id: int):
         if not await cur.fetchone():
             raise HTTPException(status_code=404, detail="File not found in class")
 
+_mastery_schema_checked = False
+
+
+async def _ensure_mastery_schema():
+    global _mastery_schema_checked
+    if _mastery_schema_checked:
+        return
+    async with db_conn() as (conn, cur):
+        await cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS mastery_card_state (
+              card_id UUID NOT NULL,
+              user_id TEXT NOT NULL,
+              mastery_level INT NOT NULL DEFAULT 0,
+              review_count INT NOT NULL DEFAULT 0,
+              consecutive_good INT NOT NULL DEFAULT 0,
+              five_count INT NOT NULL DEFAULT 0,
+              lapses INT NOT NULL DEFAULT 0,
+              mastered BOOLEAN NOT NULL DEFAULT FALSE,
+              last_reviewed TIMESTAMPTZ,
+              created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+              updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+              PRIMARY KEY (card_id, user_id)
+            )
+            """
+        )
+        await cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS mastery_session_queue (
+              id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+              user_id TEXT NOT NULL,
+              class_id INT NOT NULL,
+              card_order JSONB NOT NULL DEFAULT '[]'::jsonb,
+              current_index INT NOT NULL DEFAULT 0,
+              started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+              last_interaction_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+              ended_at TIMESTAMPTZ
+            )
+            """
+        )
+        await cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS mastery_review_events (
+              id BIGSERIAL PRIMARY KEY,
+              user_id TEXT NOT NULL,
+              card_id UUID NOT NULL,
+              rating INT NOT NULL,
+              response_time_ms INT,
+              session_id UUID NOT NULL REFERENCES mastery_session_queue(id) ON DELETE CASCADE,
+              created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+            """
+        )
+        await cur.execute(
+            "CREATE INDEX IF NOT EXISTS mastery_session_user_idx ON mastery_session_queue (user_id, class_id, last_interaction_at DESC)"
+        )
+        await cur.execute(
+            "CREATE INDEX IF NOT EXISTS mastery_event_user_idx ON mastery_review_events (user_id, created_at DESC)"
+        )
+        await conn.commit()
+    _mastery_schema_checked = True
+
 class EnsureEmbeddingsReq(BaseModel):
     limit: Optional[int] = Field(default=500)
 
@@ -132,6 +194,17 @@ class ManualUpdateReq(BaseModel):
     reset_progress: bool = False
 
 
+class MasteryStartReq(BaseModel):
+    class_id: int
+    file_ids: Optional[List[str]] = None
+
+
+class MasteryReviewReq(BaseModel):
+    card_id: str
+    rating: int = Field(ge=1, le=5)
+    response_time_ms: Optional[int] = Field(default=None, ge=0)
+
+
 def _sm2_update(ease: float, interval: int, reps: int, lapses: int, rating: str):
     now = datetime.now(timezone.utc)
     if rating == "again":
@@ -177,6 +250,67 @@ def _sm2_update(ease: float, interval: int, reps: int, lapses: int, rating: str)
         "due_at": due_at,
         "state": state,
     }
+
+
+def _mastery_offset(rating: int) -> int:
+    return {1: 2, 2: 4, 3: 8, 4: 15}.get(rating, 0)
+
+
+def _mastery_level_from_rating(rating: int, prev: int, mastered: bool) -> int:
+    if mastered:
+        return 100
+    return max(prev, rating * 20)
+
+
+async def _mastery_stats(
+    cur, user_id: str, class_id: int, file_id: Optional[str] = None
+) -> Dict[str, int]:
+    await cur.execute(
+        """
+        SELECT COUNT(*) FROM flashcards
+        WHERE class_id=%s AND deleted_at IS NULL
+          AND (%s::uuid IS NULL OR file_id=%s::uuid)
+        """,
+        (class_id, file_id, file_id),
+    )
+    total = (await cur.fetchone())[0]
+    await cur.execute(
+        """
+        SELECT COUNT(*)
+        FROM mastery_card_state s
+        JOIN flashcards f ON f.id = s.card_id
+        WHERE s.user_id=%s AND s.mastered=true AND f.class_id=%s AND f.deleted_at IS NULL
+          AND (%s::uuid IS NULL OR f.file_id=%s::uuid)
+        """,
+        (user_id, class_id, file_id, file_id),
+    )
+    mastered = (await cur.fetchone())[0]
+    await cur.execute(
+        """
+        SELECT COALESCE(AVG(COALESCE(s.mastery_level, 0)), 0)
+        FROM flashcards f
+        LEFT JOIN mastery_card_state s ON s.card_id = f.id AND s.user_id=%s
+        WHERE f.class_id=%s AND f.deleted_at IS NULL
+          AND (%s::uuid IS NULL OR f.file_id=%s::uuid)
+        """,
+        (user_id, class_id, file_id, file_id),
+    )
+    avg_mastery = float((await cur.fetchone())[0] or 0)
+    mastery_percent = int(round(avg_mastery))
+    return {
+        "total_unique": total,
+        "mastered_count": mastered,
+        "mastery_percent": mastery_percent,
+    }
+
+
+async def _session_review_stats(cur, session_id: str) -> Dict[str, float]:
+    await cur.execute(
+        "SELECT COUNT(*), COALESCE(AVG(rating), 0) FROM mastery_review_events WHERE session_id=%s",
+        (session_id,),
+    )
+    row = await cur.fetchone()
+    return {"total_reviews": int(row[0]), "average_rating": float(row[1])}
 
 
 @router.get("/due")
@@ -720,3 +854,383 @@ async def delete_flashcard(
         )
         await conn.commit()
     return
+
+
+@router.post("/mastery/session/start")
+async def start_mastery_session(payload: MasteryStartReq, user_id: str = Depends(get_request_user_uid)):
+    await _ensure_mastery_schema()
+    await _ensure_class_owner(payload.class_id, user_id)
+    file_ids = payload.file_ids or []
+    if file_ids:
+        for fid in file_ids:
+            await _ensure_file_in_class(fid, payload.class_id)
+    async with db_conn() as (conn, cur):
+        if file_ids:
+            await cur.execute(
+                """
+                SELECT id::text, question, answer, hint, difficulty, tags
+                FROM flashcards
+                WHERE class_id=%s AND deleted_at IS NULL AND file_id = ANY(%s::uuid[])
+                ORDER BY created_at ASC
+                """,
+                (payload.class_id, file_ids),
+            )
+        else:
+            await cur.execute(
+                """
+                SELECT id::text, question, answer, hint, difficulty, tags
+                FROM flashcards
+                WHERE class_id=%s AND deleted_at IS NULL
+                ORDER BY created_at ASC
+                """,
+                (payload.class_id,),
+            )
+        rows = await cur.fetchall()
+        if not rows:
+            raise HTTPException(status_code=404, detail="No flashcards found")
+        card_order = [r[0] for r in rows]
+        await cur.execute(
+            """
+            INSERT INTO mastery_session_queue (user_id, class_id, card_order)
+            VALUES (%s, %s, %s::jsonb)
+            RETURNING id::text
+            """,
+            (user_id, payload.class_id, json.dumps(card_order)),
+        )
+        session_id = (await cur.fetchone())[0]
+        stats = await _mastery_stats(cur, user_id, payload.class_id)
+        await conn.commit()
+    first = rows[0]
+    return {
+        "session_id": session_id,
+        "current_index": 0,
+        "total_cards": len(card_order),
+        **stats,
+        "total_reviews": 0,
+        "average_rating": 0,
+        "session_seconds": 0,
+        "current_card": {
+            "id": first[0],
+            "question": first[1],
+            "answer": first[2],
+            "hint": first[3],
+            "difficulty": first[4],
+            "tags": first[5] or [],
+        },
+    }
+
+
+@router.get("/mastery/session/{session_id}")
+async def get_mastery_session(session_id: str, user_id: str = Depends(get_request_user_uid)):
+    await _ensure_mastery_schema()
+    async with db_conn() as (conn, cur):
+        await cur.execute(
+            """
+            SELECT class_id, card_order, current_index, ended_at, started_at, last_interaction_at
+            FROM mastery_session_queue
+            WHERE id::text=%s AND user_id=%s
+            """,
+            (session_id, user_id),
+        )
+        row = await cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Session not found")
+        card_order = row[1] or []
+        current_index = row[2] or 0
+        ended_at = row[3]
+        started_at = row[4]
+        last_interaction = row[5] or started_at
+        review_stats = await _session_review_stats(cur, session_id)
+        session_seconds = (
+            int((last_interaction - started_at).total_seconds()) if started_at and last_interaction else 0
+        )
+        stats = await _mastery_stats(cur, user_id, row[0])
+        if ended_at:
+            return {
+                "session_id": session_id,
+                "ended": True,
+                "current_card": None,
+                "session_seconds": session_seconds,
+                **review_stats,
+                **stats,
+            }
+        if not card_order:
+            return {
+                "session_id": session_id,
+                "ended": False,
+                "current_card": None,
+                "session_seconds": session_seconds,
+                **review_stats,
+                **stats,
+            }
+        if current_index >= len(card_order):
+            current_index = max(len(card_order) - 1, 0)
+        card_id = card_order[current_index]
+        await cur.execute(
+            """
+            SELECT id::text, question, answer, hint, difficulty, tags
+            FROM flashcards
+            WHERE id::text=%s AND deleted_at IS NULL
+            """,
+            (card_id,),
+        )
+        card = await cur.fetchone()
+        if not card:
+            return {
+                "session_id": session_id,
+                "ended": False,
+                "current_card": None,
+                "session_seconds": session_seconds,
+                **review_stats,
+                **stats,
+            }
+    return {
+        "session_id": session_id,
+        "current_index": current_index,
+        "total_cards": len(card_order),
+        "session_seconds": session_seconds,
+        **review_stats,
+        **stats,
+        "current_card": {
+            "id": card[0],
+            "question": card[1],
+            "answer": card[2],
+            "hint": card[3],
+            "difficulty": card[4],
+            "tags": card[5] or [],
+        },
+    }
+
+
+@router.post("/mastery/session/{session_id}/review")
+async def review_mastery_card(
+    session_id: str,
+    payload: MasteryReviewReq,
+    user_id: str = Depends(get_request_user_uid),
+):
+    await _ensure_mastery_schema()
+    now = datetime.now(timezone.utc)
+    async with db_conn() as (conn, cur):
+        await cur.execute(
+            """
+            SELECT class_id, card_order, current_index, ended_at, started_at
+            FROM mastery_session_queue
+            WHERE id::text=%s AND user_id=%s
+            """,
+            (session_id, user_id),
+        )
+        session = await cur.fetchone()
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+        if session[3]:
+            raise HTTPException(status_code=400, detail="Session already ended")
+        started_at = session[4]
+        card_order = session[1] or []
+        current_index = session[2] or 0
+        if not card_order:
+            raise HTTPException(status_code=400, detail="Session queue is empty")
+        if current_index >= len(card_order):
+            current_index = len(card_order) - 1
+        current_id = card_order[current_index]
+        if current_id != payload.card_id:
+            raise HTTPException(status_code=400, detail="Card is not the current session item")
+
+        await cur.execute(
+            """
+            SELECT mastery_level, review_count, consecutive_good, five_count, lapses, mastered
+            FROM mastery_card_state
+            WHERE card_id=%s AND user_id=%s
+            """,
+            (payload.card_id, user_id),
+        )
+        state = await cur.fetchone()
+        mastery_level, review_count, consecutive_good, five_count, lapses, mastered = (
+            state if state else (0, 0, 0, 0, 0, False)
+        )
+        review_count += 1
+        if payload.rating <= 2:
+            lapses += 1
+        if payload.rating >= 4:
+            consecutive_good += 1
+        else:
+            consecutive_good = 0
+        if payload.rating == 5:
+            five_count += 1
+        mastered = bool(five_count >= 2 or consecutive_good >= 2)
+        mastery_level = _mastery_level_from_rating(payload.rating, mastery_level, mastered)
+
+        await cur.execute(
+            """
+            INSERT INTO mastery_card_state
+              (card_id, user_id, mastery_level, review_count, consecutive_good, five_count, lapses, mastered, last_reviewed, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, now())
+            ON CONFLICT (card_id, user_id)
+            DO UPDATE SET
+              mastery_level=EXCLUDED.mastery_level,
+              review_count=EXCLUDED.review_count,
+              consecutive_good=EXCLUDED.consecutive_good,
+              five_count=EXCLUDED.five_count,
+              lapses=EXCLUDED.lapses,
+              mastered=EXCLUDED.mastered,
+              last_reviewed=EXCLUDED.last_reviewed,
+              updated_at=now()
+            """,
+            (
+                payload.card_id,
+                user_id,
+                mastery_level,
+                review_count,
+                consecutive_good,
+                five_count,
+                lapses,
+                mastered,
+                now,
+            ),
+        )
+        await cur.execute(
+            """
+            INSERT INTO mastery_review_events (user_id, card_id, rating, response_time_ms, session_id)
+            VALUES (%s, %s, %s, %s, %s)
+            """,
+            (user_id, payload.card_id, payload.rating, payload.response_time_ms, session_id),
+        )
+
+        card_order.pop(current_index)
+        if payload.rating < 5:
+            offset = _mastery_offset(payload.rating)
+            insert_at = min(current_index + offset, len(card_order))
+            card_order.insert(insert_at, current_id)
+
+        if not card_order:
+            await cur.execute(
+                """
+                UPDATE mastery_session_queue
+                SET card_order='[]'::jsonb, current_index=0, last_interaction_at=now()
+                WHERE id::text=%s AND user_id=%s
+                """,
+                (session_id, user_id),
+            )
+            stats = await _mastery_stats(cur, user_id, session[0])
+            review_stats = await _session_review_stats(cur, session_id)
+            await conn.commit()
+            session_seconds = int((now - started_at).total_seconds()) if started_at else 0
+            return {
+                "session_id": session_id,
+                "done": True,
+                "current_card": None,
+                "session_seconds": session_seconds,
+                **review_stats,
+                **stats,
+            }
+
+        next_index = min(current_index, len(card_order) - 1)
+        await cur.execute(
+            """
+            UPDATE mastery_session_queue
+            SET card_order=%s::jsonb, current_index=%s, last_interaction_at=now()
+            WHERE id::text=%s AND user_id=%s
+            """,
+            (json.dumps(card_order), next_index, session_id, user_id),
+        )
+        await cur.execute(
+            """
+            SELECT id::text, question, answer, hint, difficulty, tags
+            FROM flashcards
+            WHERE id::text=%s AND deleted_at IS NULL
+            """,
+            (card_order[next_index],),
+        )
+        next_card = await cur.fetchone()
+        stats = await _mastery_stats(cur, user_id, session[0])
+        review_stats = await _session_review_stats(cur, session_id)
+        await conn.commit()
+        session_seconds = int((now - started_at).total_seconds()) if started_at else 0
+
+    return {
+        "session_id": session_id,
+        "done": False,
+        "current_index": next_index,
+        "total_cards": len(card_order),
+        "session_seconds": session_seconds,
+        **review_stats,
+        **stats,
+        "current_card": {
+            "id": next_card[0],
+            "question": next_card[1],
+            "answer": next_card[2],
+            "hint": next_card[3],
+            "difficulty": next_card[4],
+            "tags": next_card[5] or [],
+        },
+    }
+
+
+@router.post("/mastery/session/{session_id}/end")
+async def end_mastery_session(session_id: str, user_id: str = Depends(get_request_user_uid)):
+    await _ensure_mastery_schema()
+    async with db_conn() as (conn, cur):
+        await cur.execute(
+            """
+            UPDATE mastery_session_queue
+            SET ended_at=now(), last_interaction_at=now()
+            WHERE id::text=%s AND user_id=%s
+            """,
+            (session_id, user_id),
+        )
+        await conn.commit()
+    return {"ok": True, "session_id": session_id}
+
+
+@router.post("/mastery/reset")
+async def reset_mastery_progress(
+    class_id: int,
+    user_id: str = Depends(get_request_user_uid),
+):
+    await _ensure_mastery_schema()
+    await _ensure_class_owner(class_id, user_id)
+    async with db_conn() as (conn, cur):
+        await cur.execute(
+            """
+            DELETE FROM mastery_card_state
+            WHERE user_id=%s AND card_id IN (
+              SELECT id FROM flashcards WHERE class_id=%s AND deleted_at IS NULL
+            )
+            """,
+            (user_id, class_id),
+        )
+        await cur.execute(
+            """
+            UPDATE mastery_session_queue
+            SET ended_at=now(), last_interaction_at=now()
+            WHERE user_id=%s AND class_id=%s AND ended_at IS NULL
+            """,
+            (user_id, class_id),
+        )
+        await conn.commit()
+    return {"ok": True}
+
+
+@router.get("/mastery/stats")
+async def mastery_stats(
+    class_id: int,
+    file_id: Optional[str] = None,
+    user_id: str = Depends(get_request_user_uid),
+):
+    await _ensure_mastery_schema()
+    await _ensure_class_owner(class_id, user_id)
+    async with db_conn() as (conn, cur):
+        stats = await _mastery_stats(cur, user_id, class_id, file_id)
+        await cur.execute(
+            """
+            SELECT COUNT(*), COALESCE(AVG(r.rating), 0)
+            FROM mastery_review_events r
+            JOIN flashcards f ON f.id = r.card_id
+            WHERE r.user_id=%s AND f.class_id=%s AND f.deleted_at IS NULL
+              AND (%s::uuid IS NULL OR f.file_id=%s::uuid)
+            """,
+            (user_id, class_id, file_id, file_id),
+        )
+        row = await cur.fetchone()
+    stats["total_reviews"] = int(row[0] or 0)
+    stats["average_rating"] = float(row[1] or 0)
+    return stats

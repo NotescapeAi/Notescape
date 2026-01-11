@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import AppShell from "../layouts/AppShell";
 import Button from "../components/Button";
+import KebabMenu from "../components/KebabMenu";
 import {
   listClasses,
   listFiles,
@@ -10,6 +11,8 @@ import {
   listChatSessions,
   listChatSessionMessages,
   addChatMessages,
+  deleteChatSession,
+  clearChatSessionMessages,
   type ClassRow,
   type FileRow,
   type ChatSession,
@@ -35,6 +38,9 @@ export default function Chatbot() {
   const [busyAsk, setBusyAsk] = useState(false);
   const [busySessions, setBusySessions] = useState(false);
   const [busyFiles, setBusyFiles] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState<{ type: "delete" | "clear"; session: ChatSession } | null>(
+    null
+  );
   const endRef = useRef<HTMLDivElement | null>(null);
   const convoRef = useRef<HTMLDivElement | null>(null);
 
@@ -218,6 +224,29 @@ export default function Chatbot() {
     }
   }
 
+  async function onConfirmSessionAction() {
+    if (!confirmDialog || !classId) return;
+    const { type, session } = confirmDialog;
+    try {
+      if (type === "delete") {
+        await deleteChatSession(session.id, classId);
+        setSessions((prev) => prev.filter((s) => s.id !== session.id));
+        if (activeSessionId === session.id) {
+          const next = sessions.find((s) => s.id !== session.id)?.id ?? null;
+          setActiveSessionId(next);
+          if (!next) setMessages([]);
+        }
+      } else {
+        await clearChatSessionMessages(session.id);
+        if (activeSessionId === session.id) setMessages([]);
+      }
+    } catch {
+      setErrorBanner(type === "delete" ? "Couldn't delete chat. Try again." : "Couldn't clear messages. Try again.");
+    } finally {
+      setConfirmDialog(null);
+    }
+  }
+
   function toggleFileScope(fileId: string) {
     if (!activeSessionId) return;
     setScopeBySession((prev) => {
@@ -234,6 +263,12 @@ export default function Chatbot() {
   }
 
   const sourcesEnabled = activeSessionId ? showSources[activeSessionId] ?? false : false;
+  const statusLabel = (status?: string | null) => {
+    const s = (status || "UPLOADED").toUpperCase();
+    if (s === "FAILED") return "Failed";
+    if (s === "INDEXED") return "Ready";
+    return "Processing";
+  };
 
   return (
     <AppShell
@@ -277,20 +312,27 @@ export default function Chatbot() {
                 <div className="text-sm text-muted">No sessions yet.</div>
               ) : (
                 sessions.map((s) => (
-                  <button
+                  <div
                     key={s.id}
-                    onClick={() => setActiveSessionId(s.id)}
-                    className={`w-full rounded-xl border px-3 py-2 text-left text-sm ${
+                    className={`flex items-start justify-between gap-2 rounded-xl border px-3 py-2 text-left text-sm ${
                       s.id === activeSessionId
                         ? "border-[var(--primary)] surface-2 font-semibold"
                         : "border-token hover:border-token"
                     }`}
                   >
-                    <div className="truncate">{s.title || "Chat session"}</div>
-                    <div className="text-xs text-muted truncate">
-                      {new Date(s.updated_at || s.created_at || "").toLocaleString()}
-                    </div>
-                  </button>
+                    <button onClick={() => setActiveSessionId(s.id)} className="flex-1 text-left">
+                      <div className="truncate">{s.title || "Chat session"}</div>
+                      <div className="text-xs text-muted truncate">
+                        {new Date(s.updated_at || s.created_at || "").toLocaleString()}
+                      </div>
+                    </button>
+                    <KebabMenu
+                      items={[
+                        { label: "Clear messages", onClick: () => setConfirmDialog({ type: "clear", session: s }) },
+                        { label: "Delete chat", onClick: () => setConfirmDialog({ type: "delete", session: s }) },
+                      ]}
+                    />
+                  </div>
                 ))
               )}
             </div>
@@ -385,7 +427,7 @@ export default function Chatbot() {
                     onClick={() => setSelectedText("")}
                     aria-label="Clear selected text"
                   >
-                    
+                    Clear
                   </button>
                 </div>
               )}
@@ -448,7 +490,7 @@ export default function Chatbot() {
                           {(f.filename.split(".").pop() || "").toUpperCase()}
                         </span>
                       </div>
-                      <div className="text-xs text-muted">{f.status ?? "UPLOADED"}</div>
+                      <div className="text-xs text-muted">{statusLabel(f.status)}</div>
                     </button>
                   );
                 })
@@ -456,6 +498,26 @@ export default function Chatbot() {
             </div>
           </aside>
         </div>
+        {confirmDialog && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4">
+            <div className="w-full max-w-sm rounded-2xl surface p-5 shadow-xl">
+              <div className="text-lg font-semibold text-main">
+                {confirmDialog.type === "delete" ? "Delete this chat?" : "Clear messages?"}
+              </div>
+              <div className="mt-2 text-sm text-muted">
+                {confirmDialog.type === "delete"
+                  ? "This will permanently delete the chat and its messages. This can't be undone."
+                  : "This will remove all messages in this chat. You can't undo this."}
+              </div>
+              <div className="mt-4 flex items-center justify-end gap-2">
+                <Button onClick={() => setConfirmDialog(null)}>Cancel</Button>
+                <Button variant="primary" onClick={onConfirmSessionAction}>
+                  {confirmDialog.type === "delete" ? "Delete" : "Clear"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </AppShell>
   );

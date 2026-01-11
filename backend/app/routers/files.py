@@ -1,13 +1,23 @@
 import uuid
 import shutil
 import logging
+import json
 from uuid import UUID
 from fastapi import APIRouter, UploadFile, File, HTTPException
 from pydantic import BaseModel
 from app.core.db import db_conn
 from pathlib import Path, PurePosixPath
 from app.core.settings import settings
-from app.core.storage import presign_get_url, put_object, delete_object
+from fastapi.responses import FileResponse
+from app.core.storage import (
+    presign_get_url,
+    put_object,
+    delete_prefix,
+    sanitize_filename,
+    build_s3_key_original,
+    build_s3_document_prefix,
+    put_bytes,
+)
 from app.core.cache import cache_set
 from app.lib.pdf_text import detect_digital_pdf
 from app.lib.chunking import extract_page_texts
@@ -34,7 +44,13 @@ async def list_files(class_id: int):
         )
         rows = await cur.fetchall()
         cols = [d[0] for d in cur.description]
-        return [dict(zip(cols, r)) for r in rows]
+        items = []
+        for r in rows:
+            item = dict(zip(cols, r))
+            file_id = str(item["id"])
+            item["storage_url"] = f"/api/classes/{class_id}/documents/{file_id}/download"
+            items.append(item)
+        return items
 
 
 async def _update_file_status(file_id: str, status: str, error: str | None = None, ocr_job_id: str | None = None, indexed: bool = False):
@@ -53,10 +69,10 @@ async def _update_file_status(file_id: str, status: str, error: str | None = Non
         await conn.commit()
 
 
-async def _queue_ocr_job(file_id: str, engine: str = "tesseract"):
+async def _queue_ocr_job(file_id: str, output_prefix: str, engine: str = "tesseract"):
     job_id = str(uuid.uuid4())
-    output_json_key = f"processed/ocr/{file_id}/ocr.json"
-    output_text_key = f"processed/ocr/{file_id}/ocr.txt"
+    output_json_key = f"{output_prefix}/text/ocr.json"
+    output_text_key = f"{output_prefix}/text/ocr.txt"
     async with db_conn() as (conn, cur):
         await cur.execute(
             """
@@ -77,12 +93,16 @@ async def _queue_ocr_job(file_id: str, engine: str = "tesseract"):
 async def upload_file(class_id: int, file: UploadFile = File(...)):
     # 1) ensure class exists
     async with db_conn() as (conn, cur):
-        await cur.execute("SELECT 1 FROM classes WHERE id=%s", (class_id,))
-        if not await cur.fetchone():
+        await cur.execute("SELECT owner_uid FROM classes WHERE id=%s", (class_id,))
+        row = await cur.fetchone()
+        if not row:
             raise HTTPException(status_code=404, detail="Class not found")
+        owner_uid = row[0]
 
-    safe_name = file.filename or "upload.bin"
+    original_name = file.filename or "upload.bin"
+    safe_name = sanitize_filename(original_name)
     file_id = str(uuid.uuid4())
+    upload_id = str(uuid.uuid4())
 
     # 2) local disk path + S3 key
     rel_path = PurePosixPath(f"class_{class_id}/{file_id}/{safe_name}")
@@ -102,27 +122,49 @@ async def upload_file(class_id: int, file: UploadFile = File(...)):
         except Exception:
             pass
 
-    storage_url = f"/uploads/{rel_path.as_posix()}"
+    storage_url = f"/api/classes/{class_id}/documents/{file_id}/download"
     storage_key = None
+    storage_backend = settings.storage_backend.lower()
 
-    if settings.storage_backend.lower() == "s3":
-        key = f"raw/{rel_path.as_posix()}"
+    if storage_backend == "s3":
+        key = build_s3_key_original(
+            "public",
+            owner_uid,
+            class_id,
+            file_id,
+            upload_id,
+            safe_name,
+        )
         try:
             stored = put_object(file.file, key=key, content_type=file.content_type)
             storage_key = stored.key
+            metadata_key = f"{build_s3_document_prefix('public', owner_uid, class_id, file_id)}/metadata.json"
+            metadata_payload = {
+                "document_id": file_id,
+                "class_id": class_id,
+                "user_id": owner_uid,
+                "original_filename": original_name,
+                "safe_filename": safe_name,
+                "size_bytes": size_bytes,
+                "mime_type": file.content_type,
+                "storage_key": storage_key,
+            }
+            put_bytes(metadata_key, json.dumps(metadata_payload).encode("utf-8"), "application/json")
         except Exception as e:
             raise HTTPException(status_code=502, detail=f"Storage upload failed: {e}")
-    elif settings.storage_backend.lower() != "local":
+    elif storage_backend == "local":
+        storage_key = rel_path.as_posix()
+    else:
         raise HTTPException(status_code=500, detail="Unsupported storage backend")
 
     # 3) insert DB row
     async with db_conn() as (conn, cur):
         await cur.execute(
             """
-            INSERT INTO files (id, class_id, filename, mime_type, storage_url, storage_key, size_bytes, status)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO files (id, class_id, filename, mime_type, storage_url, storage_key, size_bytes, status, storage_backend)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
-            (file_id, class_id, safe_name, file.content_type, storage_url, storage_key, size_bytes, "UPLOADED")
+            (file_id, class_id, original_name, file.content_type, storage_url, storage_key, size_bytes, "UPLOADED", storage_backend)
         )
         await conn.commit()
 
@@ -141,7 +183,8 @@ async def upload_file(class_id: int, file: UploadFile = File(...)):
                 status = "INDEXED" if total > 0 else "FAILED"
                 await _update_file_status(file_id, status, error=None, indexed=total > 0)
             else:
-                queued = await _queue_ocr_job(file_id)
+                output_prefix = build_s3_document_prefix("public", owner_uid, class_id, file_id)
+                queued = await _queue_ocr_job(file_id, output_prefix)
                 ocr_job_id = queued["job_id"]
                 status = "OCR_QUEUED"
                 await _update_file_status(file_id, status, ocr_job_id=ocr_job_id)
@@ -155,7 +198,7 @@ async def upload_file(class_id: int, file: UploadFile = File(...)):
     return {
         "id": file_id,
         "class_id": class_id,
-        "filename": safe_name,
+        "filename": original_name,
         "mime_type": file.content_type,
         "storage_key": storage_key,
         "storage_url": storage_url,
@@ -167,28 +210,42 @@ async def upload_file(class_id: int, file: UploadFile = File(...)):
 async def delete_file(file_id: UUID):
     # fetch storage_key
     async with db_conn() as (conn, cur):
-        await cur.execute("SELECT storage_key FROM files WHERE id=%s", (str(file_id),))
+        await cur.execute(
+            """
+            SELECT files.storage_key, files.class_id, classes.owner_uid
+            FROM files
+            JOIN classes ON classes.id = files.class_id
+            WHERE files.id=%s
+            """,
+            (str(file_id),)
+        )
         row = await cur.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="File not found")
         storage_key = row[0]
+        class_id = row[1]
+        owner_uid = row[2]
 
     # delete from MinIO/S3 (best effort)
     try:
-        if storage_key:
-            delete_object(storage_key)
+        if storage_key and settings.storage_backend.lower() == "s3":
+            prefix = build_s3_document_prefix("public", owner_uid, class_id, str(file_id))
+            delete_prefix(f"{prefix}/")
     except Exception as e:
         print("WARN: deleting object failed:", e)
 
     # delete local file (best effort)
     try:
         async with db_conn() as (conn, cur):
-            await cur.execute("SELECT storage_url FROM files WHERE id=%s", (str(file_id),))
+            await cur.execute("SELECT storage_key, storage_url FROM files WHERE id=%s", (str(file_id),))
             row = await cur.fetchone()
         if row and row[0]:
-            storage_url = str(row[0])
+            storage_key = str(row[0])
+            storage_url = str(row[1] or "")
             rel = None
-            if storage_url.startswith("/uploads/"):
+            if storage_key and not storage_key.startswith("notescape/"):
+                rel = PurePosixPath(storage_key)
+            elif storage_url.startswith("/uploads/"):
                 rel = PurePosixPath(storage_url).relative_to("/uploads")
             elif storage_url.startswith("uploads/"):
                 rel = PurePosixPath(storage_url).relative_to("uploads")
@@ -226,30 +283,61 @@ async def rename_file(file_id: UUID, payload: FileRename):
 @router.get("/{file_id}/download")
 async def get_download_url(file_id: UUID):
     async with db_conn() as (conn, cur):
-        await cur.execute("SELECT storage_key FROM files WHERE id=%s", (str(file_id),))
+        await cur.execute(
+            "SELECT storage_key, storage_url, storage_backend, mime_type, filename FROM files WHERE id=%s",
+            (str(file_id),)
+        )
         row = await cur.fetchone()
 
     if not row or not row[0]:
         raise HTTPException(status_code=404, detail="File not found")
 
-    key = row[0]
-    url = presign_get_url(key, expires_seconds=3600)
-    return {"url": url}
+    storage_key, storage_url, storage_backend, mime_type, filename = row
+    if storage_backend and storage_backend.lower() == "s3":
+        url = presign_get_url(storage_key, expires_seconds=3600)
+        return {"url": url}
+
+    rel = None
+    if storage_key and not str(storage_key).startswith("notescape/"):
+        rel = PurePosixPath(str(storage_key))
+    elif storage_url:
+        storage_url = str(storage_url)
+        if storage_url.startswith("/uploads/"):
+            rel = PurePosixPath(storage_url).relative_to("/uploads")
+        elif storage_url.startswith("uploads/"):
+            rel = PurePosixPath(storage_url).relative_to("uploads")
+    if not rel:
+        raise HTTPException(status_code=404, detail="File not found")
+    local_path = (UPLOAD_ROOT / Path(rel.as_posix())).resolve()
+    if not local_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(local_path, media_type=mime_type, filename=filename)
 
 
 @router.post("/{file_id}/ocr")
 async def queue_ocr(file_id: UUID, engine: str = "easyocr"):
     # confirm file exists
     async with db_conn() as (conn, cur):
-        await cur.execute("SELECT 1 FROM files WHERE id=%s", (str(file_id),))
-        if not await cur.fetchone():
+        await cur.execute(
+            """
+            SELECT files.class_id, classes.owner_uid
+            FROM files
+            JOIN classes ON classes.id = files.class_id
+            WHERE files.id=%s
+            """,
+            (str(file_id),)
+        )
+        row = await cur.fetchone()
+        if not row:
             raise HTTPException(status_code=404, detail="File not found")
+        class_id, owner_uid = row
 
     job_id = str(uuid.uuid4())
 
     # processed layer output keys
-    output_json_key = f"processed/ocr/{file_id}/ocr.json"
-    output_text_key = f"processed/ocr/{file_id}/ocr.txt"
+    output_prefix = build_s3_document_prefix("public", owner_uid, class_id, str(file_id))
+    output_json_key = f"{output_prefix}/text/ocr.json"
+    output_text_key = f"{output_prefix}/text/ocr.txt"
 
     async with db_conn() as (conn, cur):
         await cur.execute(

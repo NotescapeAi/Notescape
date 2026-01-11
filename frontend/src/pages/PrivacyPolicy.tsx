@@ -6,7 +6,7 @@ const PrivacyPolicy: React.FC = () => {
   return (
     <>
       <Navbar />
-      <main className="min-h-screen surface text-gray-800">
+      <main className="min-h-screen surface text-main">
         <motion.section
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
