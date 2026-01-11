@@ -238,6 +238,13 @@ async def reset_flashcards(user_id: str = Depends(get_request_user_uid)):
     await _ensure_user_schema()
     async with db_conn() as (conn, cur):
         await cur.execute("DELETE FROM sr_card_state WHERE user_id=%s", (user_id,))
+        await cur.execute("DELETE FROM card_review_state WHERE user_id=%s", (user_id,))
+        await cur.execute("DELETE FROM study_events WHERE user_id=%s", (user_id,))
+        await cur.execute("DELETE FROM study_event_rollups_daily WHERE user_id=%s", (user_id,))
+        await cur.execute("DELETE FROM flashcard_jobs WHERE user_id=%s", (user_id,))
+        await cur.execute("DELETE FROM card_review_state WHERE user_id=%s", (user_id,))
+        await cur.execute("DELETE FROM study_events WHERE user_id=%s", (user_id,))
+        await cur.execute("DELETE FROM study_event_rollups_daily WHERE user_id=%s", (user_id,))
         await conn.commit()
     return {"ok": True}
 
@@ -285,6 +292,10 @@ async def delete_account(user_id: str = Depends(get_request_user_uid)):
         await cur.execute("DELETE FROM chat_messages WHERE session_id IN (SELECT id FROM chat_sessions WHERE user_id=%s)", (user_id,))
         await cur.execute("DELETE FROM chat_sessions WHERE user_id=%s", (user_id,))
         await cur.execute("DELETE FROM sr_card_state WHERE user_id=%s", (user_id,))
+        await cur.execute("DELETE FROM card_review_state WHERE user_id=%s", (user_id,))
+        await cur.execute("DELETE FROM study_events WHERE user_id=%s", (user_id,))
+        await cur.execute("DELETE FROM study_event_rollups_daily WHERE user_id=%s", (user_id,))
+        await cur.execute("DELETE FROM flashcard_jobs WHERE user_id=%s", (user_id,))
         await cur.execute(
             """
             DELETE FROM flashcards

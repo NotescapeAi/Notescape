@@ -77,6 +77,54 @@ export type Flashcard = {
   updated_at?: string | null;
 };
 
+export type FlashcardJob = {
+  job_id: string;
+  deck_id: number;
+  status: "queued" | "running" | "completed" | "failed";
+  progress: number;
+  error_message?: string | null;
+  created_at?: string | null;
+};
+
+export type AnalyticsOverview = {
+  reviews_today: number;
+  reviews_last_7_days: number;
+  avg_response_time: number;
+  upcoming_reviews_count: number;
+};
+
+export type WeakTopic = {
+  deck_id: number;
+  topic_id?: string | null;
+  total_reviews: number;
+  struggle_reviews: number;
+  struggle_rate: number;
+  avg_response_time: number;
+  avg_lapses: number;
+  avg_interval: number;
+  weakness_score: number;
+};
+
+export type WeakCard = {
+  card_id: string;
+  question: string;
+  deck_id: number;
+  topic_id?: string | null;
+  total_reviews: number;
+  struggle_reviews: number;
+  struggle_rate: number;
+  avg_response_time: number;
+  lapse_count: number;
+  interval: number;
+  weakness_score: number;
+};
+
+export type StudyTrendPoint = {
+  day: string;
+  total_reviews: number;
+  avg_response_time: number;
+};
+
 export type MasteryCard = {
   id: string;
   question: string;
@@ -207,10 +255,31 @@ export async function generateFlashcards(payload: {
   page_start?: number;
   page_end?: number;
   difficulty?: "easy" | "medium" | "hard";
-}): Promise<Flashcard[]> {
+}): Promise<FlashcardJob> {
   const headers = await userHeader();
-  const { data } = await http.post<Flashcard[]>("/flashcards/generate", payload, { headers });
-  return Array.isArray(data) ? data : [];
+  const { data } = await http.post<FlashcardJob>("/flashcards/generate", payload, { headers });
+  return data;
+}
+
+export async function generateFlashcardsAsync(payload: {
+  class_id: number;
+  file_ids: string[];
+  top_k?: number;
+  n_cards?: number;
+  style?: "mixed" | "definitions" | "conceptual" | "qa";
+  page_start?: number;
+  page_end?: number;
+  difficulty?: "easy" | "medium" | "hard";
+}): Promise<FlashcardJob> {
+  const headers = await userHeader();
+  const { data } = await http.post<FlashcardJob>("/flashcards/generate_async", payload, { headers });
+  return data;
+}
+
+export async function getFlashcardJobStatus(jobId: string): Promise<FlashcardJob> {
+  const headers = await userHeader();
+  const { data } = await http.get<FlashcardJob>(`/flashcards/job_status/${jobId}`, { headers });
+  return data;
 }
 
 export async function deleteFlashcard(id: string): Promise<void> {
@@ -637,12 +706,16 @@ export async function listDueCards(classId: number, fileId?: string, limit = 999
   return response.json();
 }
 
-export async function postReview(cardId: string, confidence: 1 | 2 | 3 | 4 | 5) {
+export async function postReview(
+  cardId: string,
+  confidence: 1 | 2 | 3 | 4 | 5,
+  responseTimeMs?: number
+) {
   const headers = await userHeader();
   const response = await fetch(`${API_BASE}/flashcards/${cardId}/review`, {
     method: 'POST',
     headers: { ...headers, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ confidence }),
+    body: JSON.stringify({ confidence, response_time_ms: responseTimeMs ?? null }),
   });
   if (!response.ok) throw new Error(`Failed to post review (HTTP ${response.status})`);
   return response.json();
@@ -671,6 +744,46 @@ export async function getMasteryStats(classId: number, fileId?: string) {
     total_reviews: number;
     average_rating: number;
   };
+}
+
+/* =========================
+   Analytics
+========================= */
+
+export async function getAnalyticsOverview(): Promise<AnalyticsOverview> {
+  const headers = await userHeader();
+  const { data } = await http.get<AnalyticsOverview>("/analytics/overview", { headers });
+  return data;
+}
+
+export async function getWeakTopics(params?: { days?: number; limit?: number }): Promise<WeakTopic[]> {
+  const headers = await userHeader();
+  const search = new URLSearchParams();
+  if (params?.days != null) search.set("days", String(params.days));
+  if (params?.limit != null) search.set("limit", String(params.limit));
+  const q = search.toString();
+  const { data } = await http.get<WeakTopic[]>(`/analytics/weak-topics${q ? `?${q}` : ""}`, { headers });
+  return Array.isArray(data) ? data : [];
+}
+
+export async function getWeakCards(params?: { days?: number; limit?: number; deck_id?: number }): Promise<WeakCard[]> {
+  const headers = await userHeader();
+  const search = new URLSearchParams();
+  if (params?.days != null) search.set("days", String(params.days));
+  if (params?.limit != null) search.set("limit", String(params.limit));
+  if (params?.deck_id != null) search.set("deck_id", String(params.deck_id));
+  const q = search.toString();
+  const { data } = await http.get<WeakCard[]>(`/analytics/weak-cards${q ? `?${q}` : ""}`, { headers });
+  return Array.isArray(data) ? data : [];
+}
+
+export async function getStudyTrends(params?: { days?: number }): Promise<StudyTrendPoint[]> {
+  const headers = await userHeader();
+  const search = new URLSearchParams();
+  if (params?.days != null) search.set("days", String(params.days));
+  const q = search.toString();
+  const { data } = await http.get<StudyTrendPoint[]>(`/analytics/study-trends${q ? `?${q}` : ""}`, { headers });
+  return Array.isArray(data) ? data : [];
 }
 
 

@@ -76,6 +76,36 @@ services:
     volumes:
       - ./backend:/app
 
+  flashcard_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: notescape-flashcard-worker
+    command: python -m app.workers.flashcard_worker
+    environment:
+      DATABASE_URL: "postgresql://${PGUSER:-notescape}:${PGPASSWORD:-notescape_pass}@db:5432/${PGDATABASE:-notescape}"
+      CORS_ORIGINS: "http://localhost:3000,http://localhost:5173"
+      UPLOAD_ROOT: "/app/uploads"
+      STORAGE_BACKEND: "${STORAGE_BACKEND:-s3}"
+      S3_ENDPOINT_URL: "${S3_ENDPOINT_URL}"
+      S3_ACCESS_KEY: "${S3_ACCESS_KEY}"
+      S3_SECRET_KEY: "${S3_SECRET_KEY}"
+      S3_BUCKET: "${S3_BUCKET}"
+      S3_REGION: "${S3_REGION:-us-east-1}"
+      EMBED_PROVIDER: "${EMBED_PROVIDER:-local}"
+      EMBED_MODEL: "${EMBED_MODEL:-sentence-transformers/all-MiniLM-L6-v2}"
+      EMBED_DIM: "${EMBED_DIM:-1536}"
+      LLM_PROVIDER: "${LLM_PROVIDER:-groq}"
+      GEN_MODEL: "${GEN_MODEL:-llama-3.1-8b-instant}"
+      GEN_T: "${GEN_T:-0.2}"
+      GROQ_API_KEY: "${GROQ_API_KEY:-}"
+      REDIS_URL: "redis://redis:6379/0"
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - ./backend:/app
+
   frontend:
     build:
       context: ./frontend

@@ -2,11 +2,13 @@ from typing import Optional, List, Tuple, Dict  # Importing Tuple here
 from fastapi import APIRouter, HTTPException, Path, Query, Depends
 from pydantic import BaseModel, Field
 from app.core.db import db_conn
-from app.core.llm import get_embedder, get_card_generator
+from app.core.llm import get_embedder
 from app.core.embedding_cache import embed_texts_cached
 from app.dependencies import get_request_user_uid
+from app.lib.study_analytics import apply_study_review
+from app.lib.flashcard_generation import vec_literal, pick_relevant_chunks, insert_flashcards
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 router = APIRouter(prefix="/api/flashcards", tags=["flashcards"])
 
@@ -108,6 +110,14 @@ class GenerateReq(BaseModel):
     page_start: Optional[int] = Field(default=None, ge=1)
     page_end: Optional[int] = Field(default=None, ge=1)
 
+class FlashcardJobOut(BaseModel):
+    job_id: str
+    deck_id: int
+    status: str
+    progress: int
+    error_message: Optional[str] = None
+    created_at: Optional[str] = None
+
 class FlashcardOut(BaseModel):
     id: str
     class_id: int
@@ -125,9 +135,6 @@ class FlashcardOut(BaseModel):
     state: Optional[str] = None
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
-
-def _vec_literal(vec: List[float]) -> str:
-    return "[" + ",".join(str(x) for x in vec) + "]"
 
 @router.get("/ping")
 async def ping():
@@ -172,6 +179,7 @@ def _maybe_expand_legacy_jsonblob(
 class ReviewReq(BaseModel):
     rating: Optional[str] = Field(default=None, pattern="^(again|hard|good|easy)$")
     confidence: Optional[int] = Field(default=None, ge=1, le=5)
+    response_time_ms: Optional[int] = Field(default=None, ge=0)
 
 
 class ManualCreateReq(BaseModel):
@@ -203,53 +211,6 @@ class MasteryReviewReq(BaseModel):
     card_id: str
     rating: int = Field(ge=1, le=5)
     response_time_ms: Optional[int] = Field(default=None, ge=0)
-
-
-def _sm2_update(ease: float, interval: int, reps: int, lapses: int, rating: str):
-    now = datetime.now(timezone.utc)
-    if rating == "again":
-        ease = max(1.3, ease - 0.2)
-        reps = 0
-        lapses += 1
-        interval = 0
-        due_at = now + timedelta(minutes=10)
-        state = "learning"
-    elif rating == "hard":
-        ease = max(1.3, ease - 0.15)
-        reps += 1
-        interval = 1 if interval == 0 else max(1, round(interval * 1.2))
-        due_at = now + timedelta(days=interval)
-        state = "review"
-    elif rating == "good":
-        reps += 1
-        if reps == 1:
-            interval = 1
-        elif reps == 2:
-            interval = 3
-        else:
-            interval = max(1, round(interval * ease))
-        due_at = now + timedelta(days=interval)
-        state = "review"
-    else:  # easy
-        ease = min(2.8, ease + 0.15)
-        reps += 1
-        if reps == 1:
-            interval = 1
-        elif reps == 2:
-            interval = 4
-        else:
-            interval = max(1, round(interval * ease * 1.3))
-        due_at = now + timedelta(days=interval)
-        state = "review"
-
-    return {
-        "ease_factor": ease,
-        "interval_days": interval,
-        "repetitions": reps,
-        "lapses": lapses,
-        "due_at": due_at,
-        "state": state,
-    }
 
 
 def _mastery_offset(rating: int) -> int:
@@ -323,14 +284,14 @@ async def list_due_cards(
     await _ensure_class_owner(class_id, user_id)
     q = """
       SELECT f.id::text, f.class_id, f.file_id::text, f.question, f.answer, f.hint, f.difficulty,
-             s.ease_factor, s.interval_days, s.repetitions, s.lapses, s.due_at, s.state
+             s.ease_factor, s.interval, s.repetitions, s.lapse_count, s.next_review_at
       FROM flashcards f
-      LEFT JOIN sr_card_state s ON s.card_id = f.id AND s.user_id = %s
+      LEFT JOIN card_review_state s ON s.card_id = f.id AND s.user_id = %s
       WHERE f.class_id = %s
         AND (%s::uuid IS NULL OR f.file_id = %s::uuid)
         AND f.deleted_at IS NULL
-        AND (s.due_at IS NULL OR s.due_at <= now())
-      ORDER BY s.due_at NULLS FIRST, f.created_at ASC
+        AND (s.next_review_at IS NULL OR s.next_review_at <= now())
+      ORDER BY s.next_review_at NULLS FIRST, f.created_at ASC
       LIMIT %s
     """
     async with db_conn() as (conn, cur):
@@ -339,6 +300,9 @@ async def list_due_cards(
 
     out = []
     for r in rows:
+        repetitions = r[9] or 0
+        interval = r[8] or 0
+        state = "new" if repetitions == 0 else ("learning" if interval == 0 else "review")
         out.append(
             {
                 "id": r[0],
@@ -349,11 +313,11 @@ async def list_due_cards(
                 "hint": r[5],
                 "difficulty": r[6],
                 "ease_factor": r[7] or 2.5,
-                "interval_days": r[8] or 0,
-                "repetitions": r[9] or 0,
+                "interval_days": interval,
+                "repetitions": repetitions,
                 "lapses": r[10] or 0,
                 "due_at": r[11].isoformat() if r[11] else None,
-                "state": r[12] or "new",
+                "state": state,
             }
         )
     return out
@@ -387,8 +351,8 @@ async def create_manual_flashcard(payload: ManualCreateReq, user_id: str = Depen
         card_id = row[0]
         await cur.execute(
             """
-            INSERT INTO sr_card_state (card_id, user_id, due_at, repetitions, interval_days, ease_factor, state, last_review)
-            VALUES (%s, %s, now(), 0, 0, 2.5, 'new', now())
+            INSERT INTO card_review_state (card_id, user_id, next_review_at, repetitions, interval, ease_factor, lapse_count, updated_at)
+            VALUES (%s, %s, now(), 0, 0, 2.5, 0, now())
             ON CONFLICT (card_id, user_id) DO NOTHING
             """,
             (card_id, user_id),
@@ -450,15 +414,15 @@ async def update_flashcard(
         if payload.reset_progress:
             await cur.execute(
                 """
-                INSERT INTO sr_card_state (card_id, user_id, due_at, repetitions, interval_days, ease_factor, state, last_review)
-                VALUES (%s, %s, now(), 0, 0, 2.5, 'new', now())
+                INSERT INTO card_review_state (card_id, user_id, next_review_at, repetitions, interval, ease_factor, lapse_count, updated_at)
+                VALUES (%s, %s, now(), 0, 0, 2.5, 0, now())
                 ON CONFLICT (card_id, user_id) DO UPDATE
-                SET due_at=now(),
+                SET next_review_at=now(),
                     repetitions=0,
-                    interval_days=0,
+                    interval=0,
                     ease_factor=2.5,
-                    state='new',
-                    last_review=now()
+                    lapse_count=0,
+                    updated_at=now()
                 """,
                 (card_id, user_id),
             )
@@ -491,7 +455,7 @@ async def review_card(
     async with db_conn() as (conn, cur):
         await cur.execute(
             """
-            SELECT f.class_id
+            SELECT f.class_id, f.file_id
             FROM flashcards f
             WHERE f.id::text=%s AND f.deleted_at IS NULL
             """,
@@ -500,44 +464,17 @@ async def review_card(
         row = await cur.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Card not found")
-        await _ensure_class_owner(row[0], user_id)
+        deck_id, topic_id = row
+        await _ensure_class_owner(deck_id, user_id)
 
-        await cur.execute(
-            "SELECT ease_factor, interval_days, repetitions, lapses FROM sr_card_state WHERE card_id=%s AND user_id=%s",
-            (card_id, user_id),
-        )
-        row = await cur.fetchone()
-
-        if row:
-            ease, interval, reps, lapses = row
-        else:
-            ease, interval, reps, lapses = 2.5, 0, 0, 0
-
-        updated = _sm2_update(float(ease), int(interval), int(reps), int(lapses), rating)
-
-        await cur.execute(
-            """
-            INSERT INTO sr_card_state (card_id, user_id, ease_factor, interval_days, repetitions, lapses, due_at, state, last_review)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, now())
-            ON CONFLICT (card_id, user_id) DO UPDATE
-            SET ease_factor=EXCLUDED.ease_factor,
-                interval_days=EXCLUDED.interval_days,
-                repetitions=EXCLUDED.repetitions,
-                lapses=EXCLUDED.lapses,
-                due_at=EXCLUDED.due_at,
-                state=EXCLUDED.state,
-                last_review=now()
-            """,
-            (
-                card_id,
-                user_id,
-                updated["ease_factor"],
-                updated["interval_days"],
-                updated["repetitions"],
-                updated["lapses"],
-                updated["due_at"],
-                updated["state"],
-            ),
+        updated = await apply_study_review(
+            cur,
+            user_id=user_id,
+            card_id=card_id,
+            deck_id=deck_id,
+            topic_id=str(topic_id) if topic_id else None,
+            rating=rating,
+            response_time_ms=payload.response_time_ms,
         )
         await conn.commit()
 
@@ -554,11 +491,14 @@ async def flashcard_progress(
     q = """
       SELECT
         COUNT(*) AS total,
-        COUNT(*) FILTER (WHERE s.due_at IS NULL OR s.due_at <= now()) AS due_now,
-        COUNT(*) FILTER (WHERE s.due_at IS NULL OR s.due_at <= date_trunc('day', now()) + interval '1 day') AS due_today,
+        COUNT(*) FILTER (WHERE s.next_review_at IS NULL OR s.next_review_at <= now()) AS due_now,
+        COUNT(*) FILTER (
+          WHERE s.next_review_at IS NULL
+             OR s.next_review_at <= date_trunc('day', now()) + interval '1 day'
+        ) AS due_today,
         COUNT(*) FILTER (WHERE COALESCE(s.repetitions, 0) = 0) AS learning
       FROM flashcards f
-      LEFT JOIN sr_card_state s ON s.card_id = f.id AND s.user_id = %s
+      LEFT JOIN card_review_state s ON s.card_id = f.id AND s.user_id = %s
       WHERE f.class_id = %s
         AND (%s::uuid IS NULL OR f.file_id = %s::uuid)
         AND f.deleted_at IS NULL
@@ -594,74 +534,48 @@ async def _insert_embeddings(pairs: List[Tuple[int, List[float]]]):
         for chunk_id, vec in pairs:
             await cur.execute(
                 "UPDATE file_chunks SET chunk_vector=%s::vector WHERE id=%s",
-                (_vec_literal(vec), chunk_id),
+                (vec_literal(vec), chunk_id),
             )
         await conn.commit()
 
-async def _pick_relevant_chunks(
-    class_id: int,
-    query_vec: List[float],
-    top_k: int,
-    file_ids: List[str],
-    page_start: Optional[int],
-    page_end: Optional[int],
-) -> List[Tuple[int, str, str]]:
-    vec_lit = _vec_literal(query_vec)
-    q = """
-      SELECT fc.id, fc.content, f.id::text
-      FROM file_chunks fc
-      JOIN files f ON f.id = fc.file_id
-      WHERE f.class_id = %s
-        AND fc.chunk_vector IS NOT NULL
-        AND (cardinality(%s::uuid[]) = 0 OR f.id = ANY(%s::uuid[]))
-        AND (%s::int IS NULL OR fc.page_end >= %s::int)
-        AND (%s::int IS NULL OR fc.page_start <= %s::int)
-      ORDER BY fc.chunk_vector <=> %s::vector
-      LIMIT %s
-    """
-    async with db_conn() as (conn, cur):
-        await cur.execute(q, (class_id, file_ids, file_ids, page_start, page_start, page_end, page_end, vec_lit, top_k))
-        return await cur.fetchall()
+ 
 
-async def _insert_flashcards(
-    class_id: int,
-    file_id: Optional[str],
-    cards: List[Dict],
-    source_chunk_id: Optional[int],
-    created_by: str,
-) -> List[str]:
-    out_ids: List[str] = []
+async def _enqueue_flashcard_job(req: GenerateReq, user_id: str) -> FlashcardJobOut:
+    await _ensure_class_owner(req.class_id, user_id)
+    if not req.file_ids:
+        raise HTTPException(status_code=400, detail="file_ids is required")
+
     async with db_conn() as (conn, cur):
-        for c in cards:
-            q = (c.get("question") or "").strip()
-            a = (c.get("answer") or "").strip()
-            if not q or not a:
-                continue
-            hint = c.get("hint")
-            diff = c.get("difficulty") or "medium"
-            tags = c.get("tags") or []
-            await cur.execute(
-                """
-                INSERT INTO flashcards (class_id, file_id, source_chunk_id, question, answer, hint, difficulty, tags, created_by, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, now())
-                RETURNING id::text
-                """,
-                (class_id, file_id, source_chunk_id, q, a, hint, diff, tags, created_by),
-            )
-            row = await cur.fetchone()
-            card_id = row[0]
-            out_ids.append(card_id)
-            if created_by:
-                await cur.execute(
-                    """
-                    INSERT INTO sr_card_state (card_id, user_id, due_at, repetitions, interval_days, ease_factor, state, last_review)
-                    VALUES (%s, %s, now(), 0, 0, 2.5, 'new', now())
-                    ON CONFLICT (card_id, user_id) DO NOTHING
-                    """,
-                    (card_id, created_by),
-                )
+        await cur.execute(
+            "SELECT id::text FROM files WHERE class_id=%s AND id = ANY(%s::uuid[])",
+            (req.class_id, req.file_ids),
+        )
+        valid_ids = [r[0] for r in await cur.fetchall()]
+        if not valid_ids:
+            raise HTTPException(status_code=404, detail="No files found for this class scope.")
+
+        payload = req.model_dump()
+        payload["file_ids"] = valid_ids
+
+        await cur.execute(
+            """
+            INSERT INTO flashcard_jobs (user_id, deck_id, status, progress, payload)
+            VALUES (%s, %s, 'queued', 0, %s::jsonb)
+            RETURNING id::text, deck_id, status, progress, error_message, created_at
+            """,
+            (user_id, req.class_id, json.dumps(payload)),
+        )
+        row = await cur.fetchone()
         await conn.commit()
-    return out_ids
+
+    return FlashcardJobOut(
+        job_id=row[0],
+        deck_id=row[1],
+        status=row[2],
+        progress=row[3],
+        error_message=row[4],
+        created_at=row[5].isoformat() if row[5] else None,
+    )
 
 # ---------- ROUTES ----------
 
@@ -683,101 +597,38 @@ async def ensure_embeddings(class_id: int, body: EnsureEmbeddingsReq):
         inserted += len(sub_ids)
     return {"inserted": inserted}
 
-@router.post("/generate", response_model=List[FlashcardOut])   # <-- no trailing slash
+@router.post("/generate", response_model=FlashcardJobOut)   # <-- no trailing slash
 async def generate(req: GenerateReq, user_id: str = Depends(get_request_user_uid)):
-    """
-    Generate up to n_cards, enforcing:
-    - exact target count (we reprompt until filled, then truncate),
-    - single difficulty if provided,
-    - de-duplication by question text.
-    """
-    embedder = get_embedder()
-    generator = get_card_generator()
+    return await _enqueue_flashcard_job(req, user_id)
 
-    # --- Retrieval
-    qtext = req.topic or "Create high-yield study flashcards for this class content."
-    await _ensure_class_owner(req.class_id, user_id)
-    if not req.file_ids:
-        raise HTTPException(status_code=400, detail="file_ids is required")
 
+@router.post("/generate_async", response_model=FlashcardJobOut)
+async def generate_async(req: GenerateReq, user_id: str = Depends(get_request_user_uid)):
+    return await _enqueue_flashcard_job(req, user_id)
+
+
+@router.get("/job_status/{job_id}", response_model=FlashcardJobOut)
+async def get_flashcard_job_status(job_id: str, user_id: str = Depends(get_request_user_uid)):
     async with db_conn() as (conn, cur):
         await cur.execute(
-            "SELECT id::text FROM files WHERE class_id=%s AND id = ANY(%s::uuid[])",
-            (req.class_id, req.file_ids),
+            """
+            SELECT id::text, deck_id, status, progress, error_message, created_at
+            FROM flashcard_jobs
+            WHERE id::text=%s AND user_id=%s
+            """,
+            (job_id, user_id),
         )
-        valid_ids = [r[0] for r in await cur.fetchall()]
-
-    if not valid_ids:
-        raise HTTPException(status_code=404, detail="No files found for this class scope.")
-
-    effective_top_k = max(req.top_k, min(60, req.n_cards * 2))
-    qvec = (await embed_texts_cached(embedder, [qtext]))[0]
-    hits = await _pick_relevant_chunks(req.class_id, qvec, effective_top_k, valid_ids, req.page_start, req.page_end)
-    if not hits:
-        raise HTTPException(status_code=404, detail="No chunks found for this class. Upload content first.")
-
-    # Make a few alternative contexts to help reach the target count
-    contexts: List[str] = []
-    joined_all = "\n".join("- " + c[:1000] for _, c, _ in hits)
-    contexts.append(joined_all)
-    if len(hits) > 4:
-        half = len(hits) // 2
-        contexts.append("\n".join("- " + c[:1000] for _, c, _ in hits[:half]))
-        contexts.append("\n".join("- " + c[:1000] for _, c, _ in hits[half:]))
-
-    target = max(1, min(50, req.n_cards or 24))
-    collected: List[Dict] = []
-    seen_q = set()
-
-    attempts = 0
-    # Try a few rounds until we reach target
-    while len(collected) < target and attempts < 6:
-        need = target - len(collected)
-        ctx = contexts[attempts % len(contexts)]
-        batch = await generator.generate(ctx, need, req.style or "mixed")
-        for c in batch or []:
-            q = (c.get("question") or "").strip()
-            a = (c.get("answer") or "").strip()
-            if not q or not a or q in seen_q:
-                continue
-            if req.difficulty:
-                c["difficulty"] = req.difficulty
-            collected.append(c)
-            seen_q.add(q)
-        attempts += 1
-
-    if not collected:
-        raise HTTPException(status_code=500, detail="Card generation returned no usable cards.")
-    if len(collected) < target:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Card generation returned {len(collected)} cards (target {target}). Please retry.",
-        )
-
-    # trim/pad to exact target (pad is not needed because we loop above)
-    if len(collected) > target:
-        collected = collected[:target]
-
-    source_chunk_id = hits[0][0] if hits else None
-    source_file_id = hits[0][2] if hits else (valid_ids[0] if valid_ids else None)
-    ids = await _insert_flashcards(req.class_id, source_file_id, collected, source_chunk_id, created_by=user_id)
-
-    out: List[FlashcardOut] = []
-    for i, c in zip(ids, collected):
-        out.append(
-            FlashcardOut(
-                id=i,
-                class_id=req.class_id,
-                file_id=source_file_id,
-                source_chunk_id=source_chunk_id,
-                question=c.get("question", ""),
-                answer=c.get("answer", ""),
-                hint=c.get("hint"),
-                difficulty=c.get("difficulty", "medium"),
-                tags=c.get("tags") or [],
-            )
-        )
-    return out
+        row = await cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return FlashcardJobOut(
+        job_id=row[0],
+        deck_id=row[1],
+        status=row[2],
+        progress=row[3],
+        error_message=row[4],
+        created_at=row[5].isoformat() if row[5] else None,
+    )
 
 
 @router.get("/{class_id}", response_model=List[FlashcardOut])
@@ -790,9 +641,9 @@ async def list_flashcards_for_class(
     await _ensure_class_owner(class_id, user_id)
     q = """
       SELECT f.id::text, f.class_id, f.file_id::text, f.source_chunk_id, f.question, f.answer, f.hint, f.difficulty, f.tags,
-             s.due_at, s.repetitions, s.ease_factor, s.interval_days, s.state, f.created_at, f.updated_at
+             s.next_review_at, s.repetitions, s.ease_factor, s.interval, s.lapse_count, f.created_at, f.updated_at
       FROM flashcards f
-      LEFT JOIN sr_card_state s ON s.card_id = f.id AND s.user_id = %s
+      LEFT JOIN card_review_state s ON s.card_id = f.id AND s.user_id = %s
       WHERE f.class_id = %s
         AND (%s::uuid IS NULL OR f.file_id = %s::uuid)
         AND f.deleted_at IS NULL
@@ -808,6 +659,9 @@ async def list_flashcards_for_class(
         if expanded:
             out.extend(expanded)
         else:
+            repetitions = r[10] or 0
+            interval = r[12] or 0
+            state = "new" if repetitions == 0 else ("learning" if interval == 0 else "review")
             out.append(
                 FlashcardOut(
                     id=r[0],
@@ -820,10 +674,10 @@ async def list_flashcards_for_class(
                     difficulty=r[7] or "medium",
                     tags=r[8] or [],
                     due_at=r[9].isoformat() if r[9] else None,
-                    repetitions=r[10],
+                    repetitions=repetitions,
                     ease_factor=r[11],
-                    interval_days=r[12],
-                    state=r[13],
+                    interval_days=interval,
+                    state=state,
                     created_at=r[14].isoformat() if r[14] else None,
                     updated_at=r[15].isoformat() if r[15] else None,
                 )
