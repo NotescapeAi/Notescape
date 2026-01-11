@@ -93,7 +93,7 @@ export default function Dashboard() {
   ];
 
   return (
-    <AppShell title="Dashboard">
+    <AppShell title="Dashboard" headerMaxWidthClassName="max-w-[1200px]">
       <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6">
         <section className="grid grid-cols-1 gap-4 lg:grid-cols-[1.2fr_1fr]">
           <div className="relative overflow-hidden rounded-[28px] bg-gradient-to-br from-[var(--primary)] via-[var(--primary)] to-[var(--accent-pink)] p-8 text-inverse shadow-[0_24px_60px_rgba(123,95,239,0.32)] animate-hero-gradient">
