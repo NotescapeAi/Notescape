@@ -27,6 +27,8 @@ type Props = {
   onSnipError?: (message: string) => void;
   onToggleFocus?: () => void;
   isFocusMode?: boolean;
+  isChatVisible?: boolean;
+  onToggleChatVisibility?: () => void;
 };
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
@@ -43,6 +45,8 @@ export default function PdfStudyViewer({
   onSnipError,
   onToggleFocus,
   isFocusMode,
+  isChatVisible,
+  onToggleChatVisibility,
 }: Props) {
   const [numPages, setNumPages] = useState(1);
   const [pageNumber, setPageNumber] = useState(1);
@@ -111,7 +115,6 @@ export default function PdfStudyViewer({
     const y = Math.max(e.clientY - bounds.top, 0);
     setDragStart({ x, y });
     setSnipRect({ left: x, top: y, width: 0, height: 0 });
-    console.log("snip:start", { x, y });
   }
 
   function moveSnip(e: React.MouseEvent<HTMLDivElement>) {
@@ -125,7 +128,6 @@ export default function PdfStudyViewer({
     const width = Math.abs(dragStart.x - x);
     const height = Math.abs(dragStart.y - y);
     setSnipRect({ left, top, width, height });
-    console.log("snip:drag", { left, top, width, height });
   }
 
   function endSnip() {
@@ -147,7 +149,6 @@ export default function PdfStudyViewer({
     const sy = (snipRect.top - (displayRect.top - bounds.top)) * scaleY;
     const sw = snipRect.width * scaleX;
     const sh = snipRect.height * scaleY;
-    console.log("snip:end", { sx, sy, sw, sh });
     if (sw <= 2 || sh <= 2) {
       setDragStart(null);
       setSnipRect(null);
@@ -161,7 +162,6 @@ export default function PdfStudyViewer({
     if (ctx) {
       ctx.drawImage(canvas, sx, sy, sw, sh, 0, 0, out.width, out.height);
       const dataUrl = out.toDataURL("image/png");
-      console.log("snip:img", { width: out.width, height: out.height });
       onSnip?.({
         data_url: dataUrl,
         content_type: "image/png",
@@ -197,29 +197,34 @@ export default function PdfStudyViewer({
           >
             Next
           </button>
-          <button
-            className={`rounded-lg border px-2 py-1 ${
-              snipMode ? "border-strong bg-inverse text-inverse" : "border-token"
-            } ${useIframe ? "cursor-not-allowed opacity-60" : ""}`}
-            onClick={() => {
-              if (useIframe) {
-                onSnipError?.("Snip isn't available in fallback mode. Reload the PDF.");
-                return;
-              }
-              setSnipMode((v) => !v);
-              setSnipRect(null);
-              setDragStart(null);
-            }}
-            disabled={useIframe}
-          >
-            {snipMode ? "Cancel snip" : "Snip"}
-          </button>
+          {!useIframe && onSnip && (
+            <button
+              className={`rounded-lg border px-2 py-1 ${
+                snipMode ? "border-strong bg-inverse text-inverse" : "border-token"
+              }`}
+              onClick={() => {
+                setSnipMode((v) => !v);
+                setSnipRect(null);
+                setDragStart(null);
+              }}
+            >
+              {snipMode ? "Cancel snip" : "Snip"}
+            </button>
+          )}
           {onToggleFocus && (
             <button
               className={`rounded-lg border px-2 py-1 ${isFocusMode ? "border-strong bg-inverse text-inverse" : "border-token"}`}
               onClick={onToggleFocus}
             >
               {isFocusMode ? "Exit focus" : "Focus"}
+            </button>
+          )}
+          {isFocusMode && onToggleChatVisibility && (
+            <button
+              className="rounded-lg border border-token px-2 py-1"
+              onClick={onToggleChatVisibility}
+            >
+              {isChatVisible ? "Hide chat" : "Show chat"}
             </button>
           )}
         </div>

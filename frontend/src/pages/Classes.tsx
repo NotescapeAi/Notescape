@@ -23,9 +23,12 @@ import {
   type ClassRow,
   type ChunkPreview,
   buildEmbeddings,
-  generateFlashcards,
+  generateFlashcardsAsync,
+  getFlashcardJobStatus,
   listFlashcards,
   type Flashcard,
+  getWeakCards,
+  type WeakCard,
   chatAsk,
   createChatSession,
   listChatSessions,
@@ -155,6 +158,8 @@ function ClassesContent() {
 
   const [preview, setPreview] = useState<ChunkPreview[] | null>(null);
   const [, setCards] = useState<Flashcard[]>([]);
+  const [weakCards, setWeakCards] = useState<WeakCard[]>([]);
+  const [weakCardsLoading, setWeakCardsLoading] = useState(false);
   const [activeFile, setActiveFile] = useState<FileRow | null>(null);
   const [activeFileViewUrl, setActiveFileViewUrl] = useState<string | null>(null);
   const [activeFileViewError, setActiveFileViewError] = useState<string | null>(null);
@@ -162,7 +167,7 @@ function ClassesContent() {
   const [chatDockState, setChatDockState] = useState<"collapsed" | "docked" | "fullscreen">("docked");
   const [chatDrawerOpen, setChatDrawerOpen] = useState(false);
   const [pdfFocusMode, setPdfFocusMode] = useState(false);
-  const [chatPeek, setChatPeek] = useState(false);
+  const [focusChatVisible, setFocusChatVisible] = useState(true);
   const [confirmDialog, setConfirmDialog] = useState<{ type: "delete" | "clear"; session: ChatSession } | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [selectedQuote, setSelectedQuote] = useState<{
@@ -264,6 +269,29 @@ function ClassesContent() {
   }, [selectedId, activeFile?.id]);
 
   useEffect(() => {
+    if (!selectedId || activeTab !== "flashcards") {
+      setWeakCards([]);
+      setWeakCardsLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setWeakCardsLoading(true);
+    (async () => {
+      try {
+        const data = await getWeakCards({ deck_id: selectedId, limit: 6, days: 30 });
+        if (!cancelled) setWeakCards(data);
+      } catch {
+        if (!cancelled) setWeakCards([]);
+      } finally {
+        if (!cancelled) setWeakCardsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId, activeTab]);
+
+  useEffect(() => {
     if (!selectedId || !activeFile) {
       setActiveFileViewUrl(null);
       setActiveFileViewError(null);
@@ -347,28 +375,23 @@ function ClassesContent() {
     if (pdfFocusMode) {
       setPdfFocusMode(false);
       setSidebar(prevSidebarRef.current);
-      setChatDockState("docked");
       return;
     }
     prevSidebarRef.current = sidebar;
     setSidebar("collapsed");
-    setChatDockState("collapsed");
     setChatDrawerOpen(false);
+    setFocusChatVisible(true);
     setPdfFocusMode(true);
   }
 
-  useEffect(() => {
-    if (!pdfFocusMode) {
-      setChatPeek(false);
-      return;
-    }
-    const handler = (e: MouseEvent) => {
-      const nearEdge = window.innerWidth - e.clientX < 28;
-      setChatPeek(nearEdge);
-    };
-    window.addEventListener("mousemove", handler);
-    return () => window.removeEventListener("mousemove", handler);
-  }, [pdfFocusMode]);
+  function toggleFocusChat() {
+    setFocusChatVisible((prev) => {
+      const next = !prev;
+      if (next) setChatDrawerOpen(true);
+      else setChatDrawerOpen(false);
+      return next;
+    });
+  }
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -427,19 +450,21 @@ function ClassesContent() {
     }
   }
 
-  async function onRenameSelected() {
-    if (!selectedId) return;
-    const current = classes.find((c) => c.id === selectedId)?.name ?? "";
+  async function onRenameSelected(id?: number) {
+    const targetId = id ?? selectedId;
+    if (!targetId) return;
+    const current = classes.find((c) => c.id === targetId)?.name ?? "";
     const next = window.prompt("Rename class", current);
     if (!next || !next.trim()) return;
-    await handleRename(selectedId, next.trim());
+    await handleRename(targetId, next.trim());
   }
 
-  async function onDeleteSelected() {
-    if (!selectedId) return;
-    const current = classes.find((c) => c.id === selectedId)?.name ?? "this class";
+  async function onDeleteSelected(id?: number) {
+    const targetId = id ?? selectedId;
+    if (!targetId) return;
+    const current = classes.find((c) => c.id === targetId)?.name ?? "this class";
     if (!confirm(`Delete \"${current}\"?`)) return;
-    await handleDeleteClass(selectedId);
+    await handleDeleteClass(targetId);
   }
 
   function acceptFile(f: File) {
@@ -582,7 +607,7 @@ function ClassesContent() {
 
       await buildEmbeddings(selectedId, 1000);
 
-      const created = await generateFlashcards({
+      const job = await generateFlashcardsAsync({
         class_id: selectedId,
         file_ids: ids,
         top_k: 12,
@@ -590,9 +615,29 @@ function ClassesContent() {
         style: opts.style,
         difficulty: opts.difficulty,
       });
+      showToastMessage("Flashcard job queued. Generating in background...");
 
+      const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+      let completed = false;
+      for (let i = 0; i < 90; i++) {
+        await sleep(2000);
+        const status = await getFlashcardJobStatus(job.job_id);
+        if (status.status === "completed") {
+          completed = true;
+          break;
+        }
+        if (status.status === "failed") {
+          throw new Error(status.error_message || "Flashcard generation failed.");
+        }
+      }
+      if (!completed) {
+        showToastMessage("Flashcard job still running. Check back in a moment.");
+        return;
+      }
+
+      const created = await listFlashcards(selectedId);
       setCards(created);
-      alert(`Created ${created.length} flashcards`);
+      alert(`Flashcards ready (${created.length} total).`);
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Failed to generate flashcards";
       alert(msg);
@@ -768,6 +813,7 @@ function ClassesContent() {
     setChatDockState("docked");
     setChatDrawerOpen(true);
     setSelectionMenu(null);
+    showToastMessage("Snippet captured. Add a prompt and send to chat.");
   }
 
   function sendQuote(
@@ -836,16 +882,20 @@ function ClassesContent() {
     : null;
   const isChatCollapsed = chatDockState === "collapsed";
   const isChatFullscreen = chatDockState === "fullscreen";
-  const showChatDock = !pdfFocusMode && !isChatCollapsed && !isChatFullscreen;
+  const showChatDock = pdfFocusMode ? focusChatVisible : !isChatCollapsed && !isChatFullscreen;
   const showChatFullscreen = !pdfFocusMode && isChatFullscreen;
   const showChatRail = !pdfFocusMode && isChatCollapsed;
   const showPdf = !isChatFullscreen;
   const isWorkspaceWide = activeTab === "documents" && !!activeFile;
-  const layoutClass = pdfFocusMode || isChatFullscreen
-    ? "grid-cols-1"
-    : isChatCollapsed
-      ? "grid-cols-1 lg:grid-cols-[minmax(0,1fr)_48px]"
-      : "grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(320px,25%)] xl:grid-cols-[minmax(0,1fr)_minmax(360px,30%)]";
+  const layoutClass = pdfFocusMode
+    ? focusChatVisible
+      ? "grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(320px,25%)] xl:grid-cols-[minmax(0,1fr)_minmax(360px,30%)]"
+      : "grid-cols-1"
+    : isChatFullscreen
+      ? "grid-cols-1"
+      : isChatCollapsed
+        ? "grid-cols-1 lg:grid-cols-[minmax(0,1fr)_48px]"
+        : "grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(320px,25%)] xl:grid-cols-[minmax(0,1fr)_minmax(360px,30%)]";
 
   return (
     <>
@@ -862,6 +912,8 @@ function ClassesContent() {
             selectedId={selectedId}
             onSelect={(id) => setSelectedId(id)}
             onNew={() => setShowCreate(true)}
+            onRename={(id) => onRenameSelected(id)}
+            onDelete={(id) => onDeleteSelected(id)}
             collapsed={classesPanelCollapsed}
             onToggleCollapse={toggleClassesPanel}
           />
@@ -897,12 +949,6 @@ function ClassesContent() {
                   <div>
                     <div className="text-sm font-semibold text-main">{currentClass}</div>
                   </div>
-                  <KebabMenu
-                    items={[
-                      { label: "Rename class", onClick: onRenameSelected },
-                      { label: "Delete class", onClick: onDeleteSelected },
-                    ]}
-                  />
                 </div>
 
                 <div className="flex items-center justify-between flex-wrap gap-4">
@@ -988,6 +1034,8 @@ function ClassesContent() {
                                   onSnipError={showToastMessage}
                                   onToggleFocus={toggleFocusMode}
                                   isFocusMode={pdfFocusMode}
+                                  isChatVisible={focusChatVisible}
+                                  onToggleChatVisibility={toggleFocusChat}
                                 />
                               ) : (
                                 <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted">
@@ -1004,7 +1052,9 @@ function ClassesContent() {
                           <div
                             className="flex items-center justify-between border-b border-token px-4 py-3"
                             onDoubleClick={() =>
-                              setChatDockState((prev) => (prev === "fullscreen" ? "docked" : "fullscreen"))
+                              pdfFocusMode
+                                ? toggleFocusChat()
+                                : setChatDockState((prev) => (prev === "fullscreen" ? "docked" : "fullscreen"))
                             }
                           >
                             <div className="text-sm font-semibold">Study Assistant</div>
@@ -1019,9 +1069,13 @@ function ClassesContent() {
                               </label>
                               <button
                                 className="rounded-lg border border-token px-2 py-1 text-xs text-muted"
-                                onClick={() => setChatDockState("collapsed")}
+                                onClick={() =>
+                                  pdfFocusMode
+                                    ? toggleFocusChat()
+                                    : setChatDockState("collapsed")
+                                }
                               >
-                                Collapse
+                                {pdfFocusMode ? "Hide" : "Collapse"}
                               </button>
                             </div>
                           </div>
@@ -1299,19 +1353,7 @@ function ClassesContent() {
                         </div>
                       </div>
                     )}
-                    {pdfFocusMode && chatPeek && (
-                      <button
-                        className="fixed right-3 top-1/2 z-40 -translate-y-1/2 rounded-full border border-token surface px-3 py-2 text-xs font-semibold text-muted shadow-sm"
-                        onClick={() => {
-                          setPdfFocusMode(false);
-                          setSidebar(prevSidebarRef.current);
-                          setChatDockState("docked");
-                        }}
-                      >
-                        Study Assistant
-                      </button>
-                    )}
-                    {chatDrawerOpen && !pdfFocusMode && (
+                    {chatDrawerOpen && (
                       <div className="fixed inset-0 z-50 flex lg:hidden">
                         <button
                           className="flex-1 bg-[rgba(0,0,0,0.4)]"
@@ -1526,6 +1568,26 @@ function ClassesContent() {
                     <span className="rounded-full border border-token surface-2 px-3 py-1">
                       Use the Generate button above
                     </span>
+                  </div>
+                  <div className="mt-4 rounded-xl border border-token surface-2 p-4">
+                    <div className="text-xs font-semibold text-muted">Needs attention</div>
+                    {weakCardsLoading ? (
+                      <div className="mt-2 text-xs text-muted">Loading weak cards...</div>
+                    ) : weakCards.length === 0 ? (
+                      <div className="mt-2 text-xs text-muted">No weak cards yet. Keep studying!</div>
+                    ) : (
+                      <div className="mt-3 grid gap-2">
+                        {weakCards.map((c) => (
+                          <div key={c.card_id} className="rounded-lg border border-token bg-white/60 px-3 py-2 text-xs">
+                            <div className="font-semibold text-main line-clamp-2">{c.question}</div>
+                            <div className="mt-1 text-[11px] text-muted">
+                              Struggle {Math.round(c.struggle_rate * 100)}% · Avg {Math.round(c.avg_response_time)}ms ·
+                              Score {c.weakness_score.toFixed(2)}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -2067,7 +2129,7 @@ function ClassesContent() {
 
 export default function Classes() {
   return (
-    <AppShell title="Classes" breadcrumbs={["Classes"]}>
+    <AppShell title="Classes">
       <ClassesContent />
     </AppShell>
   );

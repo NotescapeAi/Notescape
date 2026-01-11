@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { ChevronLeft } from "lucide-react";
 import type { ClassRow } from "../lib/api";
 import Button from "./Button";
+import KebabMenu from "./KebabMenu";
 
 
 type Props = {
@@ -9,6 +10,8 @@ type Props = {
   selectedId: number | null;
   onSelect: (id: number) => void;
   onNew: () => void;
+  onRename?: (id: number) => void;
+  onDelete?: (id: number) => void;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
 };
@@ -18,6 +21,8 @@ export default function ClassSidebar({
   selectedId,
   onSelect,
   onNew,
+  onRename,
+  onDelete,
   collapsed = false,
   onToggleCollapse,
 }: Props) {
@@ -45,12 +50,8 @@ export default function ClassSidebar({
         <div className="flex items-center justify-between gap-2">
           <div className={`${collapsed ? "text-center w-full" : ""}`}>
             {!collapsed && (
-              <div className="text-xs uppercase tracking-[0.3em] text-[var(--primary)]">Classes</div>
+              <div className="text-xs text-muted">{items.length} active</div>
             )}
-            <div className={`mt-1 font-semibold text-main ${collapsed ? "text-sm" : "text-2xl"}`}>
-              Your Classes
-            </div>
-            <div className="text-xs text-muted">{items.length} active</div>
           </div>
           <button
             onClick={onToggleCollapse}
@@ -105,9 +106,17 @@ export default function ClassSidebar({
               const isActive = c.id === selectedId;
               const chip = chips[idx % chips.length];
               return (
-                <button
+                <div
                   key={c.id}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => onSelect(c.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onSelect(c.id);
+                    }
+                  }}
                   title={collapsed ? c.name : undefined}
                   className={`w-full rounded-2xl border px-4 py-3 text-left text-sm transition ${
                     isActive
@@ -119,16 +128,28 @@ export default function ClassSidebar({
                     <span
                       className={`flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br ${chip} text-[11px] font-semibold text-inverse`}
                     >
-                      {c.name.slice(0, 2).toUpperCase()}
-                    </span>
-                    {!collapsed && (
-                      <div>
+                    {c.name.slice(0, 2).toUpperCase()}
+                  </span>
+                  {!collapsed && (
+                      <div className="flex-1 min-w-0">
                         <div className="font-semibold text-main truncate">{c.name}</div>
-                        <div className="text-xs text-muted">{c.subject ?? "General"}</div>
                       </div>
-                    )}
-                  </div>
-                </button>
+                  )}
+                  {!collapsed && (onRename || onDelete) && (
+                    <div
+                      onClick={(e) => e.stopPropagation()}
+                      onMouseDown={(e) => e.stopPropagation()}
+                    >
+                      <KebabMenu
+                        items={[
+                          ...(onRename ? [{ label: "Rename class", onClick: () => onRename(c.id) }] : []),
+                          ...(onDelete ? [{ label: "Delete class", onClick: () => onDelete(c.id) }] : []),
+                        ]}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
               );
             })}
           </div>
