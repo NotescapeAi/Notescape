@@ -16,15 +16,15 @@ export default function PageHeader({ title, subtitle, backHref, backState, actio
           <Link
             to={backHref}
             state={backState}
-            className="mt-0.5 inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600"
+            className="mt-0.5 inline-flex h-9 w-9 items-center justify-center rounded-lg border border-token surface text-muted"
             aria-label="Back"
           >
             <span className="text-base">&#8592;</span>
           </Link>
         )}
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">{title}</h1>
-          {subtitle && <p className="text-sm text-slate-500">{subtitle}</p>}
+          <h1 className="text-2xl font-semibold text-main">{title}</h1>
+          {subtitle && <p className="text-sm text-muted">{subtitle}</p>}
         </div>
       </div>
       {actions ? <div className="flex items-center gap-2">{actions}</div> : null}

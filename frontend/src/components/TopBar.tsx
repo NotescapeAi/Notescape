@@ -106,7 +106,7 @@ export default function TopBar({ title, breadcrumbs, subtitle, showGreeting, bac
                 Settings
               </button>
               <button
-                className="w-full rounded-xl px-3 py-2 text-left text-sm text-[#EF5F8B] hover:bg-[rgba(239,95,139,0.12)]"
+                className="w-full rounded-xl px-3 py-2 text-left text-sm text-[var(--accent-pink)] hover:bg-[rgba(239,95,139,0.12)]"
                 onClick={() => navigate("/logout")}
               >
                 Logout

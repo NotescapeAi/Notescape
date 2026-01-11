@@ -1,8 +1,8 @@
 /* === Professional Sidebar (clean, accessible, responsive) === */
 :root{
-  --brand:  #7B5FEF;
-  --accent: #5FEFC3;
-  --danger: #EF5F8B;
+  --brand: var(--primary);
+  --accent: var(--accent-mint);
+  --danger: var(--accent-pink);
 
   --panel:   #F7F8FC;
   --panel-2: #EEF2F7;

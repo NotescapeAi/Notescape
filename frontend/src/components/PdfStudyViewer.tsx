@@ -158,11 +158,11 @@ export default function PdfStudyViewer({ fileUrl, fileName, onTextSelect, onSnip
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-2 text-xs text-slate-600">
+      <div className="flex items-center justify-between border-b border-token surface px-4 py-2 text-xs text-muted">
         <div className="font-semibold">{fileName}</div>
         <div className="flex items-center gap-2">
           <button
-            className="rounded-lg border border-slate-200 px-2 py-1"
+            className="rounded-lg border border-token px-2 py-1"
             onClick={() => setPageNumber((p) => Math.max(1, p - 1))}
             disabled={pageNumber <= 1}
           >
@@ -170,7 +170,7 @@ export default function PdfStudyViewer({ fileUrl, fileName, onTextSelect, onSnip
           </button>
           <span>{pageLabel}</span>
           <button
-            className="rounded-lg border border-slate-200 px-2 py-1"
+            className="rounded-lg border border-token px-2 py-1"
             onClick={() => setPageNumber((p) => Math.min(numPages, p + 1))}
             disabled={pageNumber >= numPages}
           >
@@ -178,7 +178,7 @@ export default function PdfStudyViewer({ fileUrl, fileName, onTextSelect, onSnip
           </button>
           <button
             className={`rounded-lg border px-2 py-1 ${
-              snipMode ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200"
+              snipMode ? "border-strong bg-inverse text-inverse" : "border-token"
             } ${useIframe ? "cursor-not-allowed opacity-60" : ""}`}
             onClick={() => {
               if (useIframe) {
@@ -211,15 +211,15 @@ export default function PdfStudyViewer({ fileUrl, fileName, onTextSelect, onSnip
             <iframe
               title={fileName}
               src={`${fileUrl}#toolbar=1&navpanes=0&view=FitH`}
-              className="h-[70vh] w-full rounded-lg border border-slate-200 bg-white"
+              className="h-[70vh] w-full rounded-lg border border-token surface"
             />
           ) : (
             <Document
               file={fileUrl}
               onLoadSuccess={(data) => setNumPages(data.numPages)}
               onLoadError={() => setUseIframe(true)}
-              loading={<div className="text-xs text-slate-500">Loading PDF...</div>}
-              error={<div className="text-xs text-slate-500">Could not load this PDF.</div>}
+              loading={<div className="text-xs text-muted">Loading PDF...</div>}
+              error={<div className="text-xs text-muted">Could not load this PDF.</div>}
             >
             <Page pageNumber={pageNumber} width={pageWidth} />
           </Document>
@@ -235,7 +235,7 @@ export default function PdfStudyViewer({ fileUrl, fileName, onTextSelect, onSnip
           )}
           {snipRect && (
             <div
-              className="absolute border-2 border-slate-900 bg-slate-900/10"
+              className="absolute border-2 border-strong surface-tint"
               style={{
                 left: snipRect.left,
                 top: snipRect.top,

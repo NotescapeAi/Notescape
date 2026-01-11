@@ -235,9 +235,9 @@ export default function FlashcardsPage() {
       <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <div className="text-xs uppercase tracking-[0.3em] text-[#7B5FEF]">Flashcards</div>
-            <h1 className="mt-2 text-3xl font-semibold text-[#0F1020]">Practice with intent</h1>
-            <div className="text-sm text-[#6B5CA5]">{className}</div>
+            <div className="text-xs uppercase tracking-[0.3em] text-[var(--primary)]">Flashcards</div>
+            <h1 className="mt-2 text-3xl font-semibold text-main">Practice with intent</h1>
+            <div className="text-sm text-muted">{className}</div>
           </div>
           <div className="flex items-center gap-3">
             <Button variant="primary" onClick={openCreate} className="rounded-full px-5">
@@ -249,7 +249,7 @@ export default function FlashcardsPage() {
           </div>
         </div>
 
-        <div className="rounded-[28px] bg-white p-6 shadow-[0_16px_40px_rgba(15,16,32,0.08)]">
+        <div className="rounded-[28px] surface p-6 shadow-[0_16px_40px_rgba(15,16,32,0.08)]">
             <div className="flex flex-wrap items-center gap-2">
           {(["all", "due"] as const).map((v) => (
             <button
@@ -257,8 +257,8 @@ export default function FlashcardsPage() {
               onClick={() => setViewFilter(v)}
               className={`rounded-full border px-4 py-1.5 text-xs font-semibold ${
                 viewFilter === v
-                  ? "border-[#7B5FEF] bg-[#7B5FEF] text-white shadow-md"
-                  : "border-[#EFE7FF] bg-white text-[#5A4B92]"
+                  ? "border-[var(--primary)] bg-[var(--primary)] text-inverse shadow-md"
+                  : "border-token surface text-muted"
               }`}
             >
               {v === "all" ? "All cards" : "Due"}
@@ -270,8 +270,8 @@ export default function FlashcardsPage() {
               onClick={() => setDifficultyFilter(d)}
               className={`rounded-full border px-4 py-1.5 text-xs font-semibold ${
                 difficultyFilter === d
-                  ? "border-[#7B5FEF] bg-[#7B5FEF] text-white shadow-md"
-                  : "border-[#EFE7FF] bg-white text-[#5A4B92]"
+                  ? "border-[var(--primary)] bg-[var(--primary)] text-inverse shadow-md"
+                  : "border-token surface text-muted"
               }`}
             >
               {d === "all" ? "Any difficulty" : d}
@@ -280,7 +280,7 @@ export default function FlashcardsPage() {
           <select
             value={fileFilter}
             onChange={(e) => setFileFilter(e.target.value)}
-            className="h-10 rounded-2xl border border-[#EFE7FF] bg-white px-3 text-sm text-[#5A4B92]"
+            className="h-10 rounded-2xl border border-token surface px-3 text-sm text-muted"
           >
             <option value="all">All files</option>
             {files.map((f) => (
@@ -301,19 +301,19 @@ export default function FlashcardsPage() {
           ].map((stat) => (
             <div
               key={stat.label}
-              className="rounded-[22px] bg-white p-4 shadow-[0_12px_30px_rgba(15,16,32,0.08)]"
+              className="rounded-[22px] surface p-4 shadow-[0_12px_30px_rgba(15,16,32,0.08)]"
             >
-              <div className="text-xs text-[#6B5CA5]">{stat.label}</div>
-              <div className="text-2xl font-semibold text-[#0F1020]">{stat.value}</div>
+              <div className="text-xs text-muted">{stat.label}</div>
+              <div className="text-2xl font-semibold text-main">{stat.value}</div>
             </div>
           ))}
         </div>
 
-        {loading && <div className="mt-4 text-sm text-[#6B5CA5]">Loading...</div>}
-        {error && <div className="mt-4 text-sm text-[#EF5F8B]">{error}</div>}
+        {loading && <div className="mt-4 text-sm text-muted">Loading...</div>}
+        {error && <div className="mt-4 text-sm text-[var(--accent-pink)]">{error}</div>}
 
         {!loading && !error && filtered.length === 0 && (
-          <div className="mt-6 rounded-[28px] border border-dashed border-[#EFE7FF] bg-white p-10 text-sm text-[#6B5CA5] text-center">
+          <div className="mt-6 rounded-[28px] border border-dashed border-token surface p-10 text-sm text-muted text-center">
             No flashcards found. Generate or create one to start studying.
           </div>
         )}
@@ -329,13 +329,13 @@ export default function FlashcardsPage() {
               const startIndex = filtered.findIndex((fc) => String(fc.id) === String(c.id));
 
               return (
-                <div key={c.id} className="rounded-[28px] bg-white p-5 shadow-[0_18px_40px_rgba(15,16,32,0.08)]">
+                <div key={c.id} className="rounded-[28px] surface p-5 shadow-[0_18px_40px_rgba(15,16,32,0.08)]">
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex flex-wrap items-center gap-2 text-xs">
-                      <span className="rounded-full border border-[#EFE7FF] bg-[#F4F0FF] px-2 py-0.5 font-semibold text-[#7B5FEF]">
+                      <span className="rounded-full border border-token surface-2 px-2 py-0.5 font-semibold text-[var(--primary)]">
                         {(c.difficulty || "medium").toUpperCase()}
                       </span>
-                      <span className="rounded-full border border-[#EFE7FF] bg-[#F4F0FF] px-2 py-0.5 text-[#5A4B92]">
+                      <span className="rounded-full border border-token surface-2 px-2 py-0.5 text-muted">
                         {status}
                       </span>
                     </div>
@@ -349,21 +349,21 @@ export default function FlashcardsPage() {
                     />
                   </div>
 
-                  <div className="mt-3 text-base font-semibold text-[#0F1020]">{sanitizeText(c.question)}</div>
-                  <div className="mt-2 text-xs text-[#6B5CA5]">Next review: {nextReview}</div>
+                  <div className="mt-3 text-base font-semibold text-main">{sanitizeText(c.question)}</div>
+                  <div className="mt-2 text-xs text-muted">Next review: {nextReview}</div>
                   <details className="mt-3">
-                    <summary className="cursor-pointer text-sm font-semibold text-[#5A4B92]">Show answer</summary>
-                    <div className="mt-2 text-sm text-[#5A4B92] whitespace-pre-wrap">
+                    <summary className="cursor-pointer text-sm font-semibold text-muted">Show answer</summary>
+                    <div className="mt-2 text-sm text-muted whitespace-pre-wrap">
                       {sanitizeText(c.answer)}
                     </div>
                   </details>
                   {c.hint && (
-                    <div className="mt-3 text-xs text-[#6B5CA5]">
+                    <div className="mt-3 text-xs text-muted">
                       <span className="font-semibold">Hint:</span> {sanitizeText(c.hint)}
                     </div>
                   )}
                   {tags.length > 0 && (
-                    <div className="mt-3 text-xs text-[#6B5CA5]">
+                    <div className="mt-3 text-xs text-muted">
                       <span className="font-semibold">Tags:</span> {tags.join(", ")}
                     </div>
                   )}
@@ -379,11 +379,11 @@ export default function FlashcardsPage() {
           <div
             role="dialog"
             aria-modal="true"
-            className="fixed inset-0 z-50 flex items-center justify-center bg-[#0F1020]/40 p-4"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
             onClick={() => setFormOpen(false)}
           >
             <div
-              className="w-full max-w-2xl rounded-[28px] bg-white p-6 shadow-xl"
+              className="w-full max-w-2xl rounded-[28px] surface p-6 shadow-xl"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between">
@@ -391,7 +391,7 @@ export default function FlashcardsPage() {
                   {editingCard ? "Edit flashcard" : "New flashcard"}
                 </h2>
                 <button
-                  className="rounded-lg border border-[#EFE7FF] px-2 py-1 text-xs text-[#6B5CA5]"
+                  className="rounded-lg border border-token px-2 py-1 text-xs text-muted"
                   onClick={() => setFormOpen(false)}
                 >
                   Close
@@ -400,40 +400,40 @@ export default function FlashcardsPage() {
 
               <div className="mt-4 grid gap-3">
                 <div>
-                  <label className="text-xs font-semibold text-[#6B5CA5]">Question</label>
+                  <label className="text-xs font-semibold text-muted">Question</label>
                   <textarea
                     value={formState.question}
                     onChange={(e) => setFormState((s) => ({ ...s, question: e.target.value }))}
-                    className="mt-1 w-full rounded-xl border border-[#EFE7FF] px-3 py-2 text-sm"
+                    className="mt-1 w-full rounded-xl border border-token px-3 py-2 text-sm"
                     rows={3}
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-semibold text-[#6B5CA5]">Answer</label>
+                  <label className="text-xs font-semibold text-muted">Answer</label>
                   <textarea
                     value={formState.answer}
                     onChange={(e) => setFormState((s) => ({ ...s, answer: e.target.value }))}
-                    className="mt-1 w-full rounded-xl border border-[#EFE7FF] px-3 py-2 text-sm"
+                    className="mt-1 w-full rounded-xl border border-token px-3 py-2 text-sm"
                     rows={4}
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-semibold text-[#6B5CA5]">Hint (optional)</label>
+                  <label className="text-xs font-semibold text-muted">Hint (optional)</label>
                   <input
                     value={formState.hint}
                     onChange={(e) => setFormState((s) => ({ ...s, hint: e.target.value }))}
-                    className="mt-1 h-10 w-full rounded-xl border border-[#EFE7FF] px-3 text-sm"
+                    className="mt-1 h-10 w-full rounded-xl border border-token px-3 text-sm"
                   />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs font-semibold text-[#6B5CA5]">Difficulty</label>
+                    <label className="text-xs font-semibold text-muted">Difficulty</label>
                     <select
                       value={formState.difficulty}
                       onChange={(e) =>
                         setFormState((s) => ({ ...s, difficulty: e.target.value as FormState["difficulty"] }))
                       }
-                      className="mt-1 h-10 w-full rounded-xl border border-[#EFE7FF] px-3 text-sm"
+                      className="mt-1 h-10 w-full rounded-xl border border-token px-3 text-sm"
                     >
                       <option value="easy">Easy</option>
                       <option value="medium">Medium</option>
@@ -441,11 +441,11 @@ export default function FlashcardsPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="text-xs font-semibold text-[#6B5CA5]">File (optional)</label>
+                    <label className="text-xs font-semibold text-muted">File (optional)</label>
                     <select
                       value={formState.file_id}
                       onChange={(e) => setFormState((s) => ({ ...s, file_id: e.target.value }))}
-                      className="mt-1 h-10 w-full rounded-xl border border-[#EFE7FF] px-3 text-sm"
+                      className="mt-1 h-10 w-full rounded-xl border border-token px-3 text-sm"
                     >
                       <option value="">No file</option>
                       {files.map((f) => (
@@ -457,15 +457,15 @@ export default function FlashcardsPage() {
                   </div>
                 </div>
                 <div>
-                  <label className="text-xs font-semibold text-[#6B5CA5]">Tags (comma separated)</label>
+                  <label className="text-xs font-semibold text-muted">Tags (comma separated)</label>
                   <input
                     value={formState.tags}
                     onChange={(e) => setFormState((s) => ({ ...s, tags: e.target.value }))}
-                    className="mt-1 h-10 w-full rounded-xl border border-[#EFE7FF] px-3 text-sm"
+                    className="mt-1 h-10 w-full rounded-xl border border-token px-3 text-sm"
                   />
                 </div>
                 {editingCard && (
-                  <label className="flex items-center gap-2 text-xs text-[#6B5CA5]">
+                  <label className="flex items-center gap-2 text-xs text-muted">
                     <input
                       type="checkbox"
                       checked={formState.reset_progress}

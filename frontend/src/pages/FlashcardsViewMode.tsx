@@ -72,24 +72,24 @@ export default function FlashcardsViewMode() {
       backState={{ tab: "flashcards" }}
     >
       <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6">
-        <div className="rounded-[24px] bg-white p-6 shadow-[0_12px_30px_rgba(15,16,32,0.08)]">
+        <div className="rounded-[24px] surface p-6 shadow-[0_12px_30px_rgba(15,16,32,0.08)]">
           {loading ? (
-            <div className="text-sm text-[#6B5CA5]">Loading cards...</div>
+            <div className="text-sm text-muted">Loading cards...</div>
           ) : !current ? (
-            <div className="text-sm text-[#6B5CA5]">No cards available.</div>
+            <div className="text-sm text-muted">No cards available.</div>
           ) : (
             <div className="space-y-5">
-              <div className="text-xs text-[#6B5CA5]">
+              <div className="text-xs text-muted">
                 Card {idx + 1} of {cards.length}
               </div>
-              <div className="text-lg font-semibold text-[#0F1020]">{sanitizeText(current.question)}</div>
+              <div className="text-lg font-semibold text-main">{sanitizeText(current.question)}</div>
 
               <Button variant="primary" onClick={() => setRevealed((v) => !v)}>
                 {revealed ? "Hide answer" : "Show answer"}
               </Button>
 
               {revealed && (
-                <div className="rounded-xl border border-[#EFE7FF] bg-[#F8F5FF] p-4 text-sm text-[#5A4B92] whitespace-pre-wrap">
+                <div className="rounded-xl border border-token surface-2 p-4 text-sm text-muted whitespace-pre-wrap">
                   {sanitizeText(current.answer)}
                 </div>
               )}

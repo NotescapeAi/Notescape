@@ -10,9 +10,9 @@ type Props = React.ButtonHTMLAttributes<HTMLButtonElement> & {
 
 const base = "inline-flex items-center justify-center rounded-xl font-semibold transition disabled:opacity-60";
 const variants: Record<Variant, string> = {
-  primary: "bg-[#7B5FEF] text-white hover:bg-[#6A4DE6] shadow-[0_10px_24px_rgba(123,95,239,0.35)]",
-  secondary: "border border-[#EFE7FF] bg-white text-[#5A4B92] hover:border-[#E0D6FF]",
-  ghost: "text-[#5A4B92] hover:bg-[#F4F0FF]",
+  primary: "bg-[var(--primary)] text-inverse hover:opacity-90 shadow-[0_10px_24px_rgba(123,95,239,0.35)]",
+  secondary: "border border-token surface text-muted hover:border-token",
+  ghost: "text-muted hover:bg-[var(--surface-2)]",
 };
 const sizes: Record<Size, string> = {
   sm: "h-8 px-3 text-xs",

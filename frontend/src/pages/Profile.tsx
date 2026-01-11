@@ -27,9 +27,9 @@ export default function Profile() {
   return (
     <AppShell title="Profile" breadcrumbs={["Profile"]} subtitle="Manage your workspace identity.">
       <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6">
-        <div className="max-w-2xl rounded-[24px] bg-white p-6 shadow-[0_12px_30px_rgba(15,16,32,0.08)]">
+        <div className="max-w-2xl rounded-[24px] surface p-6 shadow-[0_12px_30px_rgba(15,16,32,0.08)]">
           {loading ? (
-            <div className="text-sm text-[#6B5CA5]">Loading profile...</div>
+            <div className="text-sm text-muted">Loading profile...</div>
           ) : (
             <>
               <div className="flex items-center gap-4">
@@ -40,36 +40,36 @@ export default function Profile() {
                     className="h-12 w-12 rounded-full object-cover"
                   />
                 ) : (
-                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#0F1020] text-sm font-semibold text-white">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-full bg-inverse text-sm font-semibold text-inverse">
                     {initials}
                   </div>
                 )}
                 <div>
-                  <div className="text-lg font-semibold text-[#0F1020]">
+                  <div className="text-lg font-semibold text-main">
                     {profile?.display_name || profile?.full_name || "Your profile"}
                   </div>
-                  <div className="text-sm text-[#6B5CA5]">{profile?.email}</div>
+                  <div className="text-sm text-muted">{profile?.email}</div>
                 </div>
               </div>
 
-              <div className="mt-6 grid gap-4 text-sm text-[#5A4B92]">
+              <div className="mt-6 grid gap-4 text-sm text-muted">
                 <div>
-                  <div className="text-xs font-semibold text-[#6B5CA5]">Display name</div>
-                  <div className="mt-1 text-[#0F1020]">{profile?.display_name}</div>
+                  <div className="text-xs font-semibold text-muted">Display name</div>
+                  <div className="mt-1 text-main">{profile?.display_name}</div>
                 </div>
                 <div>
-                  <div className="text-xs font-semibold text-[#6B5CA5]">Email</div>
-                  <div className="mt-1 text-[#0F1020]">{profile?.email}</div>
+                  <div className="text-xs font-semibold text-muted">Email</div>
+                  <div className="mt-1 text-main">{profile?.email}</div>
                 </div>
                 <div>
-                  <div className="text-xs font-semibold text-[#6B5CA5]">Provider</div>
-                  <div className="mt-1 inline-flex rounded-full border border-[#EFE7FF] px-3 py-1 text-xs text-[#7B5FEF]">
+                  <div className="text-xs font-semibold text-muted">Provider</div>
+                  <div className="mt-1 inline-flex rounded-full border border-token px-3 py-1 text-xs text-[var(--primary)]">
                     {profile?.provider}
                   </div>
                 </div>
                 <div>
-                  <div className="text-xs font-semibold text-[#6B5CA5]">Account created</div>
-                  <div className="mt-1 text-[#0F1020]">
+                  <div className="text-xs font-semibold text-muted">Account created</div>
+                  <div className="mt-1 text-main">
                     {profile?.created_at ? new Date(profile.created_at).toLocaleDateString() : "--"}
                   </div>
                 </div>
@@ -87,37 +87,40 @@ export default function Profile() {
         <div
           role="dialog"
           aria-modal="true"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-[#0F1020]/40 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
           onClick={() => setIsEditing(false)}
         >
           <div
-            className="w-full max-w-md rounded-[24px] bg-white p-5 shadow-xl"
+            className="w-full max-w-md rounded-[24px] surface p-5 shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="text-lg font-semibold text-[#0F1020]">Edit profile</div>
+            <div className="text-lg font-semibold text-main">Edit profile</div>
             <div className="mt-4 grid gap-3">
               <div>
-                <label className="text-xs font-semibold text-[#6B5CA5]">Display name</label>
+                <label className="text-xs font-semibold text-muted">Display name</label>
                 <input
+                  type="text"
                   value={displayName}
                   onChange={(e) => setDisplayName(e.target.value)}
-                  className="mt-1 h-10 w-full rounded-lg border border-[#EFE7FF] px-3 text-sm"
+                  className="mt-1 h-10 w-full rounded-lg border border-token px-3 text-sm"
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-[#6B5CA5]">Email</label>
+                <label className="text-xs font-semibold text-muted">Email</label>
                 <input
+                  type="email"
                   value={profile?.email || ""}
                   readOnly
-                  className="mt-1 h-10 w-full rounded-lg border border-[#EFE7FF] px-3 text-sm"
+                  className="mt-1 h-10 w-full rounded-lg border border-token px-3 text-sm"
                 />
               </div>
               <div>
-                <label className="text-xs font-semibold text-[#6B5CA5]">Avatar URL</label>
+                <label className="text-xs font-semibold text-muted">Avatar URL</label>
                 <input
+                  type="text"
                   value={avatarUrl}
                   onChange={(e) => setAvatarUrl(e.target.value)}
-                  className="mt-1 h-10 w-full rounded-lg border border-[#EFE7FF] px-3 text-sm"
+                  className="mt-1 h-10 w-full rounded-lg border border-token px-3 text-sm"
                   placeholder="Optional"
                 />
               </div>

@@ -10,7 +10,7 @@ export default function BookmarkToggle({ id }: { id: string | number }) {
   return (
     <button
       onClick={() => bm.toggle(id)}
-      className="inline-flex items-center gap-1 rounded-full border border-slate-200 px-2 py-1 text-[12px] hover:bg-slate-50"
+      className="inline-flex items-center gap-1 rounded-full border border-token px-2 py-1 text-[12px] hover:bg-[var(--surface-2)]"
       title={marked ? "Remove bookmark" : "Bookmark this card"}
     >
       {marked ? <BookmarkCheck className="h-4 w-4" /> : <Bookmark className="h-4 w-4" />}

@@ -115,8 +115,8 @@ function Tabs({
           onClick={() => onChange(key)}
           className={`rounded-full border px-4 py-1.5 text-sm font-semibold transition ${
             active === key
-              ? "border-slate-900 bg-slate-900 text-white"
-              : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+              ? "border-strong bg-inverse text-inverse"
+              : "border-token surface text-muted hover:border-token"
           }`}
         >
           {label}
@@ -628,7 +628,7 @@ export default function Classes() {
 
   return (
     <AppShell title="Classes" breadcrumbs={["Classes"]}>
-      <div className="min-h-screen bg-slate-50">
+      <div className="min-h-screen surface-2">
         <div className="grid grid-cols-[300px_minmax(0,1fr)]">
         <ClassSidebar
           items={classes}
@@ -640,9 +640,9 @@ export default function Classes() {
         <section className="p-6 lg:p-8">
           <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6">
             {!selectedId ? (
-              <div className="rounded-2xl border border-dashed border-slate-200 bg-white p-10 text-center">
-                <div className="text-lg font-semibold text-slate-900">Select a class to get started</div>
-                <div className="mt-2 text-sm text-slate-500">
+              <div className="rounded-2xl border border-dashed border-token surface p-10 text-center">
+                <div className="text-lg font-semibold text-main">Select a class to get started</div>
+                <div className="mt-2 text-sm text-muted">
                   Create your first class and start uploading materials.
                 </div>
                 <Button variant="primary" className="mt-5" onClick={() => setShowCreate(true)}>
@@ -651,10 +651,10 @@ export default function Classes() {
               </div>
             ) : (
               <>
-                <div className="flex items-center justify-between flex-wrap gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+                <div className="flex items-center justify-between flex-wrap gap-3 rounded-2xl border border-token surface px-5 py-4 shadow-sm">
                   <div>
-                    <div className="text-sm font-semibold text-slate-900">{currentClass}</div>
-                    <div className="text-xs text-slate-500">Manage documents and study tools.</div>
+                    <div className="text-sm font-semibold text-main">{currentClass}</div>
+                    <div className="text-xs text-muted">Manage documents and study tools.</div>
                   </div>
                   <div className="flex items-center gap-2">
                     <Button size="sm" onClick={onRenameSelected}>
@@ -669,8 +669,8 @@ export default function Classes() {
                 <div className="flex items-center justify-between flex-wrap gap-4">
                   <Tabs active={activeTab} onChange={setActiveTab} />
                   <div className="flex items-center gap-3">
-                    {busyUpload && <span className="text-xs text-slate-500">Uploading...</span>}
-                    {busyFlow && <span className="text-xs text-slate-500">Processing...</span>}
+                    {busyUpload && <span className="text-xs text-muted">Uploading...</span>}
+                    {busyFlow && <span className="text-xs text-muted">Processing...</span>}
                     <ClassHeaderButtons classId={String(selectedId)} onGenerate={onGenerateFlashcards} />
                   </div>
                 </div>
@@ -683,12 +683,12 @@ export default function Classes() {
                     onClick={() => fileInputRef.current?.click()}
                     role="button"
                     className={`rounded-2xl border-2 border-dashed px-6 py-8 text-center transition ${
-                      dropping ? "border-slate-900 bg-slate-50" : "border-slate-200 bg-white"
+                      dropping ? "border-strong surface-2" : "border-token surface"
                     }`}
                   >
-                    <div className="text-base font-semibold text-slate-800">Upload class materials</div>
-                    <div className="mt-1 text-sm text-slate-500">Drag files here or click to select</div>
-                    <div className="mt-4 inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-1 text-xs text-slate-500">
+                    <div className="text-base font-semibold text-main">Upload class materials</div>
+                    <div className="mt-1 text-sm text-muted">Drag files here or click to select</div>
+                    <div className="mt-4 inline-flex items-center gap-2 rounded-lg border border-token px-3 py-1 text-xs text-muted">
                       PDF, PPTX, DOCX
                     </div>
                     {invalidDropCount > 0 && (
@@ -712,10 +712,10 @@ export default function Classes() {
                     onChange={onUploadChange}
                   />
 
-                  <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-                    <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+                  <div className="rounded-2xl border border-token surface shadow-sm">
+                    <div className="flex items-center justify-between border-b border-token px-4 py-3">
                       <div className="text-sm font-semibold">Documents</div>
-                      <div className="flex items-center gap-2 text-xs text-slate-500">
+                      <div className="flex items-center gap-2 text-xs text-muted">
                         <span>{selectedIds.length} selected</span>
                         {selectedIds.length > 0 && (
                           <button
@@ -734,7 +734,7 @@ export default function Classes() {
                     </div>
                     <div className="overflow-auto">
                       <table className="w-full text-sm">
-                        <thead className="bg-slate-50 text-xs text-slate-500">
+                        <thead className="surface-2 text-xs text-muted">
                           <tr>
                             <th className="px-4 py-2 text-left">
                               <input
@@ -754,7 +754,7 @@ export default function Classes() {
                         </thead>
                         <tbody>
                           {(files ?? []).map((f) => (
-                            <tr key={f.id} className="border-t border-slate-100">
+                            <tr key={f.id} className="border-t border-token">
                               <td className="px-4 py-3">
                                 <input
                                   type="checkbox"
@@ -766,24 +766,24 @@ export default function Classes() {
                               <td className="px-4 py-3">
                                 <div className="flex items-center gap-2">
                                   <button
-                                    className="font-semibold text-slate-900 hover:underline"
+                                    className="font-semibold text-main hover:underline"
                                     onClick={() => setActiveFile(f)}
                                   >
                                     {f.filename}
                                   </button>
-                                  <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] text-slate-500">
+                                  <span className="rounded-full border border-token surface-2 px-2 py-0.5 text-[11px] text-muted">
                                     {(f.filename.split(".").pop() || "").toUpperCase()}
                                   </span>
                                 </div>
                               </td>
-                              <td className="px-4 py-3 text-slate-500">{prettyBytes(f.size_bytes)}</td>
-                              <td className="px-4 py-3 text-slate-500">{timeLocal(f.uploaded_at)}</td>
+                              <td className="px-4 py-3 text-muted">{prettyBytes(f.size_bytes)}</td>
+                              <td className="px-4 py-3 text-muted">{timeLocal(f.uploaded_at)}</td>
                               <td className="px-4 py-3">
                                 <StatusPill status={f.status ?? "UPLOADED"} />
                               </td>
                               <td className="px-4 py-3">
                                 <button
-                                  className="rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-600"
+                                  className="rounded-lg border border-token px-2 py-1 text-xs text-muted"
                                   onClick={() => setActiveFile(f)}
                                 >
                                   View
@@ -791,7 +791,7 @@ export default function Classes() {
                               </td>
                               <td className="px-4 py-3">
                                 <button
-                                  className="rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-600"
+                                  className="rounded-lg border border-token px-2 py-1 text-xs text-muted"
                                   onClick={() => onDeleteFile(f.id, f.filename)}
                                 >
                                   Delete
@@ -801,7 +801,7 @@ export default function Classes() {
                           ))}
                           {(files?.length ?? 0) === 0 && (
                             <tr>
-                              <td colSpan={7} className="px-4 py-6 text-sm text-slate-500">
+                              <td colSpan={7} className="px-4 py-6 text-sm text-muted">
                                 No documents yet. Upload a PDF, PPTX, or DOCX to begin.
                               </td>
                             </tr>
@@ -815,7 +815,7 @@ export default function Classes() {
 
                 <div className="mt-6">
                   {!activeFile ? (
-                    <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm">
+                    <div className="rounded-2xl border border-token surface p-6 text-sm text-muted shadow-sm">
                       Select a document to open the study workspace.
                     </div>
                   ) : (
@@ -826,15 +826,15 @@ export default function Classes() {
                         }`}
                       >
                         <div className="space-y-4">
-                          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-                            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-4 py-3">
+                          <div className="rounded-2xl border border-token surface shadow-sm">
+                            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-token px-4 py-3">
                               <div>
-                                <div className="text-sm font-semibold text-slate-900">{activeFile.filename}</div>
-                                <div className="text-xs text-slate-500">Document workspace</div>
+                                <div className="text-sm font-semibold text-main">{activeFile.filename}</div>
+                                <div className="text-xs text-muted">Document workspace</div>
                               </div>
                               <div className="flex items-center gap-2">
                                 <button
-                                  className="rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-600 xl:hidden"
+                                  className="rounded-lg border border-token px-2 py-1 text-xs text-muted xl:hidden"
                                   onClick={() => setChatDrawerOpen(true)}
                                 >
                                   Open assistant
@@ -843,26 +843,26 @@ export default function Classes() {
                                   href={activeFile.storage_url}
                                   target="_blank"
                                   rel="noreferrer"
-                                  className="rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-600"
+                                  className="rounded-lg border border-token px-2 py-1 text-xs text-muted"
                                 >
                                   Open
                                 </a>
                                 <a
                                   href={activeFile.storage_url}
                                   download
-                                  className="rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-600"
+                                  className="rounded-lg border border-token px-2 py-1 text-xs text-muted"
                                 >
                                   Download
                                 </a>
                                 <button
-                                  className="rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-600"
+                                  className="rounded-lg border border-token px-2 py-1 text-xs text-muted"
                                   onClick={() => setActiveFile(null)}
                                 >
                                   Close
                                 </button>
                               </div>
                             </div>
-                            <div className="h-[75vh] bg-slate-50">
+                            <div className="h-[75vh] surface-2">
                               {isPdfFile(activeFile) ? (
                                 <PdfStudyViewer
                                   fileUrl={activeFile.storage_url}
@@ -872,7 +872,7 @@ export default function Classes() {
                                   onSnipError={showToastMessage}
                                 />
                               ) : (
-                                <div className="flex h-full items-center justify-center px-6 text-center text-sm text-slate-500">
+                                <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted">
                                   Preview is available for PDF files. You can open or download this file instead.
                                 </div>
                               )}
@@ -881,11 +881,11 @@ export default function Classes() {
                         </div>
 
                         {chatPanelOpen && (
-                          <aside className="hidden h-[75vh] flex-col rounded-2xl border border-slate-200 bg-white shadow-sm xl:flex">
-                            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+                          <aside className="hidden h-[75vh] flex-col rounded-2xl border border-token surface shadow-sm xl:flex">
+                            <div className="flex items-center justify-between border-b border-token px-4 py-3">
                               <div className="text-sm font-semibold">Study Assistant</div>
                               <div className="flex items-center gap-2">
-                                <label className="flex items-center gap-2 text-xs text-slate-500">
+                                <label className="flex items-center gap-2 text-xs text-muted">
                                   <input
                                     type="checkbox"
                                     checked={showCitations}
@@ -894,17 +894,17 @@ export default function Classes() {
                                   Citations
                                 </label>
                                 <button
-                                  className="rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-600"
+                                  className="rounded-lg border border-token px-2 py-1 text-xs text-muted"
                                   onClick={() => setChatPanelOpen(false)}
                                 >
                                   Collapse
                                 </button>
                               </div>
                             </div>
-                            <div className="border-b border-slate-200 px-4 py-3">
+                            <div className="border-b border-token px-4 py-3">
                               <div className="flex items-center gap-2">
                                 <select
-                                  className="h-9 flex-1 rounded-lg border border-slate-200 px-2 text-xs"
+                                  className="h-9 flex-1 rounded-lg border border-token px-2 text-xs"
                                   value={activeSessionId ?? ""}
                                   onChange={(e) => setActiveSessionId(e.target.value)}
                                 >
@@ -919,20 +919,20 @@ export default function Classes() {
                                 </select>
                                 <button
                                   onClick={startNewSession}
-                                  className="h-9 rounded-lg border border-slate-200 px-2 text-xs"
+                                  className="h-9 rounded-lg border border-token px-2 text-xs"
                                 >
                                   New
                                 </button>
                               </div>
-                              <div className="mt-2 text-[11px] text-slate-400">
+                              <div className="mt-2 text-[11px] text-muted">
                                 {sessions.length === 0 ? "No sessions yet." : "Pick a session to keep history."}
                               </div>
                             </div>
-                            <div className="border-b border-slate-200 px-4 py-3">
-                              <div className="text-xs font-semibold text-slate-600">Scope</div>
+                            <div className="border-b border-token px-4 py-3">
+                              <div className="text-xs font-semibold text-muted">Scope</div>
                               <div className="mt-2 flex flex-wrap gap-2">
                                 {(files ?? []).length === 0 ? (
-                                  <span className="text-[11px] text-slate-400">Upload files to enable scope.</span>
+                                  <span className="text-[11px] text-muted">Upload files to enable scope.</span>
                                 ) : (
                                   (files ?? []).map((f) => {
                                     const checked = scopeFileIds.includes(f.id);
@@ -942,8 +942,8 @@ export default function Classes() {
                                         onClick={() => toggleFileScope(f.id)}
                                         className={`rounded-full border px-3 py-1 text-[11px] ${
                                           checked
-                                            ? "border-slate-900 bg-slate-900 text-white"
-                                            : "border-slate-200 text-slate-600"
+                                            ? "border-strong bg-inverse text-inverse"
+                                            : "border-token text-muted"
                                         }`}
                                       >
                                         {f.filename}
@@ -955,7 +955,7 @@ export default function Classes() {
                             </div>
                             <div className="flex-1 overflow-auto p-4 space-y-4">
                               {messages.length === 0 ? (
-                                <div className="text-sm text-slate-500">
+                                <div className="text-sm text-muted">
                                   No messages yet. Ask about the document on the left.
                                 </div>
                               ) : (
@@ -967,16 +967,16 @@ export default function Classes() {
                                       <div
                                         className={`max-w-[85%] rounded-2xl border px-4 py-3 text-sm leading-6 ${
                                           m.role === "user"
-                                            ? "bg-slate-900 text-white border-slate-900"
-                                            : "bg-white border-slate-200"
+                                            ? "bg-inverse text-inverse border-strong"
+                                            : "surface border-token"
                                         }`}
                                       >
                                         {m.selected_text && (
                                           <div
                                             className={`mb-2 rounded-lg border px-3 py-2 text-xs ${
                                               m.role === "user"
-                                                ? "border-slate-700/60 bg-slate-800/60 text-slate-100"
-                                                : "border-slate-200 bg-slate-50 text-slate-600"
+                                                ? "border-strong bg-[var(--overlay)] text-inverse"
+                                                : "border-token surface-2 text-muted"
                                             }`}
                                           >
                                             <div className="text-[10px] uppercase tracking-wide opacity-70">
@@ -990,13 +990,13 @@ export default function Classes() {
                                             <img
                                               src={m.image_attachment.data_url}
                                               alt="Snippet"
-                                              className="max-h-32 rounded-lg border border-slate-200 object-contain"
+                                              className="max-h-32 rounded-lg border border-token object-contain"
                                             />
                                           </div>
                                         )}
                                         <div className="whitespace-pre-wrap">{m.content}</div>
                                         {show && (
-                                          <div className="mt-3 border-t border-slate-200 pt-2 text-xs text-slate-500">
+                                          <div className="mt-3 border-t border-token pt-2 text-xs text-muted">
                                             {(m.citations ?? []).slice(0, 4).map((c: any, idx: number) => (
                                               <div key={`${c?.chunk_id ?? idx}`}>
                                                 {c?.filename ?? "Source"}
@@ -1012,16 +1012,16 @@ export default function Classes() {
                                   );
                                 })
                               )}
-                              {chatBusy && <div className="text-xs text-slate-400">Thinking...</div>}
+                              {chatBusy && <div className="text-xs text-muted">Thinking...</div>}
                               <div ref={chatEndRef} />
                             </div>
-                            <div className="border-t border-slate-200 p-4">
+                            <div className="border-t border-token p-4">
                               {selectedQuote && (
                                 <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                                   <div className="flex items-center justify-between gap-2">
                                     <span className="font-semibold">Quote attached</span>
                                     <button
-                                      className="rounded-lg border border-amber-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-amber-700"
+                                      className="rounded-lg border border-amber-200 surface px-2 py-0.5 text-[11px] font-semibold text-amber-700"
                                       onClick={() => setSelectedQuote(null)}
                                     >
                                       Clear quote
@@ -1033,18 +1033,18 @@ export default function Classes() {
                                 </div>
                               )}
                               {pendingSnip && (
-                                <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                                <div className="mb-3 rounded-xl border border-token surface-2 px-3 py-2 text-xs text-muted">
                                   <div className="flex items-center justify-between gap-2">
                                     <span className="font-semibold">Snippet ready</span>
                                     <div className="flex items-center gap-2">
                                       <button
-                                        className="rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600"
+                                        className="rounded-lg border border-token surface px-2 py-0.5 text-[11px] font-semibold text-muted"
                                         onClick={handleSendSnip}
                                       >
                                         Send to chat
                                       </button>
                                       <button
-                                        className="rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600"
+                                        className="rounded-lg border border-token surface px-2 py-0.5 text-[11px] font-semibold text-muted"
                                         onClick={() => setPendingSnip(null)}
                                       >
                                         Discard
@@ -1054,7 +1054,7 @@ export default function Classes() {
                                   <img
                                     src={pendingSnip.data_url}
                                     alt="Snippet preview"
-                                    className="mt-2 max-h-28 rounded-lg border border-slate-200 object-contain"
+                                    className="mt-2 max-h-28 rounded-lg border border-token object-contain"
                                   />
                                 </div>
                               )}
@@ -1062,7 +1062,7 @@ export default function Classes() {
                                 <textarea
                                   value={chatInput}
                                   onChange={(e) => setChatInput(e.target.value)}
-                                  className="min-h-[52px] flex-1 resize-none rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/20"
+                                  className="min-h-[52px] flex-1 resize-none rounded-xl border border-token px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/20"
                                   placeholder="Ask about this document..."
                                   onKeyDown={(e) => {
                                     if (e.key === "Enter" && !e.shiftKey) {
@@ -1074,12 +1074,12 @@ export default function Classes() {
                                 <button
                                   onClick={onAsk}
                                   disabled={chatBusy || !chatInput.trim()}
-                                  className="h-12 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white disabled:opacity-50"
+                                  className="h-12 rounded-xl bg-inverse px-4 text-sm font-semibold text-inverse disabled:opacity-50"
                                 >
                                   Send
                                 </button>
                               </div>
-                              <div className="mt-2 text-xs text-slate-400">Enter to send, Shift+Enter for newline.</div>
+                              <div className="mt-2 text-xs text-muted">Enter to send, Shift+Enter for newline.</div>
                             </div>
                           </aside>
                         )}
@@ -1088,7 +1088,7 @@ export default function Classes() {
                       {!chatPanelOpen && (
                         <button
                           onClick={() => setChatPanelOpen(true)}
-                          className="absolute right-0 top-2 hidden -translate-y-1/2 rounded-l-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm xl:flex"
+                          className="absolute right-0 top-2 hidden -translate-y-1/2 rounded-l-full border border-token surface px-3 py-2 text-xs font-semibold text-muted shadow-sm xl:flex"
                         >
                           Study Assistant
                         </button>
@@ -1100,15 +1100,15 @@ export default function Classes() {
                           style={{ left: selectionMenu.x, top: selectionMenu.y }}
                           onMouseDown={(e) => e.stopPropagation()}
                         >
-                          <div className="flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-1 text-xs shadow-lg">
+                          <div className="flex items-center gap-1 rounded-full border border-token surface px-2 py-1 text-xs shadow-lg">
                             <button
-                              className="rounded-full px-2 py-1 hover:bg-slate-100"
+                              className="rounded-full px-2 py-1 hover:bg-accent-weak"
                               onClick={() => startQuote("Ask about this part.", selectionMenu.text, selectionMenu.fileId)}
                             >
                               Ask
                             </button>
                             <button
-                              className="rounded-full px-2 py-1 hover:bg-slate-100"
+                              className="rounded-full px-2 py-1 hover:bg-accent-weak"
                               onClick={() =>
                                 startQuote("Explain this part clearly.", selectionMenu.text, selectionMenu.fileId)
                               }
@@ -1123,26 +1123,26 @@ export default function Classes() {
                 </div>
 
               {activeTab === "flashcards" && (
-                <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="mt-6 rounded-2xl border border-token surface p-5 shadow-sm">
                   <div className="flex items-center justify-between flex-wrap gap-3">
                     <div>
                       <div className="text-sm font-semibold">Flashcards</div>
-                      <div className="text-xs text-slate-500">
+                      <div className="text-xs text-muted">
                         Generate cards from your selected documents or open study mode.
                       </div>
                     </div>
                     <Link
                       to={`/classes/${selectedId}/flashcards`}
-                      className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700"
+                      className="rounded-lg border border-token surface px-3 py-2 text-xs font-semibold text-muted"
                     >
                       Open flashcards
                     </Link>
                   </div>
-                  <div className="mt-4 flex flex-wrap gap-2 text-xs text-slate-500">
-                    <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">
+                  <div className="mt-4 flex flex-wrap gap-2 text-xs text-muted">
+                    <span className="rounded-full border border-token surface-2 px-3 py-1">
                       {selectedIds.length || (files?.length ?? 0)} file(s) in scope
                     </span>
-                    <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1">
+                    <span className="rounded-full border border-token surface-2 px-3 py-1">
                       Use the Generate button above
                     </span>
                   </div>
@@ -1151,27 +1151,27 @@ export default function Classes() {
 
               {activeTab === "chat" && (
                 <div className="mt-6 grid grid-cols-1 xl:grid-cols-[240px_minmax(0,1fr)_280px] gap-4">
-                  <aside className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <aside className="rounded-2xl border border-token surface p-4 shadow-sm">
                     <div className="flex items-center justify-between">
                       <div className="text-sm font-semibold">Sessions</div>
                       <button
                         onClick={startNewSession}
-                        className="rounded-lg border border-slate-200 px-2 py-1 text-xs"
+                        className="rounded-lg border border-token px-2 py-1 text-xs"
                       >
                         New
                       </button>
                     </div>
                     <div className="mt-3 space-y-2 max-h-[65vh] overflow-auto">
                       {sessions.length === 0 ? (
-                        <div className="text-xs text-slate-500">No sessions yet.</div>
+                        <div className="text-xs text-muted">No sessions yet.</div>
                       ) : (
                         sessions.map((s) => (
                           <div
                             key={s.id}
                             className={`flex items-start justify-between gap-2 rounded-xl border px-3 py-2 text-left text-xs ${
                               s.id === activeSessionId
-                                ? "border-slate-900 bg-slate-50"
-                                : "border-slate-200 hover:border-slate-300"
+                                ? "border-strong surface-2"
+                                : "border-token hover:border-token"
                             }`}
                           >
                             <button
@@ -1179,7 +1179,7 @@ export default function Classes() {
                               className="flex-1 text-left"
                             >
                               <div className={`truncate ${s.id === activeSessionId ? "font-semibold" : ""}`}>{s.title}</div>
-                              <div className="text-[10px] text-slate-400 truncate">
+                              <div className="text-[10px] text-muted truncate">
                                 {new Date(s.updated_at || s.created_at || "").toLocaleString()}
                               </div>
                             </button>
@@ -1195,17 +1195,17 @@ export default function Classes() {
                     </div>
                   </aside>
 
-                  <section className="rounded-2xl border border-slate-200 bg-white shadow-sm flex flex-col min-h-[60vh]">
-                    <div className="border-b border-slate-200 px-4 py-3 flex items-center justify-between">
+                  <section className="rounded-2xl border border-token surface shadow-sm flex flex-col min-h-[60vh]">
+                    <div className="border-b border-token px-4 py-3 flex items-center justify-between">
                       <div className="text-sm font-semibold">Conversation</div>
-                      <label className="flex items-center gap-2 text-xs text-slate-500">
+                      <label className="flex items-center gap-2 text-xs text-muted">
                         <input type="checkbox" checked={showCitations} onChange={() => setShowCitations((v) => !v)} />
                         Show citations
                       </label>
                     </div>
                     <div className="flex-1 overflow-auto p-4 space-y-4">
                       {messages.length === 0 ? (
-                        <div className="text-sm text-slate-500">No messages yet. Ask about your class materials.</div>
+                        <div className="text-sm text-muted">No messages yet. Ask about your class materials.</div>
                       ) : (
                         messages.map((m) => {
                           const show = showCitations && m.role === "assistant" && (m.citations?.length ?? 0) > 0;
@@ -1214,16 +1214,16 @@ export default function Classes() {
                               <div
                                 className={`max-w-[75%] rounded-2xl border px-4 py-3 text-sm leading-6 ${
                                   m.role === "user"
-                                    ? "bg-slate-900 text-white border-slate-900"
-                                    : "bg-white border-slate-200"
+                                    ? "bg-inverse text-inverse border-strong"
+                                    : "surface border-token"
                                 }`}
                               >
                                 {m.selected_text && (
                                   <div
                                     className={`mb-2 rounded-lg border px-3 py-2 text-xs ${
                                       m.role === "user"
-                                        ? "border-slate-700/60 bg-slate-800/60 text-slate-100"
-                                        : "border-slate-200 bg-slate-50 text-slate-600"
+                                        ? "border-strong bg-[var(--overlay)] text-inverse"
+                                        : "border-token surface-2 text-muted"
                                     }`}
                                   >
                                     <div className="text-[10px] uppercase tracking-wide opacity-70">Selected text</div>
@@ -1235,13 +1235,13 @@ export default function Classes() {
                                     <img
                                       src={m.image_attachment.data_url}
                                       alt="Snippet"
-                                      className="max-h-40 rounded-lg border border-slate-200 object-contain"
+                                      className="max-h-40 rounded-lg border border-token object-contain"
                                     />
                                   </div>
                                 )}
                                 <div className="whitespace-pre-wrap">{m.content}</div>
                                 {show && (
-                                  <div className="mt-3 border-t border-slate-200 pt-2 text-xs text-slate-500">
+                                  <div className="mt-3 border-t border-token pt-2 text-xs text-muted">
                                     {(m.citations ?? []).slice(0, 6).map((c: any, idx: number) => (
                                       <div key={`${c?.chunk_id ?? idx}`}>
                                         {c?.filename ?? "Source"}
@@ -1255,16 +1255,16 @@ export default function Classes() {
                           );
                         })
                       )}
-                      {chatBusy && <div className="text-xs text-slate-400">Thinking...</div>}
+                      {chatBusy && <div className="text-xs text-muted">Thinking...</div>}
                       <div ref={chatEndRef} />
                     </div>
-                    <div className="border-t border-slate-200 p-4">
+                    <div className="border-t border-token p-4">
                       {selectedQuote && (
                         <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                           <div className="flex items-center justify-between gap-2">
                             <span className="font-semibold">Quote attached</span>
                             <button
-                              className="rounded-lg border border-amber-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-amber-700"
+                              className="rounded-lg border border-amber-200 surface px-2 py-0.5 text-[11px] font-semibold text-amber-700"
                               onClick={() => setSelectedQuote(null)}
                             >
                               Clear quote
@@ -1274,18 +1274,18 @@ export default function Classes() {
                         </div>
                       )}
                       {pendingSnip && (
-                        <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                        <div className="mb-3 rounded-xl border border-token surface-2 px-3 py-2 text-xs text-muted">
                           <div className="flex items-center justify-between gap-2">
                             <span className="font-semibold">Snippet ready</span>
                             <div className="flex items-center gap-2">
                               <button
-                                className="rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600"
+                                className="rounded-lg border border-token surface px-2 py-0.5 text-[11px] font-semibold text-muted"
                                 onClick={handleSendSnip}
                               >
                                 Send to chat
                               </button>
                               <button
-                                className="rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600"
+                                className="rounded-lg border border-token surface px-2 py-0.5 text-[11px] font-semibold text-muted"
                                 onClick={() => setPendingSnip(null)}
                               >
                                 Discard
@@ -1295,7 +1295,7 @@ export default function Classes() {
                           <img
                             src={pendingSnip.data_url}
                             alt="Snippet preview"
-                            className="mt-2 max-h-32 rounded-lg border border-slate-200 object-contain"
+                            className="mt-2 max-h-32 rounded-lg border border-token object-contain"
                           />
                         </div>
                       )}
@@ -1303,7 +1303,7 @@ export default function Classes() {
                         <textarea
                           value={chatInput}
                           onChange={(e) => setChatInput(e.target.value)}
-                          className="min-h-[52px] flex-1 resize-none rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/20"
+                          className="min-h-[52px] flex-1 resize-none rounded-xl border border-token px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/20"
                           placeholder="Ask about your notes..."
                           onKeyDown={(e) => {
                             if (e.key === "Enter" && !e.shiftKey) {
@@ -1315,21 +1315,21 @@ export default function Classes() {
                         <button
                           onClick={onAsk}
                           disabled={chatBusy || !chatInput.trim()}
-                          className="h-12 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white disabled:opacity-50"
+                          className="h-12 rounded-xl bg-inverse px-4 text-sm font-semibold text-inverse disabled:opacity-50"
                         >
                           Send
                         </button>
                       </div>
-                      <div className="mt-2 text-xs text-slate-400">Enter to send, Shift+Enter for newline.</div>
+                      <div className="mt-2 text-xs text-muted">Enter to send, Shift+Enter for newline.</div>
                     </div>
                   </section>
 
-                  <aside className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                  <aside className="rounded-2xl border border-token surface p-4 shadow-sm">
                     <div className="text-sm font-semibold">File scope</div>
-                    <div className="mt-2 text-xs text-slate-500">Select files to narrow answers.</div>
+                    <div className="mt-2 text-xs text-muted">Select files to narrow answers.</div>
                     <div className="mt-3 space-y-2 max-h-[60vh] overflow-auto">
                       {(files ?? []).length === 0 ? (
-                        <div className="text-xs text-slate-500">Upload documents to enable scope.</div>
+                        <div className="text-xs text-muted">Upload documents to enable scope.</div>
                       ) : (
                         (files ?? []).map((f) => {
                           const checked = scopeFileIds.includes(f.id);
@@ -1338,16 +1338,16 @@ export default function Classes() {
                               key={f.id}
                               onClick={() => toggleFileScope(f.id)}
                               className={`w-full rounded-xl border px-3 py-2 text-left text-xs ${
-                                checked ? "border-slate-900 bg-slate-50" : "border-slate-200 hover:border-slate-300"
+                                checked ? "border-strong surface-2" : "border-token hover:border-token"
                               }`}
                             >
                               <div className="flex items-center justify-between">
-                                <span className="truncate font-medium text-slate-800">{f.filename}</span>
-                                <span className="text-[10px] text-slate-400">
+                                <span className="truncate font-medium text-main">{f.filename}</span>
+                                <span className="text-[10px] text-muted">
                                   {(f.filename.split(".").pop() || "").toUpperCase()}
                                 </span>
                               </div>
-                              <div className="text-[10px] text-slate-400">{f.status ?? "UPLOADED"}</div>
+                              <div className="text-[10px] text-muted">{f.status ?? "UPLOADED"}</div>
                             </button>
                           );
                         })
@@ -1361,16 +1361,16 @@ export default function Classes() {
                 <div
                   role="dialog"
                   aria-modal="true"
-                  className="fixed inset-0 z-50 flex items-end bg-slate-900/40"
+                  className="fixed inset-0 z-50 flex items-end bg-overlay"
                   onClick={() => setPreview(null)}
                 >
                   <div
-                    className="mx-auto mb-6 max-h-[80vh] w-[min(920px,96vw)] overflow-hidden rounded-2xl bg-white shadow-2xl"
+                    className="mx-auto mb-6 max-h-[80vh] w-[min(920px,96vw)] overflow-hidden rounded-2xl surface shadow-2xl"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+                    <div className="flex items-center justify-between border-b border-token px-4 py-3">
                       <strong>Chunk previews</strong>
-                      <button className="rounded-lg border border-slate-200 px-2 py-1 text-xs" onClick={() => setPreview(null)}>
+                      <button className="rounded-lg border border-token px-2 py-1 text-xs" onClick={() => setPreview(null)}>
                         Close
                       </button>
                     </div>
@@ -1387,12 +1387,12 @@ export default function Classes() {
                           ) : (
                             <div className="grid gap-3">
                               {p.previews.map((pr) => (
-                                <div key={pr.idx} className="rounded-xl border border-slate-200 p-3">
-                                  <div className="mb-1 text-xs font-semibold text-slate-600">
+                                <div key={pr.idx} className="rounded-xl border border-token p-3">
+                                  <div className="mb-1 text-xs font-semibold text-muted">
                                     Chunk #{pr.idx} {pr.page_start ? `(pages ${pr.page_start}-${pr.page_end})` : ""}
-                                    <span className="ml-2 font-normal text-slate-400">{pr.char_len} chars</span>
+                                    <span className="ml-2 font-normal text-muted">{pr.char_len} chars</span>
                                   </div>
-                                  <pre className="m-0 whitespace-pre-wrap text-xs leading-5 text-slate-700">
+                                  <pre className="m-0 whitespace-pre-wrap text-xs leading-5 text-muted">
                                     {pr.sample}
                                   </pre>
                                 </div>
@@ -1414,12 +1414,12 @@ export default function Classes() {
 
       {chatDrawerOpen && (
         <div className="fixed inset-0 z-50 flex xl:hidden">
-          <div className="flex-1 bg-slate-900/40" onClick={() => setChatDrawerOpen(false)} />
-          <aside className="flex w-[min(92vw,360px)] flex-col bg-white shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+          <div className="flex-1 bg-overlay" onClick={() => setChatDrawerOpen(false)} />
+          <aside className="flex w-[min(92vw,360px)] flex-col surface shadow-2xl">
+            <div className="flex items-center justify-between border-b border-token px-4 py-3">
               <div className="text-sm font-semibold">Study Assistant</div>
               <div className="flex items-center gap-2">
-                <label className="flex items-center gap-2 text-xs text-slate-500">
+                <label className="flex items-center gap-2 text-xs text-muted">
                   <input
                     type="checkbox"
                     checked={showCitations}
@@ -1428,17 +1428,17 @@ export default function Classes() {
                   Citations
                 </label>
                 <button
-                  className="rounded-lg border border-slate-200 px-2 py-1 text-xs text-slate-600"
+                  className="rounded-lg border border-token px-2 py-1 text-xs text-muted"
                   onClick={() => setChatDrawerOpen(false)}
                 >
                   Close
                 </button>
               </div>
             </div>
-            <div className="border-b border-slate-200 px-4 py-3">
+            <div className="border-b border-token px-4 py-3">
               <div className="flex items-center gap-2">
                 <select
-                  className="h-9 flex-1 rounded-lg border border-slate-200 px-2 text-xs"
+                  className="h-9 flex-1 rounded-lg border border-token px-2 text-xs"
                   value={activeSessionId ?? ""}
                   onChange={(e) => setActiveSessionId(e.target.value)}
                 >
@@ -1453,20 +1453,20 @@ export default function Classes() {
                 </select>
                 <button
                   onClick={startNewSession}
-                  className="h-9 rounded-lg border border-slate-200 px-2 text-xs"
+                  className="h-9 rounded-lg border border-token px-2 text-xs"
                 >
                   New
                 </button>
               </div>
-              <div className="mt-2 text-[11px] text-slate-400">
+              <div className="mt-2 text-[11px] text-muted">
                 {sessions.length === 0 ? "No sessions yet." : "Pick a session to keep history."}
               </div>
             </div>
-            <div className="border-b border-slate-200 px-4 py-3">
-              <div className="text-xs font-semibold text-slate-600">Scope</div>
+            <div className="border-b border-token px-4 py-3">
+              <div className="text-xs font-semibold text-muted">Scope</div>
               <div className="mt-2 flex flex-wrap gap-2">
                 {(files ?? []).length === 0 ? (
-                  <span className="text-[11px] text-slate-400">Upload files to enable scope.</span>
+                  <span className="text-[11px] text-muted">Upload files to enable scope.</span>
                 ) : (
                   (files ?? []).map((f) => {
                     const checked = scopeFileIds.includes(f.id);
@@ -1475,7 +1475,7 @@ export default function Classes() {
                         key={f.id}
                         onClick={() => toggleFileScope(f.id)}
                         className={`rounded-full border px-3 py-1 text-[11px] ${
-                          checked ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 text-slate-600"
+                          checked ? "border-strong bg-inverse text-inverse" : "border-token text-muted"
                         }`}
                       >
                         {f.filename}
@@ -1487,7 +1487,7 @@ export default function Classes() {
             </div>
             <div className="flex-1 overflow-auto p-4 space-y-4">
               {messages.length === 0 ? (
-                <div className="text-sm text-slate-500">No messages yet. Ask about the document on the left.</div>
+                <div className="text-sm text-muted">No messages yet. Ask about the document on the left.</div>
               ) : (
                 messages.map((m) => {
                   const show = showCitations && m.role === "assistant" && (m.citations?.length ?? 0) > 0;
@@ -1496,16 +1496,16 @@ export default function Classes() {
                       <div
                         className={`max-w-[85%] rounded-2xl border px-4 py-3 text-sm leading-6 ${
                           m.role === "user"
-                            ? "bg-slate-900 text-white border-slate-900"
-                            : "bg-white border-slate-200"
+                            ? "bg-inverse text-inverse border-strong"
+                            : "surface border-token"
                         }`}
                       >
                         {m.selected_text && (
                           <div
                             className={`mb-2 rounded-lg border px-3 py-2 text-xs ${
                               m.role === "user"
-                                ? "border-slate-700/60 bg-slate-800/60 text-slate-100"
-                                : "border-slate-200 bg-slate-50 text-slate-600"
+                                ? "border-strong bg-[var(--overlay)] text-inverse"
+                                : "border-token surface-2 text-muted"
                             }`}
                           >
                             <div className="text-[10px] uppercase tracking-wide opacity-70">Selected text</div>
@@ -1517,13 +1517,13 @@ export default function Classes() {
                             <img
                               src={m.image_attachment.data_url}
                               alt="Snippet"
-                              className="max-h-32 rounded-lg border border-slate-200 object-contain"
+                              className="max-h-32 rounded-lg border border-token object-contain"
                             />
                           </div>
                         )}
                         <div className="whitespace-pre-wrap">{m.content}</div>
                         {show && (
-                          <div className="mt-3 border-t border-slate-200 pt-2 text-xs text-slate-500">
+                          <div className="mt-3 border-t border-token pt-2 text-xs text-muted">
                             {(m.citations ?? []).slice(0, 4).map((c: any, idx: number) => (
                               <div key={`${c?.chunk_id ?? idx}`}>
                                 {c?.filename ?? "Source"}
@@ -1537,16 +1537,16 @@ export default function Classes() {
                   );
                 })
               )}
-              {chatBusy && <div className="text-xs text-slate-400">Thinking...</div>}
+              {chatBusy && <div className="text-xs text-muted">Thinking...</div>}
               <div ref={chatEndRef} />
             </div>
-            <div className="border-t border-slate-200 p-4">
+            <div className="border-t border-token p-4">
               {selectedQuote && (
                 <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-semibold">Quote attached</span>
                     <button
-                      className="rounded-lg border border-amber-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-amber-700"
+                      className="rounded-lg border border-amber-200 surface px-2 py-0.5 text-[11px] font-semibold text-amber-700"
                       onClick={() => setSelectedQuote(null)}
                     >
                       Clear quote
@@ -1556,18 +1556,18 @@ export default function Classes() {
                 </div>
               )}
               {pendingSnip && (
-                <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                <div className="mb-3 rounded-xl border border-token surface-2 px-3 py-2 text-xs text-muted">
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-semibold">Snippet ready</span>
                     <div className="flex items-center gap-2">
                       <button
-                        className="rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600"
+                        className="rounded-lg border border-token surface px-2 py-0.5 text-[11px] font-semibold text-muted"
                         onClick={handleSendSnip}
                       >
                         Send to chat
                       </button>
                       <button
-                        className="rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600"
+                        className="rounded-lg border border-token surface px-2 py-0.5 text-[11px] font-semibold text-muted"
                         onClick={() => setPendingSnip(null)}
                       >
                         Discard
@@ -1577,7 +1577,7 @@ export default function Classes() {
                   <img
                     src={pendingSnip.data_url}
                     alt="Snippet preview"
-                    className="mt-2 max-h-28 rounded-lg border border-slate-200 object-contain"
+                    className="mt-2 max-h-28 rounded-lg border border-token object-contain"
                   />
                 </div>
               )}
@@ -1585,7 +1585,7 @@ export default function Classes() {
                 <textarea
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
-                  className="min-h-[52px] flex-1 resize-none rounded-xl border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/20"
+                  className="min-h-[52px] flex-1 resize-none rounded-xl border border-token px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/20"
                   placeholder="Ask about this document..."
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !e.shiftKey) {
@@ -1597,12 +1597,12 @@ export default function Classes() {
                 <button
                   onClick={onAsk}
                   disabled={chatBusy || !chatInput.trim()}
-                  className="h-12 rounded-xl bg-slate-900 px-4 text-sm font-semibold text-white disabled:opacity-50"
+                  className="h-12 rounded-xl bg-inverse px-4 text-sm font-semibold text-inverse disabled:opacity-50"
                 >
                   Send
                 </button>
               </div>
-              <div className="mt-2 text-xs text-slate-400">Enter to send, Shift+Enter for newline.</div>
+              <div className="mt-2 text-xs text-muted">Enter to send, Shift+Enter for newline.</div>
             </div>
           </aside>
         </div>
@@ -1612,17 +1612,17 @@ export default function Classes() {
         <div
           role="dialog"
           aria-modal="true"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
           onClick={() => setConfirmDialog(null)}
         >
           <div
-            className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl"
+            className="w-full max-w-md rounded-2xl surface p-5 shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="text-lg font-semibold text-slate-900">
+            <div className="text-lg font-semibold text-main">
               {confirmDialog.type === "delete" ? "Delete this chat?" : "Clear messages?"}
             </div>
-            <div className="mt-2 text-sm text-slate-600">
+            <div className="mt-2 text-sm text-muted">
               {confirmDialog.type === "delete"
                 ? "This will permanently delete the chat and its messages. This can't be undone."
                 : "This will remove all messages in this chat. You can't undo this."}
@@ -1641,7 +1641,7 @@ export default function Classes() {
       )}
 
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 rounded-xl bg-slate-900 px-4 py-2 text-sm text-white shadow-lg">
+        <div className="fixed bottom-6 right-6 z-50 rounded-xl bg-inverse px-4 py-2 text-sm text-inverse shadow-lg">
           {toast}
         </div>
       )}
@@ -1650,19 +1650,19 @@ export default function Classes() {
         <div
           role="dialog"
           aria-modal="true"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4"
           onClick={() => setShowCreate(false)}
         >
           <div
-            className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl"
+            className="w-full max-w-md rounded-2xl surface p-5 shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="text-lg font-semibold text-slate-900">New class</div>
+            <div className="text-lg font-semibold text-main">New class</div>
             <input
               value={newClassName}
               onChange={(e) => setNewClassName(e.target.value)}
               placeholder="Class name"
-              className="mt-4 h-10 w-full rounded-lg border border-slate-200 px-3 text-sm"
+              className="mt-4 h-10 w-full rounded-lg border border-token px-3 text-sm"
             />
             <div className="mt-4 flex items-center justify-end gap-2">
               <Button onClick={() => setShowCreate(false)}>Cancel</Button>

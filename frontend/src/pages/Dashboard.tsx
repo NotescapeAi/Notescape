@@ -96,15 +96,15 @@ export default function Dashboard() {
     <AppShell title="Your Workspace" breadcrumbs={["Dashboard"]} showGreeting>
       <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6">
         <section className="grid grid-cols-1 gap-4 lg:grid-cols-[1.2fr_1fr]">
-          <div className="relative overflow-hidden rounded-[28px] bg-gradient-to-br from-[#7B5FEF] via-[#A18BFF] to-[#EF5F8B] p-8 text-white shadow-[0_24px_60px_rgba(123,95,239,0.32)] animate-hero-gradient">
+          <div className="relative overflow-hidden rounded-[28px] bg-gradient-to-br from-[var(--primary)] via-[var(--primary)] to-[var(--accent-pink)] p-8 text-inverse shadow-[0_24px_60px_rgba(123,95,239,0.32)] animate-hero-gradient">
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.22),_transparent_55%)]" />
             <div className="relative space-y-3">
-              <div className="text-xs uppercase tracking-[0.35em] text-white/80">Continue where you left off</div>
+              <div className="text-xs uppercase tracking-[0.35em] text-inverse opacity-80">Continue where you left off</div>
               <h2 className="text-3xl font-semibold">Pick up the next concept, right now.</h2>
-              <p className="text-sm text-white/80">Resume your last class or jump into flashcards due today.</p>
+              <p className="text-sm text-inverse opacity-80">Resume your last class or jump into flashcards due today.</p>
               <Link
                 to="/classes"
-                className="inline-flex items-center gap-2 rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-[#4B34C2] shadow-lg"
+                className="inline-flex items-center gap-2 rounded-full surface px-5 py-2.5 text-sm font-semibold text-[var(--primary)] shadow-lg"
               >
                 <Sparkles className="h-4 w-4" />
                 Continue studying
@@ -112,20 +112,20 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="rounded-[28px] bg-white p-6 shadow-[0_16px_40px_rgba(15,16,32,0.08)]">
+          <div className="rounded-[28px] surface p-6 shadow-[0_16px_40px_rgba(15,16,32,0.08)]">
             <div className="flex items-start justify-between">
               <div>
-                <div className="text-xs uppercase tracking-[0.3em] text-[#7B5FEF]">Resume</div>
-                <div className="mt-2 text-xl font-semibold text-[#0F1020]">
+                <div className="text-xs uppercase tracking-[0.3em] text-[var(--primary)]">Resume</div>
+                <div className="mt-2 text-xl font-semibold text-main">
                   {classes[0]?.name ?? "No class yet"}
                 </div>
-                <div className="text-sm text-[#6B5CA5]">
+                <div className="text-sm text-muted">
                   {resumeFile ? `Last document: ${resumeFile}` : "Upload a document to continue."}
                 </div>
               </div>
               {classes[0] && (
                 <button
-                  className="rounded-full bg-[#7B5FEF] px-4 py-2 text-xs font-semibold text-white"
+                  className="rounded-full bg-[var(--primary)] px-4 py-2 text-xs font-semibold text-inverse"
                   onClick={() => navigate("/classes", { state: { selectId: classes[0].id } })}
                 >
                   Open class
@@ -139,25 +139,25 @@ export default function Dashboard() {
           {metrics.map((metric) => (
             <div
               key={metric.label}
-              className="rounded-[24px] bg-white p-5 shadow-[0_14px_36px_rgba(15,16,32,0.08)]"
+              className="rounded-[24px] surface p-5 shadow-[0_14px_36px_rgba(15,16,32,0.08)]"
             >
-              <div className="text-xs uppercase tracking-[0.3em] text-[#7B5FEF]">{metric.label}</div>
-              <div className="mt-2 text-3xl font-semibold text-[#0F1020]">{metric.value}</div>
-              <div className="mt-2 text-xs text-[#6B5CA5]">{metric.hint}</div>
+              <div className="text-xs uppercase tracking-[0.3em] text-[var(--primary)]">{metric.label}</div>
+              <div className="mt-2 text-3xl font-semibold text-main">{metric.value}</div>
+              <div className="mt-2 text-xs text-muted">{metric.hint}</div>
             </div>
           ))}
         </section>
 
         <section className="grid grid-cols-1 gap-4 lg:grid-cols-[1.2fr_1fr]">
-          <div className="rounded-[28px] bg-white p-6 shadow-[0_16px_40px_rgba(15,16,32,0.08)]">
+          <div className="rounded-[28px] surface p-6 shadow-[0_16px_40px_rgba(15,16,32,0.08)]">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-xs uppercase tracking-[0.3em] text-[#7B5FEF]">Due Today</div>
-                <div className="mt-2 text-lg font-semibold text-[#0F1020]">Flashcards ready</div>
+                <div className="text-xs uppercase tracking-[0.3em] text-[var(--primary)]">Due Today</div>
+                <div className="mt-2 text-lg font-semibold text-main">Flashcards ready</div>
               </div>
               {classes[0] && (
                 <button
-                  className="inline-flex items-center gap-2 rounded-full border border-[#EFE7FF] px-4 py-2 text-xs font-semibold text-[#6B5CA5]"
+                  className="inline-flex items-center gap-2 rounded-full border border-token px-4 py-2 text-xs font-semibold text-muted"
                   onClick={() =>
                     navigate(`/classes/${classes[0].id}/flashcards/study`, {
                       state: { cards: dueCards, className: classes[0].name, startIndex: 0 },
@@ -171,17 +171,17 @@ export default function Dashboard() {
             </div>
             <div className="mt-4 space-y-3">
               {dueCards.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-[#EFE7FF] bg-[#F8F5FF] px-5 py-6 text-sm text-[#6B5CA5]">
+                <div className="rounded-2xl border border-dashed border-token surface-2 px-5 py-6 text-sm text-muted">
                   No cards due yet. You are all caught up.
                 </div>
               ) : (
                 dueCards.map((card) => (
                   <div
                     key={card.id}
-                    className="rounded-2xl border border-[#EFE7FF] bg-[#FCFBFF] px-4 py-3 text-sm text-[#0F1020]"
+                    className="rounded-2xl border border-token surface-2 px-4 py-3 text-sm text-main"
                   >
                     <div className="font-semibold">{card.question}</div>
-                    <div className="text-xs text-[#6B5CA5]">
+                    <div className="text-xs text-muted">
                       {card.difficulty ?? "medium"} difficulty
                     </div>
                   </div>
@@ -190,30 +190,30 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="rounded-[28px] bg-white p-6 shadow-[0_16px_40px_rgba(15,16,32,0.08)]">
-            <div className="text-xs uppercase tracking-[0.3em] text-[#7B5FEF]">Recent classes</div>
-            <div className="mt-4 grid grid-cols-1 gap-3 text-sm text-[#0F1020]">
+          <div className="rounded-[28px] surface p-6 shadow-[0_16px_40px_rgba(15,16,32,0.08)]">
+            <div className="text-xs uppercase tracking-[0.3em] text-[var(--primary)]">Recent classes</div>
+            <div className="mt-4 grid grid-cols-1 gap-3 text-sm text-main">
               {recentClasses.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-[#EFE7FF] bg-[#F8F5FF] px-4 py-5 text-center text-sm text-[#6B5CA5]">
+                <div className="rounded-2xl border border-dashed border-token surface-2 px-4 py-5 text-center text-sm text-muted">
                   No classes yet.
                 </div>
               ) : (
                 recentClasses.map((c) => (
                   <div
                     key={c.id}
-                    className="flex items-center justify-between rounded-2xl border border-[#EFE7FF] bg-[#FCFBFF] px-4 py-3"
+                    className="flex items-center justify-between rounded-2xl border border-token surface-2 px-4 py-3"
                   >
                     <div className="flex items-center gap-3">
-                      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#7B5FEF] text-[11px] font-semibold text-white">
+                      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--primary)] text-[11px] font-semibold text-inverse">
                         {c.name.slice(0, 2).toUpperCase()}
                       </span>
                       <div>
-                        <div className="font-semibold text-[#0F1020]">{c.name}</div>
-                        <div className="text-xs text-[#6B5CA5]">{c.subject ?? "General"}</div>
+                        <div className="font-semibold text-main">{c.name}</div>
+                        <div className="text-xs text-muted">{c.subject ?? "General"}</div>
                       </div>
                     </div>
                     <button
-                      className="rounded-full border border-[#EFE7FF] px-3 py-1 text-[11px] text-[#6B5CA5]"
+                      className="rounded-full border border-token px-3 py-1 text-[11px] text-muted"
                       onClick={() => navigate("/classes", { state: { selectId: c.id } })}
                     >
                       View
@@ -225,28 +225,28 @@ export default function Dashboard() {
           </div>
         </section>
 
-        <section className="rounded-[28px] bg-white p-6 shadow-[0_16px_40px_rgba(15,16,32,0.08)]">
+        <section className="rounded-[28px] surface p-6 shadow-[0_16px_40px_rgba(15,16,32,0.08)]">
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-xs uppercase tracking-[0.3em] text-[#7B5FEF]">Recent activity</div>
-              <div className="mt-2 text-lg font-semibold text-[#0F1020]">Learning overview</div>
+              <div className="text-xs uppercase tracking-[0.3em] text-[var(--primary)]">Recent activity</div>
+              <div className="mt-2 text-lg font-semibold text-main">Learning overview</div>
             </div>
-            <span className="text-xs text-[#6B5CA5]">Last 7 days</span>
+            <span className="text-xs text-muted">Last 7 days</span>
           </div>
-          <div className="mt-5 space-y-4 text-sm text-[#6B5CA5]">
+          <div className="mt-5 space-y-4 text-sm text-muted">
             {activityItems.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-[#EFE7FF] bg-[#F8F5FF] px-5 py-6 text-center text-sm text-[#6B5CA5]">
+              <div className="rounded-2xl border border-dashed border-token surface-2 px-5 py-6 text-center text-sm text-muted">
                 No activity yet. Create a class to begin your learning flow.
               </div>
             ) : (
               activityItems.map((item, idx) => (
                 <div key={item.id} className="flex items-start gap-4">
-                  <div className="mt-1 flex h-9 w-9 items-center justify-center rounded-full bg-[#F1EDFF] text-[#7B5FEF]">
+                  <div className="mt-1 flex h-9 w-9 items-center justify-center rounded-full surface-tint text-[var(--primary)]">
                     {idx === 0 ? <FileText className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
                   </div>
                   <div className="flex-1">
-                    <div className="font-semibold text-[#0F1020]">{item.label}</div>
-                    {item.detail && <div className="text-xs text-[#6B5CA5]">{item.detail}</div>}
+                    <div className="font-semibold text-main">{item.label}</div>
+                    {item.detail && <div className="text-xs text-muted">{item.detail}</div>}
                   </div>
                 </div>
               ))

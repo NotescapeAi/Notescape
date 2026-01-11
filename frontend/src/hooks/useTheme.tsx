@@ -73,7 +73,11 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     (async () => {
       try {
         const pref = await getPreferences();
-        if (pref.theme !== theme) {
+        const stored = window.localStorage.getItem("notescape.theme");
+        const storedPref =
+          stored === "light" || stored === "dark" || stored === "system" ? stored : null;
+        const shouldAdoptServer = !storedPref || storedPref === "system";
+        if (pref.theme !== theme && shouldAdoptServer) {
           window.localStorage.setItem("notescape.theme", pref.theme);
           setThemeState(pref.theme);
         }

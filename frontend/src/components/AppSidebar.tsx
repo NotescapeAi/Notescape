@@ -18,7 +18,7 @@ type Props = {
 const item =
   "group relative flex items-center gap-3 rounded-2xl px-3 py-3 text-[15px] font-semibold transition";
 const active =
-  "before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:h-8 before:w-1 before:rounded-full before:bg-[#7B5FEF] before:shadow-[0_0_10px_rgba(123,95,239,0.4)]";
+  "before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:h-8 before:w-1 before:rounded-full before:bg-[var(--primary)] before:shadow-[0_0_10px_rgba(123,95,239,0.4)]";
 
 export default function AppSidebar({ collapsed, onToggle }: Props) {
   const location = useLocation();
@@ -45,7 +45,7 @@ export default function AppSidebar({ collapsed, onToggle }: Props) {
         >
           <div className={`flex ${collapsed ? "w-full flex-col items-center" : "items-center"}`}>
             <div
-              className={`flex h-[52px] w-[52px] items-center justify-center rounded-full bg-[var(--primary)] text-base font-semibold text-white shadow-[0_12px_28px_rgba(123,95,239,0.35)] ${
+              className={`flex h-[52px] w-[52px] items-center justify-center rounded-full bg-[var(--primary)] text-base font-semibold text-inverse shadow-[0_12px_28px_rgba(123,95,239,0.35)] ${
                 collapsed ? "mb-2.5" : ""
               }`}
             >
@@ -149,7 +149,7 @@ export default function AppSidebar({ collapsed, onToggle }: Props) {
         </nav>
 
         {!collapsed && (
-          <div className="mt-6 border-t border-[#E7E0FF] pt-4 text-xs uppercase tracking-[0.2em] text-[#6E648D]">
+        <div className="mt-6 border-t border-token pt-4 text-xs uppercase tracking-[0.2em] text-muted">
             Account
           </div>
         )}

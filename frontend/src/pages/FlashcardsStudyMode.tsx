@@ -118,9 +118,9 @@ export default function FlashcardsStudyMode() {
       <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <div className="text-xs uppercase tracking-[0.3em] text-[#7B5FEF]">Study session</div>
-            <h1 className="mt-2 text-3xl font-semibold text-[#0F1020]">Focus mode</h1>
-            <div className="text-sm text-[#6B5CA5]">Stay consistent and build recall.</div>
+            <div className="text-xs uppercase tracking-[0.3em] text-[var(--primary)]">Study session</div>
+            <h1 className="mt-2 text-3xl font-semibold text-main">Focus mode</h1>
+            <div className="text-sm text-muted">Stay consistent and build recall.</div>
           </div>
           <div className="flex items-center gap-2">
             <Button className="rounded-full" onClick={studyAgain}>
@@ -135,27 +135,27 @@ export default function FlashcardsStudyMode() {
           </div>
         </div>
 
-        <div className="rounded-[22px] bg-white p-4 shadow-[0_12px_30px_rgba(15,16,32,0.08)]">
-          <div className="flex items-center justify-between text-xs text-[#6B5CA5]">
+        <div className="rounded-[22px] surface p-4 shadow-[0_12px_30px_rgba(15,16,32,0.08)]">
+          <div className="flex items-center justify-between text-xs text-muted">
             <span>Mastery {masteryPct}%</span>
             <span>
               {masteredCount}/{totalCount} mastered
             </span>
           </div>
-          <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-[#EFE7FF]">
+          <div className="mt-3 h-2 w-full overflow-hidden rounded-full surface-tint">
             <div
-              className="h-full rounded-full bg-[#5FEFC3]"
+              className="h-full rounded-full bg-[var(--accent-mint)]"
               style={{ width: `${masteryPct}%` }}
             />
           </div>
         </div>
 
-        <div className="rounded-[28px] bg-white p-6 shadow-[0_18px_40px_rgba(15,16,32,0.08)]">
+        <div className="rounded-[28px] surface p-6 shadow-[0_18px_40px_rgba(15,16,32,0.08)]">
             <div className="mb-4 flex items-center justify-between gap-2">
               <select
                 value={fileFilter}
                 onChange={(e) => setFileFilter(e.target.value)}
-                className="h-10 rounded-2xl border border-[#EFE7FF] bg-white px-3 text-sm text-[#5A4B92]"
+                className="h-10 rounded-2xl border border-token surface px-3 text-sm text-muted"
               >
                 <option value="all">All files</option>
                 {files.map((f) => (
@@ -164,25 +164,25 @@ export default function FlashcardsStudyMode() {
                   </option>
                 ))}
               </select>
-              <div className="text-xs text-[#6B5CA5]">
+              <div className="text-xs text-muted">
                 {idx + 1} / {cards.length || 0}
               </div>
             </div>
             {loading ? (
-              <div className="text-sm text-[#6B5CA5]">Loading cards...</div>
+              <div className="text-sm text-muted">Loading cards...</div>
             ) : !current ? (
-              <div className="text-sm text-[#6B5CA5]">You are fully mastered for today.</div>
+              <div className="text-sm text-muted">You are fully mastered for today.</div>
             ) : (
               <div className="space-y-6">
-                <div className="rounded-[28px] border border-[#EFE7FF] bg-gradient-to-br from-white to-[#F4F0FF] p-8 shadow-[0_18px_40px_rgba(15,16,32,0.08)]">
-                  <div className="text-xs uppercase tracking-[0.2em] text-[#7B5FEF]">
+                <div className="rounded-[28px] border border-token bg-gradient-to-br from-[var(--surface)] to-[var(--surface-2)] p-8 shadow-[0_18px_40px_rgba(15,16,32,0.08)]">
+                  <div className="text-xs uppercase tracking-[0.2em] text-[var(--primary)]">
                     {current.state ? current.state.toUpperCase() : "Due"}
                   </div>
-                  <div className="mt-3 text-2xl font-semibold text-[#0F1020]">
+                  <div className="mt-3 text-2xl font-semibold text-main">
                     {sanitizeText(current.question)}
                   </div>
                   <div
-                    className={`mt-6 rounded-2xl border border-[#EFE7FF] bg-white p-4 text-sm text-[#5A4B92] transition ${
+                    className={`mt-6 rounded-2xl border border-token surface p-4 text-sm text-muted transition ${
                       revealed ? "opacity-100" : "opacity-0 h-0 overflow-hidden"
                     }`}
                   >
@@ -198,11 +198,26 @@ export default function FlashcardsStudyMode() {
                 <div>
                   <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
                     {[
-                      { score: 1, label: "Didn't know", color: "border-[#EF5F8B]/30 bg-[#EF5F8B]/10 text-[#EF5F8B]" },
-                      { score: 2, label: "Hard", color: "border-[#EF5F8B]/20 bg-[#EF5F8B]/5 text-[#C44A70]" },
-                      { score: 3, label: "Moderate", color: "border-[#D3EF5F]/40 bg-[#D3EF5F]/20 text-[#7A8F18]" },
-                      { score: 4, label: "Almost", color: "border-[#5FEFC3]/40 bg-[#5FEFC3]/20 text-[#1E9D78]" },
-                      { score: 5, label: "Mastered", color: "border-[#5FEFC3]/60 bg-[#5FEFC3]/30 text-[#0E8F6A]" },
+                      { score: 1, label: "Didn't know", color: "border-accent bg-accent-soft text-accent" },
+                      { score: 2, label: "Hard", color: "border-accent bg-accent-weak text-accent" },
+                      {
+                        score: 3,
+                        label: "Moderate",
+                        color:
+                          "border-[var(--accent-lime)] bg-[var(--accent-lime)]/20 text-[var(--accent-lime)]",
+                      },
+                      {
+                        score: 4,
+                        label: "Almost",
+                        color:
+                          "border-[var(--accent-mint)] bg-[var(--accent-mint)]/20 text-[var(--accent-mint)]",
+                      },
+                      {
+                        score: 5,
+                        label: "Mastered",
+                        color:
+                          "border-[var(--accent-mint)] bg-[var(--accent-mint)]/30 text-[var(--accent-mint)]",
+                      },
                     ].map((opt) => (
                       <button
                         key={opt.score}
@@ -213,7 +228,7 @@ export default function FlashcardsStudyMode() {
                       </button>
                     ))}
                   </div>
-                  <div className="mt-2 flex justify-between text-xs text-[#6B5CA5]">
+                  <div className="mt-2 flex justify-between text-xs text-muted">
                     <span>Not confident</span>
                     <span>Mastered</span>
                   </div>

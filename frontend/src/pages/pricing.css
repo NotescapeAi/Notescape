@@ -1,6 +1,6 @@
 /* ===== Pricing Page Styles ===== */
 :root {
-  --violet: #7B5FEF;
+  --violet: var(--primary);
   --violet-dark: #5A3FD6;
   --ink: #0B1221;
   --ink-2: #475569;

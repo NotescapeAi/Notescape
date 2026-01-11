@@ -20,8 +20,8 @@ export default function KebabMenu({ items }: { items: KebabItem[] }) {
     <div ref={ref} className="relative inline-block">
       <button
         type="button"
-        onClick={() => setOpen(v => !v)}
-        className="inline-flex items-center justify-center h-8 w-8 rounded-full hover:bg-slate-100"
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex h-8 w-8 items-center justify-center rounded-full hover:bg-accent-weak"
         aria-haspopup="menu"
         aria-expanded={open}
         title="More"
@@ -32,7 +32,7 @@ export default function KebabMenu({ items }: { items: KebabItem[] }) {
       {open && (
         <div
           role="menu"
-          className="absolute right-0 mt-2 w-44 rounded-xl border border-slate-200 bg-white shadow-lg p-1 z-20"
+          className="absolute right-0 mt-2 w-44 rounded-xl border border-token surface shadow-lg p-1 z-20"
         >
           {items.map((it, idx) => (
             <button
@@ -43,7 +43,7 @@ export default function KebabMenu({ items }: { items: KebabItem[] }) {
                 setOpen(false);
                 requestAnimationFrame(() => it.onClick());
               }}
-              className="block w-full text-left px-3 py-2 text-[14px] hover:bg-slate-50 rounded-lg"
+              className="block w-full rounded-lg px-3 py-2 text-left text-[14px] hover:bg-[var(--surface-2)]"
               role="menuitem"
             >
               {it.label}

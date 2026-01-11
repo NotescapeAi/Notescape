@@ -73,7 +73,7 @@ export default function FileViewer({
               href={url}
               target="_blank"
               rel="noreferrer"
-              style={{ textDecoration: "none", color: "#7B5FEF", fontWeight: 600 }}
+              style={{ textDecoration: "none", color: "var(--primary)", fontWeight: 600 }}
               title="Open in new tab"
             >
               Open
@@ -81,7 +81,7 @@ export default function FileViewer({
             <a
               href={url}
               download
-              style={{ textDecoration: "none", color: "#7B5FEF", fontWeight: 600 }}
+              style={{ textDecoration: "none", color: "var(--primary)", fontWeight: 600 }}
               title="Download"
             >
               Download

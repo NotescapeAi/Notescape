@@ -6,11 +6,23 @@
 :root {
   --bg: #f8f6ff;
   --surface: #ffffff;
+  --surface-2: #f4f2ff;
+  --surface-inverse: #0f1020;
+  --surface-tint: rgba(123, 95, 239, 0.12);
+  --surface-80: rgba(255, 255, 255, 0.8);
+  --surface-95: rgba(255, 255, 255, 0.95);
+  --overlay: rgba(15, 16, 32, 0.4);
   --text: #0f1020;
-  --muted: #6b5ca5;
+  --text-muted: #6b5ca5;
+  --text-inverse: #ffffff;
+  --placeholder: #8b83a8;
   --border: rgba(0, 0, 0, 0.08);
+  --border-strong: rgba(15, 16, 32, 0.4);
+  --ring: rgba(123, 95, 239, 0.35);
   --primary: #7b5fef;
   --accent-pink: #ef5f8b;
+  --accent-pink-soft: rgba(239, 95, 139, 0.12);
+  --accent-pink-weak: rgba(239, 95, 139, 0.06);
   --soft-lime: #d3ef5f;
   --mint: #5fefc3;
   --shadow: 0 12px 30px rgba(15, 16, 32, 0.08);
@@ -19,11 +31,23 @@
 .dark {
   --bg: #0f1118;
   --surface: #161a24;
+  --surface-2: #1c2230;
+  --surface-inverse: #101420;
+  --surface-tint: rgba(123, 95, 239, 0.18);
+  --surface-80: rgba(22, 26, 36, 0.8);
+  --surface-95: rgba(22, 26, 36, 0.95);
+  --overlay: rgba(0, 0, 0, 0.6);
   --text: #f2f3f7;
-  --muted: #a9a4c3;
+  --text-muted: #a9a4c3;
+  --text-inverse: #ffffff;
+  --placeholder: #7e7896;
   --border: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.35);
+  --ring: rgba(123, 95, 239, 0.55);
   --primary: #7b5fef;
   --accent-pink: #ef5f8b;
+  --accent-pink-soft: rgba(239, 95, 139, 0.2);
+  --accent-pink-weak: rgba(239, 95, 139, 0.12);
   --soft-lime: #d3ef5f;
   --mint: #5fefc3;
   --shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
@@ -69,61 +93,106 @@ h1, h2, h3 {
   font-family: "Fraunces", "Space Grotesk", ui-serif, Georgia, serif;
 }
 
-.dark .bg-white {
-  background-color: var(--surface) !important;
+.surface {
+  background: var(--surface);
 }
 
-.dark .bg-\[\#F8F6FF\] {
-  background-color: var(--bg) !important;
+.surface-2 {
+  background: var(--surface-2);
 }
 
-.dark .bg-\[\#F7F4FF\] {
-  background-color: var(--surface) !important;
+.surface-tint {
+  background: var(--surface-tint);
 }
 
-.dark .bg-\[\#F4F0FF\] {
-  background-color: rgba(123, 95, 239, 0.12) !important;
+.surface-80 {
+  background: var(--surface-80);
 }
 
-.dark .bg-\[\#FCFBFF\] {
-  background-color: var(--surface) !important;
+.surface-95 {
+  background: var(--surface-95);
 }
 
-.dark .text-\[\#0F1020\] {
-  color: var(--text) !important;
+.bg-overlay {
+  background: var(--overlay);
 }
 
-.dark .text-\[\#6B5CA5\],
-.dark .text-\[\#5A4B92\] {
-  color: var(--muted) !important;
+.bg-inverse {
+  background: var(--surface-inverse);
 }
 
-.dark .border-\[\#EFE7FF\],
-.dark .border-\[\#E7E0FF\] {
-  border-color: var(--border) !important;
+.text-main {
+  color: var(--text);
 }
 
-.dark .bg-slate-50 {
-  background-color: var(--surface) !important;
+.text-muted {
+  color: var(--text-muted);
 }
 
-.dark .bg-slate-900 {
-  background-color: #0c0e14 !important;
+.text-inverse {
+  color: var(--text-inverse);
 }
 
-.dark .text-slate-900,
-.dark .text-slate-800 {
-  color: var(--text) !important;
+.text-placeholder {
+  color: var(--placeholder);
 }
 
-.dark .text-slate-700,
-.dark .text-slate-600,
-.dark .text-slate-500,
-.dark .text-slate-400 {
-  color: var(--muted) !important;
+.border-token {
+  border-color: var(--border);
 }
 
-.dark .border-slate-200,
-.dark .border-slate-300 {
-  border-color: var(--border) !important;
+.border-strong {
+  border-color: var(--border-strong);
+}
+
+.shadow-token {
+  box-shadow: var(--shadow);
+}
+
+.text-accent {
+  color: var(--accent-pink);
+}
+
+.border-accent {
+  border-color: rgba(239, 95, 139, 0.35);
+}
+
+.bg-accent-soft {
+  background: var(--accent-pink-soft);
+}
+
+.bg-accent-weak {
+  background: var(--accent-pink-weak);
+}
+
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="search"],
+input[type="number"],
+textarea,
+select {
+  background: var(--surface);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+input[type="text"]::placeholder,
+input[type="email"]::placeholder,
+input[type="password"]::placeholder,
+input[type="search"]::placeholder,
+input[type="number"]::placeholder,
+textarea::placeholder {
+  color: var(--placeholder);
+}
+
+input[type="text"]:focus-visible,
+input[type="email"]:focus-visible,
+input[type="password"]:focus-visible,
+input[type="search"]:focus-visible,
+input[type="number"]:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--ring);
 }

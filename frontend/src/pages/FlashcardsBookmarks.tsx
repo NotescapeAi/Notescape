@@ -88,9 +88,9 @@ export default function FlashcardsBookmarks() {
       <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <div className="text-xs uppercase tracking-[0.3em] text-[#7B5FEF]">Bookmarks</div>
-            <h1 className="mt-2 text-2xl font-semibold text-[#0F1020]">{className}</h1>
-            <div className="text-sm text-[#6B5CA5]">Showing {bookmarkedCards.length} bookmarked</div>
+            <div className="text-xs uppercase tracking-[0.3em] text-[var(--primary)]">Bookmarks</div>
+            <h1 className="mt-2 text-2xl font-semibold text-main">{className}</h1>
+            <div className="text-sm text-muted">Showing {bookmarkedCards.length} bookmarked</div>
           </div>
           <Button onClick={goBack} className="rounded-full">
             <span className="inline-flex items-center gap-2">
@@ -100,11 +100,11 @@ export default function FlashcardsBookmarks() {
           </Button>
         </div>
 
-        {loading && <div className="text-sm text-[#6B5CA5]">Loading...</div>}
-        {error && <div className="text-sm text-[#EF5F8B]">{error}</div>}
+        {loading && <div className="text-sm text-muted">Loading...</div>}
+        {error && <div className="text-sm text-[var(--accent-pink)]">{error}</div>}
 
         {!loading && !error && bookmarkedCards.length === 0 && (
-          <div className="text-sm text-[#6B5CA5]">No bookmarks yet.</div>
+          <div className="text-sm text-muted">No bookmarks yet.</div>
         )}
 
         {!loading && !error && bookmarkedCards.length > 0 && (
@@ -118,14 +118,14 @@ export default function FlashcardsBookmarks() {
               return (
                 <div
                   key={c.id}
-                  className="rounded-[24px] bg-white p-4 shadow-[0_12px_30px_rgba(15,16,32,0.08)]"
+                  className="rounded-[24px] surface p-4 shadow-[0_12px_30px_rgba(15,16,32,0.08)]"
                 >
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex flex-wrap items-center gap-2 text-xs">
-                      <span className="rounded-full border border-[#EFE7FF] bg-[#F4F0FF] px-2 py-0.5 font-semibold text-[#7B5FEF]">
+                      <span className="rounded-full border border-token surface-2 px-2 py-0.5 font-semibold text-[var(--primary)]">
                         {(c as any).difficulty ? String((c as any).difficulty).toUpperCase() : "MEDIUM"}
                       </span>
-                      <span className="rounded-full border border-[#EFE7FF] bg-[#F8F5FF] px-2 py-0.5 text-[#5A4B92]">
+                      <span className="rounded-full border border-token surface-2 px-2 py-0.5 text-muted">
                         {className}
                       </span>
                     </div>
@@ -165,25 +165,25 @@ export default function FlashcardsBookmarks() {
                     />
                   </div>
 
-                  <div className="mt-3 text-base font-semibold text-[#0F1020]">Q: {c.question}</div>
+                  <div className="mt-3 text-base font-semibold text-main">Q: {c.question}</div>
 
                   <details className="mt-3">
-                    <summary className="cursor-pointer text-sm font-semibold text-[#7B5FEF]">
+                    <summary className="cursor-pointer text-sm font-semibold text-[var(--primary)]">
                       Show answer
                     </summary>
-                    <div className="mt-2 text-sm text-[#5A4B92] whitespace-pre-wrap">
+                    <div className="mt-2 text-sm text-muted whitespace-pre-wrap">
                       {c.answer}
                     </div>
                   </details>
 
                   {c.hint && String(c.hint).trim() && (
-                    <div className="mt-3 text-xs text-[#6B5CA5]">
+                    <div className="mt-3 text-xs text-muted">
                       <span className="font-semibold">Hint:</span> {String(c.hint).trim()}
                     </div>
                   )}
 
                   {tags.length > 0 && (
-                    <div className="mt-3 text-xs text-[#6B5CA5]">
+                    <div className="mt-3 text-xs text-muted">
                       <span className="font-semibold">Tags:</span> {tags.join(", ")}
                     </div>
                   )}

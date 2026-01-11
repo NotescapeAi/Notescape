@@ -68,7 +68,7 @@ const ContactPage = () => {
         >
           <form
             onSubmit={handleSubmit}
-            className="bg-white/80 backdrop-blur-md shadow-2xl rounded-2xl p-8 sm:p-10 space-y-6 border border-purple-100"
+            className="surface-80 backdrop-blur-md shadow-2xl rounded-2xl p-8 sm:p-10 space-y-6 border border-token"
           >
             <div>
               <label className="block text-gray-700 font-semibold mb-2">Name</label>
@@ -78,7 +78,7 @@ const ContactPage = () => {
                 value={formData.name}
                 onChange={handleChange}
                 required
-                className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-purple-300 focus:border-purple-500 outline-none transition"
+                className="w-full border border-token rounded-lg px-4 py-3 focus:ring-2 focus:ring-[var(--ring)] focus:border-[var(--primary)] outline-none transition"
                 placeholder="Enter your name"
               />
             </div>
@@ -91,7 +91,7 @@ const ContactPage = () => {
                 value={formData.email}
                 onChange={handleChange}
                 required
-                className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-purple-300 focus:border-purple-500 outline-none transition"
+                className="w-full border border-token rounded-lg px-4 py-3 focus:ring-2 focus:ring-[var(--ring)] focus:border-[var(--primary)] outline-none transition"
                 placeholder="Enter your email"
               />
             </div>
@@ -103,7 +103,7 @@ const ContactPage = () => {
                 value={formData.message}
                 onChange={handleChange}
                 required
-                className="w-full border border-gray-300 rounded-lg px-4 py-3 h-40 focus:ring-2 focus:ring-purple-300 focus:border-purple-500 outline-none transition resize-none"
+                className="w-full border border-token rounded-lg px-4 py-3 h-40 focus:ring-2 focus:ring-[var(--ring)] focus:border-[var(--primary)] outline-none transition resize-none"
                 placeholder="Write your message here..."
               />
             </div>
@@ -113,7 +113,7 @@ const ContactPage = () => {
               disabled={status === "loading"}
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
-              className="w-full bg-purple-600 text-white px-8 py-3 rounded-lg font-semibold text-lg shadow-md hover:bg-purple-700 hover:shadow-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full bg-purple-600 text-inverse px-8 py-3 rounded-lg font-semibold text-lg shadow-md hover:bg-purple-700 hover:shadow-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {status === "loading" ? "Sending..." : "Send Message"}
             </motion.button>

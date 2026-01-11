@@ -86,7 +86,7 @@ const Navbar: React.FC = () => {
 
       {/* Mobile Dropdown */}
       {isOpen && (
-        <div className="md:hidden bg-white/95 backdrop-blur border-t shadow-md px-6 py-4 flex flex-col gap-3">
+        <div className="md:hidden surface-95 backdrop-blur border-t shadow-md px-6 py-4 flex flex-col gap-3">
           <a href="/" className="ns-link hover:text-blue-600" onClick={() => setIsOpen(false)}>Features</a>
           <NavLink to="/pricing" className="ns-link hover:text-blue-600" onClick={() => setIsOpen(false)}>Pricing</NavLink>
           <NavLink to="/support" className="ns-link hover:text-blue-600" onClick={() => setIsOpen(false)}>Support</NavLink>

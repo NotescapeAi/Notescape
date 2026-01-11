@@ -74,25 +74,25 @@ export default function ClassHeaderButtons({ classId, onGenerate }: Props) {
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <label className="text-xs text-slate-500">Difficulty</label>
+      <label className="text-xs text-muted">Difficulty</label>
       <select
         value={difficulty}
         onChange={(e) => {
           const val = e.target.value;
           if (isDifficulty(val)) setDifficulty(val);
         }}
-        className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm"
+        className="h-9 rounded-lg border border-token surface px-2 text-sm"
       >
         <option value="easy">Easy</option>
         <option value="medium">Medium</option>
         <option value="hard">Hard</option>
       </select>
 
-      <label className="text-xs text-slate-500">Cards</label>
+      <label className="text-xs text-muted">Cards</label>
       <select
         value={count}
         onChange={(e) => setCount(Number(e.target.value))}
-        className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm"
+        className="h-9 rounded-lg border border-token surface px-2 text-sm"
       >
         {COUNT_OPTIONS.map((n) => (
           <option key={n} value={n}>
@@ -101,14 +101,14 @@ export default function ClassHeaderButtons({ classId, onGenerate }: Props) {
         ))}
       </select>
 
-      <label className="text-xs text-slate-500">Style</label>
+      <label className="text-xs text-muted">Style</label>
       <select
         value={style}
         onChange={(e) => {
           const val = e.target.value;
           if (isStyle(val)) setStyle(val);
         }}
-        className="h-9 rounded-lg border border-slate-200 bg-white px-2 text-sm"
+        className="h-9 rounded-lg border border-token surface px-2 text-sm"
       >
         <option value="mixed">Mixed</option>
         <option value="definitions">Definitions</option>
