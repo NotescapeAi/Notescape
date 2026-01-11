@@ -271,17 +271,10 @@ export default function Chatbot() {
   };
 
   return (
-    <AppShell
-      title="Study Assistant"
-      breadcrumbs={["Study Assistant"]}
-      subtitle="Sessions are saved per class and user."
-    >
+    <AppShell title="Chat">
       <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <div className="text-xs uppercase tracking-[0.3em] text-[var(--primary)]">Assistant</div>
-            <div className="mt-2 text-lg font-semibold text-main">Class chat</div>
-          </div>
+          <div className="text-lg font-semibold text-main">Chat</div>
           <div className="flex flex-wrap items-center gap-2">
             <select
               value={classId ?? ""}

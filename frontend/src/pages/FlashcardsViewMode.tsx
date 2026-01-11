@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useLocation, useParams } from "react-router-dom";
 import AppShell from "../layouts/AppShell";
 import Button from "../components/Button";
-import { listFlashcards, type Flashcard } from "../lib/api";
+import { listClasses, listFlashcards, type Flashcard } from "../lib/api";
 
 
 type LocationState = { cards?: Flashcard[]; className?: string };
@@ -23,6 +23,7 @@ export default function FlashcardsViewMode() {
 
   const [cards, setCards] = useState<Flashcard[]>(Array.isArray(state.cards) ? state.cards : []);
   const [loading, setLoading] = useState<boolean>(!Array.isArray(state.cards));
+  const [className, setClassName] = useState<string>(state.className ?? "");
   const [idx, setIdx] = useState<number>(0);
   const [revealed, setRevealed] = useState<boolean>(false);
 
@@ -33,10 +34,17 @@ export default function FlashcardsViewMode() {
       setLoading(true);
       try {
         const n = Number(classId);
-        const fetched = Number.isFinite(n) ? await listFlashcards(n) : [];
+        const [fetched, classes] = await Promise.all([
+          Number.isFinite(n) ? listFlashcards(n) : Promise.resolve([]),
+          Number.isFinite(n) ? listClasses() : Promise.resolve([]),
+        ]);
         if (!ignore) {
           setCards(Array.isArray(fetched) ? fetched : []);
           setIdx(0);
+          if (!className) {
+            const cls = classes.find((c) => c.id === n);
+            setClassName(cls?.name ?? "");
+          }
         }
       } finally {
         if (!ignore) setLoading(false);
@@ -46,7 +54,13 @@ export default function FlashcardsViewMode() {
     return () => {
       ignore = true;
     };
-  }, [classId, state.cards]);
+  }, [classId, state.cards, className]);
+
+  useEffect(() => {
+    const n = Number(classId);
+    if (!Number.isFinite(n) || !n) return;
+    localStorage.setItem("last_class_id", String(n));
+  }, [classId]);
 
   const current = useMemo<Flashcard | undefined>(() => cards[idx], [cards, idx]);
 
@@ -66,10 +80,9 @@ export default function FlashcardsViewMode() {
     <AppShell
       title="Browse cards"
       breadcrumbs={["Flashcards", "Browse"]}
-      subtitle={state.className ?? "Class"}
+      subtitle={className || "Class"}
       backLabel="Back to Flashcards"
-      backTo="/classes"
-      backState={{ tab: "flashcards" }}
+      backTo={classId ? `/classes/${classId}/flashcards` : "/classes"}
     >
       <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6">
         <div className="rounded-[24px] surface p-6 shadow-[0_12px_30px_rgba(15,16,32,0.08)]">

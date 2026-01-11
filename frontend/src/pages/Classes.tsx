@@ -230,6 +230,7 @@ function ClassesContent() {
       setChatDrawerOpen(false);
       return;
     }
+    localStorage.setItem("last_class_id", String(selectedId));
     (async () => {
       const fs = await listFiles(selectedId);
       setFiles(fs ?? []);

@@ -73,6 +73,11 @@ export default function FlashcardsBookmarks() {
     };
   }, [id]);
 
+  useEffect(() => {
+    if (!Number.isFinite(id) || !id) return;
+    localStorage.setItem("last_class_id", String(id));
+  }, [id]);
+
   const expanded = useMemo(() => cardsRaw.flatMap(expandLegacy), [cardsRaw]);
   const bookmarkedCards = expanded.filter((c) => bm.isBookmarked(String(c.id)));
 
@@ -82,8 +87,7 @@ export default function FlashcardsBookmarks() {
       breadcrumbs={["Flashcards", "Bookmarks"]}
       subtitle={className}
       backLabel="Back to Flashcards"
-      backTo="/classes"
-      backState={{ tab: "flashcards" }}
+      backTo={classId ? `/classes/${classId}/flashcards` : "/classes"}
     >
       <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6">
         <div className="flex flex-wrap items-center justify-between gap-4">

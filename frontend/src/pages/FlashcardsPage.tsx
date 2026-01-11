@@ -137,6 +137,11 @@ export default function FlashcardsPage() {
     };
   }, [id, fileFilter]);
 
+  useEffect(() => {
+    if (!Number.isFinite(id) || !id) return;
+    localStorage.setItem("last_class_id", String(id));
+  }, [id]);
+
   const filtered = useMemo(() => {
     const byDifficulty =
       difficultyFilter === "all"

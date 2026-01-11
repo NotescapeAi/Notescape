@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -9,6 +10,7 @@ import {
   LogOut,
   ChevronLeft,
 } from "lucide-react";
+import { listClasses } from "../lib/api";
 
 type Props = {
   collapsed: boolean;
@@ -23,8 +25,39 @@ const active =
 export default function AppSidebar({ collapsed, onToggle }: Props) {
   const location = useLocation();
   const navigate = useNavigate();
-  const isFlashcardsActive = location.pathname.startsWith("/classes") && (location.state as any)?.tab === "flashcards";
-  const shellClass = "bg-[var(--surface)] text-[var(--text)] border border-[var(--border)] shadow-[var(--shadow)]";
+  const isFlashcardsActive =
+    location.pathname.includes("/flashcards") ||
+    (location.pathname.startsWith("/classes") && (location.state as any)?.tab === "flashcards");
+  const [resolvedClassId, setResolvedClassId] = useState<number | null>(null);
+
+  useEffect(() => {
+    const lastClassIdRaw =
+      localStorage.getItem("last_class_id") ||
+      localStorage.getItem("chat_last_class_id") ||
+      "";
+    const lastClassId = Number(lastClassIdRaw);
+    if (Number.isFinite(lastClassId) && lastClassId > 0) {
+      setResolvedClassId(lastClassId);
+      return;
+    }
+    let ignore = false;
+    (async () => {
+      try {
+        const classes = await listClasses();
+        const firstId = classes[0]?.id;
+        if (!ignore && Number.isFinite(firstId)) {
+          setResolvedClassId(firstId);
+          localStorage.setItem("last_class_id", String(firstId));
+        }
+      } catch {
+        if (!ignore) setResolvedClassId(null);
+      }
+    })();
+    return () => {
+      ignore = true;
+    };
+  }, []);
+  const shellClass = "bg-[var(--surface)] text-[var(--text)] border border-[var(--border)] shadow-[var(--shadow)] rounded-[28px] overflow-hidden";
   const textMuted = "text-[var(--muted)]";
   const textHover = "hover:text-[var(--primary)]";
   const iconMuted = "text-[var(--primary)]";
@@ -33,10 +66,10 @@ export default function AppSidebar({ collapsed, onToggle }: Props) {
 
   return (
     <aside
-      className="fixed left-0 top-0 z-40 h-screen"
-      style={{ width: collapsed ? "76px" : "260px" }}
+      className={`fixed left-0 top-0 z-40 h-screen ${collapsed ? "p-2" : "p-4"}`}
+      style={{ width: collapsed ? "92px" : "276px" }}
     >
-      <div className={`h-full p-4 ${shellClass}`}>
+      <div className={`h-full ${collapsed ? "p-3" : "p-4"} ${shellClass}`}>
         <header
           className={`flex h-[88px] ${
             collapsed ? "flex-col items-center justify-start" : "items-center justify-between"
@@ -117,7 +150,7 @@ export default function AppSidebar({ collapsed, onToggle }: Props) {
           </NavLink>
           <button
             type="button"
-            onClick={() => navigate("/classes", { state: { tab: "flashcards" } })}
+            onClick={() => navigate("/flashcards")}
             className={`${item} ${isFlashcardsActive ? active : ""} ${collapsed ? "justify-center" : ""} ${
               isFlashcardsActive ? activeText : `${textMuted} ${textHover}`
             }`}

@@ -148,6 +148,11 @@ export default function FlashcardsStudyMode() {
     loadOrCreateSession();
   }, [classNum, fileFilter]);
 
+  useEffect(() => {
+    if (!classNum) return;
+    localStorage.setItem("last_class_id", String(classNum));
+  }, [classNum]);
+
   async function handleReview(confidence: 1 | 2 | 3 | 4 | 5) {
     if (!currentCard || !sessionId) return;
     const start = responseStart.current;
@@ -215,8 +220,7 @@ export default function FlashcardsStudyMode() {
       breadcrumbs={["Flashcards", "Study"]}
       subtitle="Build mastery, one card at a time."
       backLabel="Back to Flashcards"
-      backTo="/classes"
-      backState={{ tab: "flashcards" }}
+      backTo={classId ? `/classes/${classId}/flashcards` : "/classes"}
     >
       <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6">
         <div className="flex flex-wrap items-center justify-between gap-4">

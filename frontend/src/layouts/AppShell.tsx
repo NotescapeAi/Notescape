@@ -62,18 +62,16 @@ export default function AppShell({
           style={{ marginLeft: collapsed ? "76px" : "260px" }}
         >
           <div className="flex min-w-0 flex-col gap-6">
-            <div className="sticky top-4 z-50">
-              <div className={`mx-auto w-full ${headerMaxWidthClassName}`}>
-                <TopBar
-                  title={title}
-                  breadcrumbs={breadcrumbs}
-                  subtitle={subtitle}
-                  showGreeting={showGreeting}
-                  backLabel={backLabel}
-                  backTo={backTo}
-                  backState={backState}
-                />
-              </div>
+            <div className={`mx-auto w-full ${headerMaxWidthClassName}`}>
+              <TopBar
+                title={title}
+                breadcrumbs={breadcrumbs}
+                subtitle={subtitle}
+                showGreeting={showGreeting}
+                backLabel={backLabel}
+                backTo={backTo}
+                backState={backState}
+              />
             </div>
             <main className="flex-1">{children}</main>
           </div>

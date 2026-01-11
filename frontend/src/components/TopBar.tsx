@@ -37,7 +37,7 @@ export default function TopBar({ title, breadcrumbs, subtitle, showGreeting, bac
   }, [open]);
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-4 rounded-[24px] border border-token bg-[var(--surface)] px-6 py-5 shadow-[var(--shadow)]">
+    <div className="flex flex-wrap items-center justify-between gap-4 rounded-[28px] border border-token bg-[var(--surface)] px-6 py-5 shadow-[var(--shadow)]">
       <div>
         {backLabel && (
           <div className="mb-2">

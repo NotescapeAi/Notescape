@@ -25,6 +25,7 @@ const Dashboard          = lazy(() => import("./pages/Dashboard"));
 const Settings           = lazy(() => import("./pages/Settings"));
 const LogoutPage         = lazy(() => import("./pages/Logout"));
 const FlashcardsPage     = lazy(() => import("./pages/FlashcardsPage"));
+const FlashcardsHub      = lazy(() => import("./pages/FlashcardsHub"));
 const Profile            = lazy(() => import("./pages/Profile"));
 const Chatbot            = lazy(() => import("./pages/Chatbot"));
 
@@ -104,12 +105,14 @@ function AppRoutes() {
       <Route path="/classes/:classId/flashcards/study"     element={<FlashcardsStudyMode />} />
       <Route path="/classes/:classId/flashcards/bookmarks" element={<FlashcardsBookmarks />} />
       <Route path="/classes/:classId/flashcards"           element={<FlashcardsPage />} />
+      <Route path="/flashcards" element={<FlashcardsHub />} />
       <Route path="/chatbot" element={<Chatbot />} />
 
       <Route path="/classes/:classId/flashcards/view" element={<RequireAuth><FlashcardsViewMode /></RequireAuth>} />
       <Route path="/classes/:classId/flashcards/study" element={<RequireAuth><FlashcardsStudyMode /></RequireAuth>} />
       <Route path="/classes/:classId/flashcards/bookmarks" element={<RequireAuth><FlashcardsBookmarks /></RequireAuth>} />
       <Route path="/classes/:classId/flashcards" element={<RequireAuth><FlashcardsPage /></RequireAuth>} />
+      <Route path="/flashcards" element={<RequireAuth><FlashcardsHub /></RequireAuth>} />
       <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
       <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />
       <Route path="/profile" element={<RequireAuth><Profile /></RequireAuth>} />
