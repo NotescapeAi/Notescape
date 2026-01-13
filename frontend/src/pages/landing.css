@@ -109,6 +109,18 @@
 }
 
 
+.btn-primary.cta-purple,
+.landing-root .btn-primary.cta-purple {
+  background: linear-gradient(90deg, #74038f 0%, #6000a0 50%, #5003b3 100%);
+  color: #ffffff;
+  box-shadow: 0 12px 34px rgba(124, 58, 237, 0.45);
+}
+.btn-primary.cta-purple:hover,
+.landing-root .btn-primary.cta-purple:hover {
+  background: linear-gradient(90deg, #6d28d9 0%, #7c3aed 50%, #8b5cf6 100%);
+  box-shadow: 0 16px 38px rgba(124, 58, 237, 0.55);
+}
+
 /* ===== Hero ===== */
 .landing-root .landing-hero{ padding: 72px 0 40px; }
 .landing-root .hero-grid{ display:grid; grid-template-columns: 1.05fr .95fr; gap: 40px; align-items:center; }

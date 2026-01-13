@@ -73,7 +73,7 @@ const Navbar: React.FC = () => {
 
         {/* Desktop Actions */}
         <div className="hidden md:flex ns-actions">
-          <Link to="/get-started" className="btn-primary">Sign Up</Link>
+          <Link to="/get-started" className="btn-primary cta-purple">Sign Up</Link>
         </div>
 
         {/* Mobile Toggle */}
@@ -90,7 +90,7 @@ const Navbar: React.FC = () => {
           <a href="/" className="ns-link hover:text-blue-600" onClick={() => setIsOpen(false)}>Features</a>
           <NavLink to="/pricing" className="ns-link hover:text-blue-600" onClick={() => setIsOpen(false)}>Pricing</NavLink>
           <NavLink to="/support" className="ns-link hover:text-blue-600" onClick={() => setIsOpen(false)}>Support</NavLink>
-          <Link to="/get-started" className="btn-primary mt-2" onClick={() => setIsOpen(false)}>Sign Up</Link>
+          <Link to="/get-started" className="btn-primary cta-purple mt-2" onClick={() => setIsOpen(false)}>Sign Up</Link>
         </div>
       )}
     </header>

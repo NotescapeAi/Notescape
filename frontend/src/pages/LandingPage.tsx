@@ -58,7 +58,7 @@ useEffect(() => {
                 clear up any concept on demand with an AI coach.
               </p>
             
-                <GetStartedLink className="btn-primary">
+                <GetStartedLink className="btn-primary cta-purple">
                   Get started
                 </GetStartedLink>
                 <a className="btn-ghost slide-up" href="#how">
@@ -170,7 +170,7 @@ useEffect(() => {
                 <h3 className="cta-title">Ready to Transform Your Study Habits?</h3>
                 <p className="cta-sub">Sign up for free today</p>
               </div>
-              <Link to="/get-started" className="btn-primary">
+              <Link to="/get-started" className="btn-primary cta-purple">
                 Sign Up for Free
               </Link>
             </div>
