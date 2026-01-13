@@ -122,7 +122,6 @@ function AppRoutes() {
       <Route path="/terms"     element={<TermsPage />} />
       <Route path="/privacy"   element={<PrivacyPolicy />} />
       <Route path="/support"   element={<ContactPage />} />
-      <Route path="/profile"   element={<Profile />} />
 
       {/* 404 */}
       <Route path="*" element={<NotFound />} />

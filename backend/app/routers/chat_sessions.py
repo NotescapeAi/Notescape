@@ -24,11 +24,14 @@ async def _ensure_chat_schema():
               user_id TEXT NOT NULL,
               class_id INT NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
               document_id UUID REFERENCES files(id) ON DELETE SET NULL,
-              title TEXT NOT NULL DEFAULT 'New chat',
+              title TEXT NOT NULL DEFAULT 'Chat session',
               created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
               updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
             )
             """
+        )
+        await cur.execute(
+            "ALTER TABLE chat_sessions ALTER COLUMN title SET DEFAULT 'Chat session'"
         )
         await cur.execute(
             """
@@ -78,7 +81,11 @@ async def _ensure_chat_schema():
 class ChatSessionCreate(BaseModel):
     class_id: int
     document_id: Optional[str] = None
-    title: Optional[str] = Field(default="New chat")
+    title: Optional[str] = None
+
+
+class ChatSessionUpdate(BaseModel):
+    title: Optional[str] = None
 
 
 class ChatMessageCreate(BaseModel):
@@ -117,13 +124,14 @@ async def create_session(payload: ChatSessionCreate, user_id: str = Depends(get_
             if not await cur.fetchone():
                 raise HTTPException(status_code=404, detail="File not found in class")
     async with db_conn() as (conn, cur):
+        title = (payload.title or "Chat session").strip() or "Chat session"
         await cur.execute(
             """
             INSERT INTO chat_sessions (user_id, class_id, document_id, title)
             VALUES (%s, %s, %s, %s)
             RETURNING id::text, class_id, document_id::text, title, created_at, updated_at
             """,
-            (user_id, payload.class_id, payload.document_id, payload.title or "New chat"),
+            (user_id, payload.class_id, payload.document_id, title),
         )
         row = await cur.fetchone()
         await conn.commit()
@@ -152,6 +160,34 @@ async def list_sessions(
         rows = await cur.fetchall()
     cols = ["id", "class_id", "document_id", "title", "created_at", "updated_at"]
     return [dict(zip(cols, r)) for r in rows]
+
+
+@router.patch("/sessions/{session_id}")
+async def update_session(
+    session_id: str,
+    payload: ChatSessionUpdate,
+    user_id: str = Depends(get_request_user_uid),
+):
+    if not (payload.title and payload.title.strip()):
+        raise HTTPException(status_code=400, detail="Title cannot be empty")
+    title = payload.title.strip()
+    await _ensure_chat_schema()
+    async with db_conn() as (conn, cur):
+        await cur.execute(
+            """
+            UPDATE chat_sessions
+            SET title=%s, updated_at=now()
+            WHERE id=%s AND user_id=%s
+            RETURNING id::text, class_id, document_id::text, title, created_at, updated_at
+            """,
+            (title, session_id, user_id),
+        )
+        row = await cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Session not found")
+        await conn.commit()
+    cols = ["id", "class_id", "document_id", "title", "created_at", "updated_at"]
+    return dict(zip(cols, row))
 
 
 @router.get("/sessions/{session_id}")

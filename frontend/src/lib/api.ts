@@ -2,6 +2,7 @@
 import axios from "axios";
 import emailjs from "@emailjs/browser";
 import { auth } from "../firebase/firebase";
+import { onAuthStateChanged } from "firebase/auth";
 
 /** Base URL: prefer Vite env, else relative /api */
 const API_BASE =
@@ -16,7 +17,15 @@ const http = axios.create({
 
 // Get auth headers for Firebase user
 async function userHeader(): Promise<Record<string, string>> {
-  const user = auth.currentUser;
+  let user = auth.currentUser;
+  if (!user) {
+    user = await new Promise((resolve) => {
+      const unsub = onAuthStateChanged(auth, (next) => {
+        unsub();
+        resolve(next);
+      });
+    });
+  }
   if (!user) {
     return { "X-User-Id": "dev-user" };
   }
@@ -147,6 +156,37 @@ export type MasterySession = {
   done?: boolean;
   ended?: boolean;
   current_card?: MasteryCard | null;
+};
+
+export type StudySession = {
+  id: string;
+  user_id: string;
+  class_id?: number | null;
+  class_name?: string | null;
+  mode: string;
+  started_at?: string | null;
+  ended_at?: string | null;
+  duration_seconds?: number | null;
+  active_seconds?: number | null;
+  last_active_at?: string | null;
+};
+
+export type StudySessionOverview = {
+  total_seconds_7d: number;
+  total_seconds_30d: number;
+  total_seconds_all: number;
+  sessions_7d: number;
+  sessions_30d: number;
+  sessions_all: number;
+  avg_seconds_7d: number;
+  avg_seconds_30d: number;
+  avg_seconds_all: number;
+};
+
+export type StudySessionTrend = {
+  day: string;
+  total_seconds: number;
+  sessions: number;
 };
 
 export type ContactPayload = {
@@ -387,6 +427,12 @@ export async function listChatSessions(classId: number, documentId?: string | nu
   return Array.isArray(data) ? data : [];
 }
 
+export async function updateChatSession(sessionId: string, payload: { title: string }): Promise<ChatSession> {
+  const headers = await userHeader();
+  const { data } = await http.patch<ChatSession>(`/chat/sessions/${sessionId}`, payload, { headers });
+  return data;
+}
+
 export async function getChatSession(sessionId: string): Promise<{ session: ChatSession; messages: ChatMessage[] }> {
   const headers = await userHeader();
   const { data } = await http.get(`/chat/sessions/${sessionId}`, { headers });
@@ -606,6 +652,55 @@ export async function startMasterySession(payload: {
   const headers = await userHeader();
   const { data } = await http.post<MasterySession>("/flashcards/mastery/session/start", payload, { headers });
   return data;
+}
+
+export async function startStudySession(payload: {
+  class_id?: number;
+  mode?: "study" | "view";
+}): Promise<StudySession> {
+  const headers = await userHeader();
+  const { data } = await http.post<StudySession>("/study-sessions/start", payload, { headers });
+  return data;
+}
+
+export async function heartbeatStudySession(payload: {
+  session_id: string;
+  accumulated_seconds: number;
+  cards_seen?: number;
+  cards_completed?: number;
+  correct_count?: number;
+  incorrect_count?: number;
+}): Promise<StudySession> {
+  const headers = await userHeader();
+  const { data } = await http.patch<StudySession>(`/study-sessions/${payload.session_id}/heartbeat`, payload, { headers });
+  return data;
+}
+
+export async function endStudySession(payload: {
+  session_id: string;
+  accumulated_seconds?: number;
+}): Promise<StudySession> {
+  const headers = await userHeader();
+  const { data } = await http.post<StudySession>(`/study-sessions/${payload.session_id}/end`, payload, { headers });
+  return data;
+}
+
+export async function getStudySessionOverview(): Promise<StudySessionOverview> {
+  const headers = await userHeader();
+  const { data } = await http.get<StudySessionOverview>("/study-sessions/overview", { headers });
+  return data;
+}
+
+export async function listRecentStudySessions(limit = 10): Promise<StudySession[]> {
+  const headers = await userHeader();
+  const { data } = await http.get<StudySession[]>(`/study-sessions/recent?limit=${limit}`, { headers });
+  return Array.isArray(data) ? data : [];
+}
+
+export async function getStudySessionTrends(days = 14): Promise<StudySessionTrend[]> {
+  const headers = await userHeader();
+  const { data } = await http.get<StudySessionTrend[]>(`/study-sessions/trends?days=${days}`, { headers });
+  return Array.isArray(data) ? data : [];
 }
 
 export async function getMasterySession(sessionId: string): Promise<MasterySession> {

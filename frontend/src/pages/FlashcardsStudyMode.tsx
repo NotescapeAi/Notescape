@@ -1,4 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useParams } from "react-router-dom";
 import AppShell from "../layouts/AppShell";
 import Button from "../components/Button";
@@ -6,6 +14,9 @@ import {
   endMasterySession,
   getMasterySession,
   listFiles,
+  startStudySession,
+  heartbeatStudySession,
+  endStudySession,
   resetMasteryProgress,
   reviewMasteryCard,
   startMasterySession,
@@ -56,6 +67,127 @@ function formatDuration(seconds: number) {
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
+type SessionTimerHandle = {
+  flush: () => void;
+  reset: () => void;
+};
+
+const SessionTimer = forwardRef<
+  SessionTimerHandle,
+  { sessionId: string | null; baseSeconds: number; active: boolean; onSave?: (seconds: number) => void }
+>(function SessionTimer({ sessionId, baseSeconds, active, onSave }, ref) {
+  const [displaySeconds, setDisplaySeconds] = useState(0);
+  const accumulatedRef = useRef(0);
+  const lastResumedRef = useRef<number | null>(null);
+  const intervalRef = useRef<number | null>(null);
+  const lastSaveRef = useRef<number>(0);
+  const activeRef = useRef(active);
+  const sessionIdRef = useRef<string | null>(sessionId);
+
+  const storageKey = useMemo(
+    () => (sessionId ? `mastery_session_time_${sessionId}` : "mastery_session_time_unknown"),
+    [sessionId]
+  );
+
+  function computeSeconds(now = Date.now()) {
+    if (lastResumedRef.current === null) return accumulatedRef.current;
+    return accumulatedRef.current + Math.max(0, (now - lastResumedRef.current) / 1000);
+  }
+
+  function persist() {
+    if (!sessionId) return;
+    const seconds = Math.floor(computeSeconds());
+    localStorage.setItem(
+      storageKey,
+      JSON.stringify({ accumulatedSeconds: seconds, lastUpdatedAt: Date.now() })
+    );
+    onSave?.(seconds);
+    lastSaveRef.current = Date.now();
+  }
+
+  function pause() {
+    if (lastResumedRef.current !== null) {
+      accumulatedRef.current = computeSeconds();
+      lastResumedRef.current = null;
+    }
+    setDisplaySeconds(Math.floor(accumulatedRef.current));
+    persist();
+  }
+
+  function resume() {
+    if (!sessionId) return;
+    if (lastResumedRef.current === null) {
+      lastResumedRef.current = Date.now();
+    }
+  }
+
+  useImperativeHandle(ref, () => ({
+    flush: () => persist(),
+    reset: () => {
+      accumulatedRef.current = 0;
+      lastResumedRef.current = Date.now();
+      setDisplaySeconds(0);
+      persist();
+    },
+  }));
+
+  useEffect(() => {
+    activeRef.current = active;
+  }, [active]);
+
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
+
+  useEffect(() => {
+    const storedRaw = sessionId ? localStorage.getItem(storageKey) : null;
+    const storedSeconds = storedRaw ? Number(JSON.parse(storedRaw)?.accumulatedSeconds ?? 0) : 0;
+    const seedSeconds = Math.max(baseSeconds || 0, storedSeconds || 0);
+    accumulatedRef.current = seedSeconds;
+    lastResumedRef.current = null;
+    setDisplaySeconds(Math.floor(seedSeconds));
+    lastSaveRef.current = Date.now();
+  }, [sessionId, storageKey, baseSeconds]);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    const storedRaw = localStorage.getItem(storageKey);
+    const storedSeconds = storedRaw ? Number(JSON.parse(storedRaw)?.accumulatedSeconds ?? 0) : 0;
+    const next = Math.max(accumulatedRef.current, baseSeconds || 0, storedSeconds || 0);
+    if (next !== accumulatedRef.current) {
+      accumulatedRef.current = next;
+      setDisplaySeconds(Math.floor(next));
+    }
+  }, [baseSeconds, sessionId, storageKey]);
+
+  useEffect(() => {
+    if (intervalRef.current) return;
+    intervalRef.current = window.setInterval(() => {
+      const now = Date.now();
+      const isActive = activeRef.current && !!sessionIdRef.current && document.visibilityState === "visible";
+      if (!isActive) {
+        if (lastResumedRef.current !== null) {
+          pause();
+        }
+        return;
+      }
+      resume();
+      setDisplaySeconds(Math.floor(computeSeconds(now)));
+      if (now - lastSaveRef.current >= 15000) {
+        persist();
+      }
+    }, 1000);
+    return () => {
+      if (intervalRef.current) {
+        window.clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, []);
+
+  return <span>{formatDuration(displaySeconds)}</span>;
+});
+
 export default function FlashcardsStudyMode() {
   const { classId } = useParams();
   const classNum = Number(classId);
@@ -75,10 +207,16 @@ export default function FlashcardsStudyMode() {
   });
   const [revealed, setRevealed] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
   const [files, setFiles] = useState<{ id: string; filename: string }[]>([]);
   const [fileFilter, setFileFilter] = useState<string>("all");
   const [error, setError] = useState<string | null>(null);
   const responseStart = useRef<number | null>(null);
+  const scrollRestoreRef = useRef<number | null>(null);
+  const timerRef = useRef<SessionTimerHandle | null>(null);
+  const studySecondsRef = useRef(0);
+  const [studySessionId, setStudySessionId] = useState<string | null>(null);
+  const [studyBaseSeconds, setStudyBaseSeconds] = useState(0);
 
   const sessionKey = classNum
     ? `mastery_session_${classNum}_${fileFilter}`
@@ -105,6 +243,7 @@ export default function FlashcardsStudyMode() {
   async function startSession() {
     if (!classNum) return;
     setLoading(true);
+    setSubmitting(false);
     setError(null);
     try {
       const payload = {
@@ -124,6 +263,7 @@ export default function FlashcardsStudyMode() {
   async function loadOrCreateSession() {
     if (!classNum) return;
     setLoading(true);
+    setSubmitting(false);
     setError(null);
     try {
       const stored = localStorage.getItem(sessionKey);
@@ -149,6 +289,32 @@ export default function FlashcardsStudyMode() {
   }, [classNum, fileFilter]);
 
   useEffect(() => {
+    setStudySessionId(null);
+    setStudyBaseSeconds(0);
+    studySecondsRef.current = 0;
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (!classNum || !sessionId || stats.ended) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const sess = await startStudySession({ class_id: classNum, mode: "study" });
+        if (cancelled) return;
+        setStudySessionId(sess.id);
+        const base = sess.active_seconds ?? sess.duration_seconds ?? 0;
+        setStudyBaseSeconds(base);
+        studySecondsRef.current = base;
+      } catch {
+        // keep timer local if session logging fails
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [classNum, sessionId, stats.ended]);
+
+  useEffect(() => {
     if (!classNum) return;
     localStorage.setItem("last_class_id", String(classNum));
   }, [classNum]);
@@ -157,7 +323,8 @@ export default function FlashcardsStudyMode() {
     if (!currentCard || !sessionId) return;
     const start = responseStart.current;
     const responseTime = start ? Date.now() - start : undefined;
-    setLoading(true);
+    scrollRestoreRef.current = window.scrollY;
+    setSubmitting(true);
     setError(null);
     try {
       const data = await reviewMasteryCard({
@@ -167,18 +334,26 @@ export default function FlashcardsStudyMode() {
         response_time_ms: responseTime,
       });
       applySession(data);
+      timerRef.current?.flush();
     } catch (err: any) {
       setError(err?.message || "Failed to save review");
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   }
 
   async function handleEndSession() {
     if (!sessionId) return;
     try {
+      if (studySessionId) {
+        await endStudySession({
+          session_id: studySessionId,
+          accumulated_seconds: Math.floor(studySecondsRef.current || 0),
+        });
+      }
       await endMasterySession(sessionId);
     } finally {
+      timerRef.current?.flush();
       localStorage.removeItem(sessionKey);
       setStats((prev) => ({ ...prev, ended: true }));
       setCurrentCard(null);
@@ -188,6 +363,7 @@ export default function FlashcardsStudyMode() {
   async function handleResetProgress() {
     if (!classNum) return;
     setLoading(true);
+    setSubmitting(false);
     try {
       await resetMasteryProgress(classNum);
       localStorage.removeItem(sessionKey);
@@ -204,15 +380,32 @@ export default function FlashcardsStudyMode() {
     if (sessionId) {
       await endMasterySession(sessionId).catch(() => undefined);
     }
+    timerRef.current?.flush();
     localStorage.removeItem(sessionKey);
     setSessionId(null);
     setCurrentCard(null);
     setFileFilter(next);
   }
 
+  useLayoutEffect(() => {
+    if (scrollRestoreRef.current === null) return;
+    window.scrollTo({ top: scrollRestoreRef.current, behavior: "auto" });
+    scrollRestoreRef.current = null;
+  }, [currentCard?.id]);
+
   const masteryPct =
     stats.mastery_percent ||
     (stats.total_unique ? Math.round((stats.mastered_count / stats.total_unique) * 100) : 0);
+  const timerActive = Boolean(sessionId) && !loading && !stats.ended;
+  const handleSessionSave = (seconds: number) => {
+    studySecondsRef.current = seconds;
+    if (!studySessionId) return;
+    heartbeatStudySession({
+      session_id: studySessionId,
+      accumulated_seconds: Math.floor(seconds),
+      cards_seen: stats.total_reviews,
+    }).catch(() => undefined);
+  };
 
   return (
     <AppShell
@@ -227,7 +420,6 @@ export default function FlashcardsStudyMode() {
           <div>
             <div className="text-xs uppercase tracking-[0.3em] text-[var(--primary)]">Study session</div>
             <h1 className="mt-2 text-3xl font-semibold text-main">Mastery mode</h1>
-            <div className="text-sm text-muted">Reinforce weak cards until they stick.</div>
           </div>
           <div className="flex items-center gap-2">
             <Button className="rounded-full" onClick={startSession}>
@@ -280,7 +472,19 @@ export default function FlashcardsStudyMode() {
               ))}
             </select>
             <div className="text-xs text-muted">
-              {stats.total_cards ? stats.current_index + 1 : 0} / {stats.total_cards}
+              <span className="mr-3">
+                {stats.total_cards ? stats.current_index + 1 : 0} / {stats.total_cards}
+              </span>
+              <span>
+                Study time:{" "}
+                <SessionTimer
+                  ref={timerRef}
+                  sessionId={studySessionId ?? sessionId}
+                  baseSeconds={studyBaseSeconds || stats.session_seconds}
+                  active={timerActive}
+                  onSave={handleSessionSave}
+                />
+              </span>
             </div>
           </div>
 
@@ -294,7 +498,7 @@ export default function FlashcardsStudyMode() {
             <div className="text-sm text-muted">No cards available in this session.</div>
           ) : (
             <div className="space-y-6">
-              <div className="rounded-[28px] border border-token bg-gradient-to-br from-[var(--surface)] to-[var(--surface-2)] p-8 shadow-token">
+              <div className="rounded-[28px] border border-token bg-gradient-to-br from-[var(--surface)] to-[var(--surface-2)] p-8 shadow-token min-h-[320px]">
                 <div className="text-xs uppercase tracking-[0.2em] text-[var(--primary)]">Mastery</div>
                 <div className="mt-3 text-2xl font-semibold text-main">
                   {sanitizeText(currentCard.question)}
@@ -340,7 +544,10 @@ export default function FlashcardsStudyMode() {
                     <button
                       key={opt.score}
                       onClick={() => handleReview(opt.score as 1 | 2 | 3 | 4 | 5)}
-                      className={`rounded-2xl border px-3 py-3 text-xs font-semibold ${opt.color}`}
+                      disabled={submitting}
+                      className={`rounded-2xl border px-3 py-3 text-xs font-semibold transition ${
+                        submitting ? "cursor-not-allowed opacity-60" : ""
+                      } ${opt.color}`}
                     >
                       {opt.label}
                     </button>

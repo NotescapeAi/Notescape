@@ -1,5 +1,5 @@
 /* ===== Notescape — Light, classy, and animated (mobile-first) ===== */
-:root{
+.auth-root{
   --bg:#f7f7fb;
   --panel:#ffffff;
   --ink:#0f1724;
@@ -14,12 +14,12 @@
   --easing:cubic-bezier(.2,.8,.2,1);
 }
 
-* {
+.auth-root * {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
 }
-body {
+.auth-root {
   font-family: "Inter", sans-serif;
   background: #f9f9f9;
   color: #333;
@@ -172,7 +172,7 @@ body {
 /* ---------- Reduced Motion ---------- */
 @media (prefers-reduced-motion: reduce){
   *, *::before, *::after{ animation:none !important; transition:none !important }
-  body::before{ display:none }
+.auth-root::before{ display:none }
 }
 
 /*Login Page */
@@ -348,4 +348,3 @@ input:focus {
   color: white;
   margin-top: 10px;
 }
-

@@ -13,6 +13,7 @@ import {
   addChatMessages,
   deleteChatSession,
   clearChatSessionMessages,
+  updateChatSession,
   type ClassRow,
   type FileRow,
   type ChatSession,
@@ -20,6 +21,57 @@ import {
 } from "../lib/api";
 
 type Msg = ChatMessage & { citations?: any };
+
+const MESSAGE_CACHE_PREFIX = "chat_session_messages:";
+
+function buildSessionKey(sessionId: string) {
+  return `${MESSAGE_CACHE_PREFIX}${sessionId}`;
+}
+
+function loadSessionMessages(sessionId: string | null): Msg[] {
+  if (!sessionId || typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(buildSessionKey(sessionId));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed;
+  } catch {
+    return [];
+  }
+}
+
+function persistSessionMessages(sessionId: string, messages: Msg[]) {
+  if (!sessionId || typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(buildSessionKey(sessionId), JSON.stringify(messages));
+  } catch {
+    // ignore quota errors
+  }
+}
+
+function clearSessionMessagesCache(sessionId: string | null) {
+  if (!sessionId || typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(buildSessionKey(sessionId));
+  } catch {
+    // ignore
+  }
+}
+
+function generateSessionTitle() {
+  try {
+    const formatter = new Intl.DateTimeFormat(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+    return `Chat ${formatter.format(new Date())}`;
+  } catch {
+    return `Chat ${new Date().toLocaleString()}`;
+  }
+}
 
 export default function Chatbot() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -35,14 +87,20 @@ export default function Chatbot() {
   const [input, setInput] = useState("");
   const [selectedText, setSelectedText] = useState("");
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [renamingSession, setRenamingSession] = useState<ChatSession | null>(null);
+  const [renameInput, setRenameInput] = useState("");
+  const [renameError, setRenameError] = useState<string | null>(null);
+  const [renameLoading, setRenameLoading] = useState(false);
   const [busyAsk, setBusyAsk] = useState(false);
   const [busySessions, setBusySessions] = useState(false);
   const [busyFiles, setBusyFiles] = useState(false);
+  const [isAtBottom, setIsAtBottom] = useState(true);
   const [confirmDialog, setConfirmDialog] = useState<{ type: "delete" | "clear"; session: ChatSession } | null>(
     null
   );
-  const endRef = useRef<HTMLDivElement | null>(null);
   const convoRef = useRef<HTMLDivElement | null>(null);
+  const placeholderTitlesRef = useRef<Record<string, string>>({});
 
   const LS_LAST_CLASS = "chat_last_class_id";
   const LS_LAST_SESSION = "chat_last_session_by_class";
@@ -104,17 +162,31 @@ export default function Chatbot() {
       setMessages([]);
       return;
     }
-    setMessages([]);
+    const cached = loadSessionMessages(activeSessionId);
+    setMessages(cached.length ? cached : []);
     (async () => {
-      const msgs = await listChatSessionMessages(activeSessionId);
-      const normalized = (msgs || []).map((m) => ({
-        ...m,
-        citations: m.citations ?? undefined,
-        selected_text: m.selected_text ?? null,
-        file_scope: m.file_scope ?? null,
-        image_attachment: m.image_attachment ?? null,
-      }));
-      setMessages(normalized);
+      try {
+        setHistoryError(null);
+        const msgs = await listChatSessionMessages(activeSessionId);
+        const normalized = (msgs || []).map((m) => ({
+          ...m,
+          citations: m.citations ?? undefined,
+          selected_text: m.selected_text ?? null,
+          file_scope: m.file_scope ?? null,
+          image_attachment: m.image_attachment ?? null,
+        }));
+        setMessages(normalized);
+        persistSessionMessages(activeSessionId, normalized);
+      } catch (err) {
+        if (import.meta.env.DEV) {
+          console.warn("[chatbot] failed to load history", err);
+        }
+        const fallback = loadSessionMessages(activeSessionId);
+        if (fallback.length) {
+          setMessages(fallback);
+        }
+        setHistoryError("Couldn't load chat history. Try refreshing.");
+      }
     })();
     const stored = JSON.parse(localStorage.getItem(LS_LAST_SESSION) || "{}");
     stored[String(classId ?? "")] = activeSessionId;
@@ -126,8 +198,11 @@ export default function Chatbot() {
   }, [activeSessionId]);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages.length, busyAsk]);
+    if (!isAtBottom) return;
+    const el = convoRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [messages.length, busyAsk, isAtBottom]);
 
   const scopeFileIds = useMemo(() => {
     if (!activeSessionId) return [];
@@ -142,7 +217,7 @@ export default function Chatbot() {
 
   async function startNewSession() {
     if (!classId) return;
-    const s = await createChatSession({ class_id: classId, title: "New chat" });
+    const s = await createChatSession({ class_id: classId, title: generateSessionTitle() });
     setSessions((prev) => [s, ...prev]);
     setActiveSessionId(s.id);
   }
@@ -164,13 +239,18 @@ export default function Chatbot() {
 
     let sessionId = activeSessionId;
     if (!sessionId) {
-      const title = userMsg.content.slice(0, 48);
-      const s = await createChatSession({ class_id: classId, title });
+      const placeholderTitle = generateSessionTitle();
+      const s = await createChatSession({ class_id: classId, title: placeholderTitle });
+      placeholderTitlesRef.current[s.id] = placeholderTitle;
       setSessions((prev) => [s, ...prev]);
       sessionId = s.id;
       setActiveSessionId(s.id);
     }
-    setMessages((prev) => [...prev, userMsg]);
+    setMessages((prev) => {
+      const next = [...prev, userMsg];
+      persistSessionMessages(sessionId!, next);
+      return next;
+    });
     setInput("");
     setBusyAsk(true);
 
@@ -190,7 +270,11 @@ export default function Chatbot() {
         content: (res.answer || "").trim() || "Not found in the uploaded material.",
         citations: res.citations ?? [],
       };
-      setMessages((prev) => [...prev, botMsg]);
+      setMessages((prev) => {
+        const next = [...prev, botMsg];
+        persistSessionMessages(sessionId!, next);
+        return next;
+      });
       const saved = await addChatMessages({
         session_id: sessionId!,
         user_content: userMsg.content,
@@ -208,19 +292,50 @@ export default function Chatbot() {
           image_attachment: m.image_attachment ?? null,
         }));
         setMessages(normalized);
+        persistSessionMessages(sessionId!, normalized);
       }
       setSelectedText("");
       setSessions((prev) =>
         prev.map((s) => {
           if (s.id !== sessionId) return s;
-          const nextTitle = s.title === "New chat" ? userMsg.content.slice(0, 48) : s.title;
-          return { ...s, title: nextTitle, updated_at: new Date().toISOString() };
+          const placeholder = placeholderTitlesRef.current[sessionId!];
+          const snippet = userMsg.content.trim().slice(0, 48) || placeholder || "Chat session";
+          if (placeholder && s.title === placeholder) {
+            delete placeholderTitlesRef.current[sessionId!];
+            return { ...s, title: snippet, updated_at: new Date().toISOString() };
+          }
+          return { ...s, updated_at: new Date().toISOString() };
         })
       );
     } catch (e: any) {
+      if (import.meta.env.DEV) {
+        console.warn("[chatbot] failed to save messages", e);
+      }
       setErrorBanner("Couldn't save that message. Please try again.");
     } finally {
       setBusyAsk(false);
+    }
+  }
+
+  async function handleRenameSession() {
+    if (!renamingSession) return;
+    const nextTitle = renameInput.trim();
+    if (!nextTitle) {
+      setRenameError("Please provide a name for the chat.");
+      return;
+    }
+    setRenameLoading(true);
+    try {
+      const updated = await updateChatSession(renamingSession.id, { title: nextTitle });
+      setSessions((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+      delete placeholderTitlesRef.current[updated.id];
+      setRenamingSession(null);
+      setRenameError(null);
+    } catch (err) {
+      console.error("[chatbot] rename failed", err);
+      setRenameError("Could not rename chat. Try again.");
+    } finally {
+      setRenameLoading(false);
     }
   }
 
@@ -236,9 +351,13 @@ export default function Chatbot() {
           setActiveSessionId(next);
           if (!next) setMessages([]);
         }
+        clearSessionMessagesCache(session.id);
+        delete placeholderTitlesRef.current[session.id];
       } else {
         await clearChatSessionMessages(session.id);
         if (activeSessionId === session.id) setMessages([]);
+        clearSessionMessagesCache(session.id);
+        delete placeholderTitlesRef.current[session.id];
       }
     } catch {
       setErrorBanner(type === "delete" ? "Couldn't delete chat. Try again." : "Couldn't clear messages. Try again.");
@@ -321,6 +440,15 @@ export default function Chatbot() {
                     </button>
                     <KebabMenu
                       items={[
+                        {
+                          label: "Rename chat",
+                          onClick: () => {
+                            setRenameInput(s.title ?? "");
+                            setRenameError(null);
+                            setRenameLoading(false);
+                            setRenamingSession(s);
+                          },
+                        },
                         { label: "Clear messages", onClick: () => setConfirmDialog({ type: "clear", session: s }) },
                         { label: "Delete chat", onClick: () => setConfirmDialog({ type: "delete", session: s }) },
                       ]}
@@ -331,7 +459,7 @@ export default function Chatbot() {
             </div>
           </aside>
 
-          <section className="rounded-[24px] surface shadow-[0_12px_30px_rgba(15,16,32,0.08)] flex flex-col min-h-[70vh]">
+          <section className="rounded-[24px] surface shadow-[0_12px_30px_rgba(15,16,32,0.08)] flex flex-col h-[70vh] min-h-0">
             <div className="border-b border-token px-4 py-3 flex items-center justify-between">
               <div className="text-sm font-semibold">Conversation</div>
               <label className="flex items-center gap-2 text-xs text-muted">
@@ -341,15 +469,27 @@ export default function Chatbot() {
             </div>
             <div
               ref={convoRef}
-              className="flex-1 overflow-auto p-4 space-y-4"
+              className="flex-1 min-h-0 overflow-auto p-4 space-y-4"
               onMouseUp={() => {
                 const sel = window.getSelection()?.toString().trim() || "";
                 setSelectedText(sel.length > 0 ? sel : "");
+              }}
+              onScroll={() => {
+                const el = convoRef.current;
+                if (!el) return;
+                const threshold = 80;
+                const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
+                setIsAtBottom(atBottom);
               }}
             >
               {errorBanner && (
                 <div className="rounded-xl border border-accent bg-accent-soft px-3 py-2 text-xs text-accent">
                   {errorBanner}
+                </div>
+              )}
+              {historyError && (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  {historyError}
                 </div>
               )}
               {messages.length === 0 ? (
@@ -409,7 +549,6 @@ export default function Chatbot() {
                 })
               )}
               {busyAsk && <div className="text-xs text-muted">Thinking...</div>}
-              <div ref={endRef} />
             </div>
             <div className="border-t border-token p-4">
               {selectedText && (
@@ -428,7 +567,7 @@ export default function Chatbot() {
                 <textarea
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  className="min-h-[52px] flex-1 resize-none rounded-xl border border-token px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
+                  className="min-h-[52px] flex-1 resize-none rounded-xl border border-token surface px-3 py-2 text-sm text-main placeholder:text-muted caret-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
                   placeholder="Ask about your notes..."
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !e.shiftKey) {
@@ -506,6 +645,41 @@ export default function Chatbot() {
                 <Button onClick={() => setConfirmDialog(null)}>Cancel</Button>
                 <Button variant="primary" onClick={onConfirmSessionAction}>
                   {confirmDialog.type === "delete" ? "Delete" : "Clear"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+        {renamingSession && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-overlay p-4">
+            <div className="w-full max-w-sm rounded-2xl surface p-5 shadow-xl">
+              <div className="text-lg font-semibold text-main">Rename chat</div>
+              <p className="mt-1 text-xs text-muted">
+                Give this conversation a clearer name so you can find it later.
+              </p>
+              <input
+                value={renameInput}
+                onChange={(e) => setRenameInput(e.target.value)}
+                placeholder="E.g. Biology flashcards Q&A"
+                className="mt-4 w-full rounded-xl border border-token surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
+              />
+              {renameError && <div className="mt-2 text-xs text-red-600">{renameError}</div>}
+              <div className="mt-4 flex items-center justify-end gap-2">
+                <Button
+                  onClick={() => {
+                    setRenamingSession(null);
+                    setRenameError(null);
+                  }}
+                  disabled={renameLoading}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  onClick={handleRenameSession}
+                  disabled={renameLoading || !renameInput.trim()}
+                >
+                  {renameLoading ? "Saving..." : "Rename"}
                 </Button>
               </div>
             </div>

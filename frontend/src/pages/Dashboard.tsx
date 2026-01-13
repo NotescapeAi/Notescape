@@ -7,9 +7,20 @@ import {
   listFiles,
   getFlashcardProgress,
   listFlashcards,
+  getStudySessionOverview,
+  listRecentStudySessions,
+  type StudySession,
   type ClassRow,
   type Flashcard,
 } from "../lib/api";
+
+function formatDuration(seconds: number) {
+  const mins = Math.floor(seconds / 60);
+  const hrs = Math.floor(mins / 60);
+  const remMins = mins % 60;
+  if (hrs > 0) return `${hrs}h ${remMins}m`;
+  return `${mins}m`;
+}
 
 export default function Dashboard() {
   const [classes, setClasses] = useState<ClassRow[]>([]);
@@ -18,6 +29,12 @@ export default function Dashboard() {
   const [dueCards, setDueCards] = useState<Flashcard[]>([]);
   const [resumeFile, setResumeFile] = useState<string | null>(null);
   const [recentFiles, setRecentFiles] = useState<Array<{ filename: string; className: string }>>([]);
+  const [studyOverview, setStudyOverview] = useState<{
+    total_seconds_7d: number;
+    sessions_7d: number;
+    avg_seconds_7d: number;
+  } | null>(null);
+  const [recentSessions, setRecentSessions] = useState<StudySession[]>([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
@@ -53,6 +70,16 @@ export default function Dashboard() {
           const cards = await listFlashcards(cs[0].id);
           setDueCards((cards ?? []).filter(isDue).slice(0, 5));
         }
+        const [overview, sessions] = await Promise.all([
+          getStudySessionOverview(),
+          listRecentStudySessions(10),
+        ]);
+        setStudyOverview({
+          total_seconds_7d: overview.total_seconds_7d,
+          sessions_7d: overview.sessions_7d,
+          avg_seconds_7d: overview.avg_seconds_7d,
+        });
+        setRecentSessions(sessions);
       } finally {
         setLoading(false);
       }
@@ -89,7 +116,17 @@ export default function Dashboard() {
     { label: "Classes", value: loading ? "..." : classes.length, hint: "Active classes" },
     { label: "Documents", value: loading ? "..." : fileCount, hint: "Study materials" },
     { label: "Cards due today", value: loading ? "..." : dueNow, hint: "Ready to review" },
-    { label: "Study time", value: "N/A", hint: "Log sessions soon" },
+    {
+      label: "Study time",
+      value: loading
+        ? "..."
+        : studyOverview
+          ? formatDuration(studyOverview.total_seconds_7d)
+          : "0m",
+      hint: studyOverview
+        ? `Last 7 days · Avg ${formatDuration(Math.round(studyOverview.avg_seconds_7d))}`
+        : "Start a study session",
+    },
   ];
 
   return (
@@ -247,6 +284,44 @@ export default function Dashboard() {
                   <div className="flex-1">
                     <div className="font-semibold text-main">{item.label}</div>
                     {item.detail && <div className="text-xs text-muted">{item.detail}</div>}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+
+        <section className="rounded-[28px] surface p-6 shadow-[0_16px_40px_rgba(15,16,32,0.08)]">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-xs uppercase tracking-[0.3em] text-[var(--primary)]">Study sessions</div>
+              <div className="mt-2 text-lg font-semibold text-main">Recent study time</div>
+            </div>
+            {studyOverview && (
+              <span className="text-xs text-muted">{studyOverview.sessions_7d} sessions (7d)</span>
+            )}
+          </div>
+          <div className="mt-5 space-y-3 text-sm text-muted">
+            {recentSessions.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-token surface-2 px-5 py-6 text-center text-sm text-muted">
+                No study sessions yet. Start a study session to see time tracked.
+              </div>
+            ) : (
+              recentSessions.map((session) => (
+                <div
+                  key={session.id}
+                  className="flex items-center justify-between rounded-2xl border border-token surface-2 px-4 py-3"
+                >
+                  <div>
+                    <div className="font-semibold text-main">
+                      {session.class_name || (session.class_id ? `Class #${session.class_id}` : "Study session")}
+                    </div>
+                    <div className="text-xs text-muted">
+                      {session.started_at ? new Date(session.started_at).toLocaleString() : "Session"}
+                    </div>
+                  </div>
+                  <div className="text-xs text-muted">
+                    {formatDuration(Math.max(0, session.duration_seconds ?? session.active_seconds ?? 0))}
                   </div>
                 </div>
               ))

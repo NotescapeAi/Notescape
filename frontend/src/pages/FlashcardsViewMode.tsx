@@ -1,12 +1,12 @@
 // frontend/src/pages/FlashcardsViewMode.tsx
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useParams } from "react-router-dom";
 import AppShell from "../layouts/AppShell";
 import Button from "../components/Button";
 import { listClasses, listFlashcards, type Flashcard } from "../lib/api";
 
 
-type LocationState = { cards?: Flashcard[]; className?: string };
+type LocationState = { cards?: Flashcard[]; className?: string; startIndex?: number };
 
 function sanitizeText(value?: string | null) {
   const text = (value ?? "").trim();
@@ -24,8 +24,9 @@ export default function FlashcardsViewMode() {
   const [cards, setCards] = useState<Flashcard[]>(Array.isArray(state.cards) ? state.cards : []);
   const [loading, setLoading] = useState<boolean>(!Array.isArray(state.cards));
   const [className, setClassName] = useState<string>(state.className ?? "");
-  const [idx, setIdx] = useState<number>(0);
+  const [idx, setIdx] = useState<number>(() => Math.max(0, state.startIndex ?? 0));
   const [revealed, setRevealed] = useState<boolean>(false);
+  const scrollRestoreRef = useRef<number | null>(null);
 
   useEffect(() => {
     let ignore = false;
@@ -62,16 +63,24 @@ export default function FlashcardsViewMode() {
     localStorage.setItem("last_class_id", String(n));
   }, [classId]);
 
+  useLayoutEffect(() => {
+    if (scrollRestoreRef.current === null) return;
+    window.scrollTo({ top: scrollRestoreRef.current, behavior: "auto" });
+    scrollRestoreRef.current = null;
+  }, [idx]);
+
   const current = useMemo<Flashcard | undefined>(() => cards[idx], [cards, idx]);
 
   function next() {
     if (!cards.length) return;
+    scrollRestoreRef.current = window.scrollY;
     setIdx((i) => (i + 1) % cards.length);
     setRevealed(false);
   }
 
   function prev() {
     if (!cards.length) return;
+    scrollRestoreRef.current = window.scrollY;
     setIdx((i) => (i - 1 + cards.length) % cards.length);
     setRevealed(false);
   }
@@ -85,7 +94,7 @@ export default function FlashcardsViewMode() {
       backTo={classId ? `/classes/${classId}/flashcards` : "/classes"}
     >
       <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6">
-        <div className="rounded-[24px] surface p-6 shadow-[0_12px_30px_rgba(15,16,32,0.08)]">
+        <div className="rounded-[24px] surface p-6 shadow-[0_12px_30px_rgba(15,16,32,0.08)] min-h-[360px]">
           {loading ? (
             <div className="text-sm text-muted">Loading cards...</div>
           ) : !current ? (

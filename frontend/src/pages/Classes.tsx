@@ -185,6 +185,8 @@ function ClassesContent() {
     page?: number | null;
     boundingBox?: { x: number; y: number; width: number; height: number } | null;
   } | null>(null);
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
+  const [isChatAtBottom, setIsChatAtBottom] = useState(true);
 
   const location = useLocation();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -196,9 +198,9 @@ function ClassesContent() {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [chatBusy, setChatBusy] = useState(false);
+  const [chatHistoryError, setChatHistoryError] = useState<string | null>(null);
   const [showCitations, setShowCitations] = useState(false);
   const [scopeFileIds, setScopeFileIds] = useState<string[]>([]);
-  const chatEndRef = useRef<HTMLDivElement | null>(null);
   const { sidebar, setSidebar } = useLayout();
   const prevSidebarRef = useRef(sidebar);
   const [classesPanelCollapsed, setClassesPanelCollapsed] = useState(
@@ -244,6 +246,19 @@ function ClassesContent() {
   }, [selectedId]);
 
   useEffect(() => {
+    if (!selectedId || !files?.length || activeFile) return;
+    const stored = localStorage.getItem(`chat_last_file_${selectedId}`);
+    if (!stored) return;
+    const match = (files ?? []).find((f) => f.id === stored);
+    if (match) setActiveFile(match);
+  }, [selectedId, files, activeFile]);
+
+  useEffect(() => {
+    if (!selectedId || !activeFile) return;
+    localStorage.setItem(`chat_last_file_${selectedId}`, activeFile.id);
+  }, [selectedId, activeFile?.id]);
+
+  useEffect(() => {
     if (!selectedId) return;
     const needsPoll = (files ?? []).some((f) =>
       ["UPLOADED", "OCR_QUEUED", "OCR_DONE"].includes(String(f.status || ""))
@@ -265,7 +280,9 @@ function ClassesContent() {
     (async () => {
       const sess = await listChatSessions(selectedId, activeFile.id);
       setSessions(sess);
-      setActiveSessionId(sess[0]?.id ?? null);
+      const stored = localStorage.getItem(`chat_last_session_${selectedId}_${activeFile.id}`);
+      const preferred = stored ? sess.find((s) => s.id === stored)?.id : null;
+      setActiveSessionId(preferred ?? sess[0]?.id ?? null);
     })();
   }, [selectedId, activeFile?.id]);
 
@@ -342,24 +359,38 @@ function ClassesContent() {
     setMessages([]);
     setPendingSnip(null);
     (async () => {
-      const msgs = await listChatSessionMessages(activeSessionId);
-      const normalized = (msgs || []).map((m) => ({
-        ...m,
-        citations: m.citations ?? undefined,
-        selected_text: m.selected_text ?? null,
-        page_number: m.page_number ?? null,
-        bounding_box: m.bounding_box ?? null,
-        file_id: m.file_id ?? null,
-        file_scope: m.file_scope ?? null,
-        image_attachment: m.image_attachment ?? null,
-      }));
-      setMessages(normalized);
+      try {
+        setChatHistoryError(null);
+        const msgs = await listChatSessionMessages(activeSessionId);
+        const normalized = (msgs || []).map((m) => ({
+          ...m,
+          citations: m.citations ?? undefined,
+          selected_text: m.selected_text ?? null,
+          page_number: m.page_number ?? null,
+          bounding_box: m.bounding_box ?? null,
+          file_id: m.file_id ?? null,
+          file_scope: m.file_scope ?? null,
+          image_attachment: m.image_attachment ?? null,
+        }));
+        setMessages(normalized);
+        if (selectedId && activeFile) {
+          localStorage.setItem(`chat_last_session_${selectedId}_${activeFile.id}`, activeSessionId);
+        }
+      } catch (err) {
+        if (import.meta.env.DEV) {
+          console.warn("[classes] chat history load failed", err);
+        }
+        setChatHistoryError("Couldn't load chat history. Try refreshing.");
+      }
     })();
   }, [activeSessionId]);
 
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages.length, chatBusy]);
+    if (!isChatAtBottom) return;
+    const el = chatScrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [messages.length, chatBusy, isChatAtBottom]);
 
   useEffect(() => {
     if (!selectionMenu) return;
@@ -731,7 +762,10 @@ function ClassesContent() {
       });
       assistantText = (res.answer || "").trim() || "Not found in the uploaded material.";
       citations = res.citations ?? null;
-    } catch {
+    } catch (err) {
+      if (import.meta.env.DEV) {
+        console.warn("[classes] chat ask failed", err);
+      }
       showToastMessage("Couldn't save that message. Try again.");
     }
 
@@ -771,7 +805,10 @@ function ClassesContent() {
       setSessions((prev) =>
         prev.map((s) => (s.id === sessionId ? { ...s, updated_at: new Date().toISOString() } : s))
       );
-    } catch {
+    } catch (err) {
+      if (import.meta.env.DEV) {
+        console.warn("[classes] chat save failed", err);
+      }
       showToastMessage("Couldn't save that message. Try again.");
     } finally {
       setChatBusy(false);
@@ -888,6 +925,7 @@ function ClassesContent() {
   const showChatRail = !pdfFocusMode && isChatCollapsed;
   const showPdf = !isChatFullscreen;
   const isWorkspaceWide = activeTab === "documents" && !!activeFile;
+  const hideReadingClutter = Boolean(activeFile) && (showChatDock || showChatFullscreen || chatDrawerOpen);
   const layoutClass = pdfFocusMode
     ? focusChatVisible
       ? "grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(320px,25%)] xl:grid-cols-[minmax(0,1fr)_minmax(360px,30%)]"
@@ -1049,7 +1087,7 @@ function ClassesContent() {
                       )}
 
                       {showChatDock && (
-                        <aside className="hidden min-h-[84vh] flex-col rounded-2xl border border-token surface shadow-token lg:flex">
+                        <aside className="hidden h-[84vh] min-h-0 flex-col rounded-2xl border border-token surface shadow-token lg:flex">
                           <div
                             className="flex items-center justify-between border-b border-token px-4 py-3"
                             onDoubleClick={() =>
@@ -1132,8 +1170,10 @@ function ClassesContent() {
                               )}
                             </div>
                           </div>
-                          <div className="flex-1 overflow-auto p-4 space-y-4">
-                            {messages.length === 0 ? (
+                            <div className="flex-1 min-h-0 overflow-auto p-4 space-y-4">
+                            {chatHistoryError ? (
+                              <div className="text-sm text-amber-700">{chatHistoryError}</div>
+                            ) : messages.length === 0 ? (
                               <div className="text-sm text-muted">
                                 No messages yet. Ask about the document on the left.
                               </div>
@@ -1185,7 +1225,6 @@ function ClassesContent() {
                                 );
                               })
                             )}
-                            <div ref={chatEndRef} />
                           </div>
                           <div className="border-t border-token p-3">
                             {pendingSnip && (
@@ -1224,7 +1263,7 @@ function ClassesContent() {
                                 value={chatInput}
                                 onChange={(e) => setChatInput(e.target.value)}
                                 placeholder="Ask about this document..."
-                                className="h-10 flex-1 rounded-lg border border-token px-3 text-sm"
+                                className="h-10 flex-1 rounded-lg border border-token surface px-3 text-sm text-main placeholder:text-muted caret-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
                               />
                               <button
                                 onClick={() => onAsk()}
@@ -1239,7 +1278,7 @@ function ClassesContent() {
                       )}
 
                       {showChatFullscreen && (
-                        <aside className="flex min-h-[84vh] flex-col rounded-2xl border border-token surface shadow-token">
+                        <aside className="flex h-[84vh] min-h-0 flex-col rounded-2xl border border-token surface shadow-token">
                           <div
                             className="flex items-center justify-between border-b border-token px-4 py-3"
                             onDoubleClick={() => setChatDockState("docked")}
@@ -1252,8 +1291,21 @@ function ClassesContent() {
                               Exit full screen
                             </button>
                           </div>
-                          <div className="flex-1 overflow-auto p-4 space-y-4">
-                            {messages.length === 0 ? (
+                          <div
+                            ref={chatScrollRef}
+                            className="flex-1 min-h-0 overflow-auto p-4 space-y-4"
+                            onScroll={() => {
+                              const el = chatScrollRef.current;
+                              if (!el) return;
+                              const threshold = 80;
+                              const atBottom =
+                                el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
+                              setIsChatAtBottom(atBottom);
+                            }}
+                          >
+                            {chatHistoryError ? (
+                              <div className="text-sm text-amber-700">{chatHistoryError}</div>
+                            ) : messages.length === 0 ? (
                               <div className="text-sm text-muted">
                                 No messages yet. Ask about the document on the left.
                               </div>
@@ -1272,7 +1324,6 @@ function ClassesContent() {
                                 </div>
                               ))
                             )}
-                            <div ref={chatEndRef} />
                           </div>
                           <div className="border-t border-token p-3">
                             <div className="flex items-center gap-2">
@@ -1280,7 +1331,7 @@ function ClassesContent() {
                                 value={chatInput}
                                 onChange={(e) => setChatInput(e.target.value)}
                                 placeholder="Ask about this document..."
-                                className="h-10 flex-1 rounded-lg border border-token px-3 text-sm"
+                                className="h-10 flex-1 rounded-lg border border-token surface px-3 text-sm text-main placeholder:text-muted caret-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
                               />
                               <button
                                 onClick={() => onAsk()}
@@ -1360,7 +1411,7 @@ function ClassesContent() {
                           className="flex-1 bg-[rgba(0,0,0,0.4)]"
                           onClick={() => setChatDrawerOpen(false)}
                         />
-                        <aside className="flex h-full w-[88vw] max-w-[420px] flex-col border-l border-token surface shadow-token">
+                        <aside className="flex h-full w-[88vw] max-w-[420px] min-h-0 flex-col border-l border-token surface shadow-token">
                           <div className="flex items-center justify-between border-b border-token px-4 py-3">
                             <div className="text-sm font-semibold">Study Assistant</div>
                             <button
@@ -1370,8 +1421,21 @@ function ClassesContent() {
                               Close
                             </button>
                           </div>
-                          <div className="flex-1 overflow-auto p-4 space-y-4">
-                            {messages.length === 0 ? (
+                          <div
+                            ref={chatScrollRef}
+                            className="flex-1 min-h-0 overflow-auto p-4 space-y-4"
+                            onScroll={() => {
+                              const el = chatScrollRef.current;
+                              if (!el) return;
+                              const threshold = 80;
+                              const atBottom =
+                                el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
+                              setIsChatAtBottom(atBottom);
+                            }}
+                          >
+                            {chatHistoryError ? (
+                              <div className="text-sm text-amber-700">{chatHistoryError}</div>
+                            ) : messages.length === 0 ? (
                               <div className="text-sm text-muted">
                                 No messages yet. Ask about the document on the left.
                               </div>
@@ -1390,7 +1454,6 @@ function ClassesContent() {
                                 </div>
                               ))
                             )}
-                            <div ref={chatEndRef} />
                           </div>
                           <div className="border-t border-token p-3">
                             <div className="flex items-center gap-2">
@@ -1398,7 +1461,7 @@ function ClassesContent() {
                                 value={chatInput}
                                 onChange={(e) => setChatInput(e.target.value)}
                                 placeholder="Ask about this document..."
-                                className="h-10 flex-1 rounded-lg border border-token px-3 text-sm"
+                                className="h-10 flex-1 rounded-lg border border-token surface px-3 text-sm text-main placeholder:text-muted caret-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
                               />
                               <button
                                 onClick={() => onAsk()}
@@ -1414,7 +1477,9 @@ function ClassesContent() {
                     )}
                   </div>
                 )}
-                <div
+                {!hideReadingClutter && (
+                  <>
+                    <div
                     onDragOver={onDragOver}
                     onDragLeave={onDragLeave}
                     onDrop={onDrop}
@@ -1542,6 +1607,8 @@ function ClassesContent() {
                       </table>
                     </div>
                   </div>
+                </>
+                )}
                 </div>
               )}
 
@@ -1639,7 +1706,7 @@ function ClassesContent() {
                     </div>
                   </aside>
 
-                  <section className="rounded-2xl border border-token surface shadow-sm flex flex-col min-h-[60vh]">
+                  <section className="rounded-2xl border border-token surface shadow-sm flex flex-col h-[60vh] min-h-0">
                     <div className="border-b border-token px-4 py-3 flex items-center justify-between">
                       <div className="text-sm font-semibold">Conversation</div>
                       <label className="flex items-center gap-2 text-xs text-muted">
@@ -1647,8 +1714,21 @@ function ClassesContent() {
                         Show citations
                       </label>
                     </div>
-                    <div className="flex-1 overflow-auto p-4 space-y-4">
-                      {messages.length === 0 ? (
+                          <div
+                            ref={chatScrollRef}
+                            className="flex-1 min-h-0 overflow-auto p-4 space-y-4"
+                            onScroll={() => {
+                              const el = chatScrollRef.current;
+                              if (!el) return;
+                              const threshold = 80;
+                              const atBottom =
+                                el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
+                              setIsChatAtBottom(atBottom);
+                            }}
+                          >
+                      {chatHistoryError ? (
+                        <div className="text-sm text-amber-700">{chatHistoryError}</div>
+                      ) : messages.length === 0 ? (
                         <div className="text-sm text-muted">No messages yet. Ask about your class materials.</div>
                       ) : (
                         messages.map((m) => {
@@ -1700,8 +1780,7 @@ function ClassesContent() {
                         })
                       )}
                       {chatBusy && <div className="text-xs text-muted">Thinking...</div>}
-                      <div ref={chatEndRef} />
-                    </div>
+                          </div>
                     <div className="border-t border-token p-4">
                       {selectedQuote && (
                         <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
@@ -1747,7 +1826,7 @@ function ClassesContent() {
                         <textarea
                           value={chatInput}
                           onChange={(e) => setChatInput(e.target.value)}
-                          className="min-h-[52px] flex-1 resize-none rounded-xl border border-token px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/20"
+                          className="min-h-[52px] flex-1 resize-none rounded-xl border border-token surface px-3 py-2 text-sm text-main placeholder:text-muted caret-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
                           placeholder="Ask about your notes..."
                           onKeyDown={(e) => {
                             if (e.key === "Enter" && !e.shiftKey) {
@@ -1859,7 +1938,7 @@ function ClassesContent() {
       {chatDrawerOpen && (
         <div className="fixed inset-0 z-50 flex xl:hidden">
           <div className="flex-1 bg-overlay" onClick={() => setChatDrawerOpen(false)} />
-          <aside className="flex w-[min(92vw,360px)] flex-col surface shadow-2xl">
+          <aside className="flex h-full min-h-0 w-[min(92vw,360px)] flex-col surface shadow-2xl">
             <div className="flex items-center justify-between border-b border-token px-4 py-3">
               <div className="text-sm font-semibold">Study Assistant</div>
               <div className="flex items-center gap-2">
@@ -1929,8 +2008,10 @@ function ClassesContent() {
                 )}
               </div>
             </div>
-            <div className="flex-1 overflow-auto p-4 space-y-4">
-              {messages.length === 0 ? (
+              <div className="flex-1 min-h-0 overflow-auto p-4 space-y-4">
+              {chatHistoryError ? (
+                <div className="text-sm text-amber-700">{chatHistoryError}</div>
+              ) : messages.length === 0 ? (
                 <div className="text-sm text-muted">No messages yet. Ask about the document on the left.</div>
               ) : (
                 messages.map((m) => {
@@ -1982,7 +2063,6 @@ function ClassesContent() {
                 })
               )}
               {chatBusy && <div className="text-xs text-muted">Thinking...</div>}
-              <div ref={chatEndRef} />
             </div>
             <div className="border-t border-token p-4">
               {selectedQuote && (
@@ -2029,7 +2109,7 @@ function ClassesContent() {
                 <textarea
                   value={chatInput}
                   onChange={(e) => setChatInput(e.target.value)}
-                  className="min-h-[52px] flex-1 resize-none rounded-xl border border-token px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-slate-900/20"
+                  className="min-h-[52px] flex-1 resize-none rounded-xl border border-token surface px-3 py-2 text-sm text-main placeholder:text-muted caret-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
                   placeholder="Ask about this document..."
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !e.shiftKey) {

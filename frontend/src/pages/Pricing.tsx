@@ -15,7 +15,7 @@ export default function Pricing() {
   };
 
   return (
-    <div>
+    <div className="pricing-root">
       <Navbar />
 
       <main className="pricing-hero">

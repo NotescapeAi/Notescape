@@ -1,5 +1,5 @@
 /* ===== Pricing Page Styles ===== */
-:root {
+.pricing-root {
   --violet: var(--primary);
   --violet-dark: #5A3FD6;
   --ink: #0B1221;
@@ -10,7 +10,7 @@
 }
 
 /* Hero Section */
-.pricing-hero {
+.pricing-root .pricing-hero {
   min-height: 100vh;
   width: 100%;
   background: white;
@@ -22,14 +22,14 @@
   text-align: center;
 }
 
-.container {
+.pricing-root .container {
   max-width: 760px;
   margin: 0 auto;
   padding: 0 1.5rem;
 }
 
 /* Eyebrow Label */
-.eyebrow {
+.pricing-root .eyebrow {
   display: inline-block;
   background: #fff;
   border: 1px solid #E5E7EB;
@@ -43,12 +43,12 @@
   transition: transform 0.2s ease;
 }
 
-.eyebrow:hover {
+.pricing-root .eyebrow:hover {
   transform: scale(1.05);
 }
 
 /* Main Title */
-.title {
+.pricing-root .title {
   font-size: clamp(28px, 5vw, 44px);
   font-weight: 700;
   margin: 16px 0;
@@ -57,7 +57,7 @@
 }
 
 /* Subtitle */
-.subtitle {
+.pricing-root .subtitle {
   color: var(--ink-2);
   font-size: clamp(15px, 2.8vw, 19px);
   margin: 0 auto 28px;
@@ -66,7 +66,7 @@
 }
 
 /* Waitlist Form */
-.waitlist {
+.pricing-root .waitlist {
   display: flex;
   gap: 14px;
   flex-wrap: wrap;
@@ -77,7 +77,7 @@
 
 
 /* Button */
-.btn {
+.pricing-root .btn {
   height: 46px;
   padding: 0 22px;
   border: none;
@@ -92,17 +92,17 @@
   white-space: nowrap;
 }
 
-.btn:hover {
+.pricing-root .btn:hover {
   filter: brightness(1.03);
   background: var(--violet-dark);
   box-shadow: 0 10px 28px rgba(123, 95, 239, 0.35);
 }
 
-.btn:active {
+.pricing-root .btn:active {
   transform: translateY(1px) scale(0.98);
 }
 
-.btn:focus-visible {
+.pricing-root .btn:focus-visible {
   outline: none;
   box-shadow: 0 0 0 3px var(--ring);
 }
@@ -131,7 +131,7 @@
   }
 }
 /* Input */
-.input {
+.pricing-root .input {
   flex: 1 1 auto; /* flex-grow and shrink but no overflow */
   min-width: 220px;
   max-width: 100%; /* allow full width if needed */
@@ -147,7 +147,7 @@
 }
 
 /* Placeholder Styling */
-.input::placeholder {
+.pricing-root .input::placeholder {
   color: #94A3B8;   /* soft gray */
   opacity: 1;       /* ensures consistent visibility */
   font-size: 15px;  /* fixed size across breakpoints */
@@ -157,7 +157,7 @@
 }
 
 /* Input focus */
-.input:focus {
+.pricing-root .input:focus {
   border-color: var(--violet);
   box-shadow: 0 0 0 3px var(--ring);
   transform: scale(1.01);

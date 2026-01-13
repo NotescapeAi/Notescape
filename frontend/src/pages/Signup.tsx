@@ -149,12 +149,12 @@ export default function Signup() {
   };
 
   return (
-    <main className="signup-page page">
-
-      <header className="logo">
-        <img src="/logo1.png" alt="Notescape logo" width={70} height={50} />
-        <h1>Notescape</h1>
-      </header>
+    <div className="auth-root">
+      <main className="signup-page page">
+        <header className="logo">
+          <img src="/logo1.png" alt="Notescape logo" width={70} height={50} />
+          <h1>Notescape</h1>
+        </header>
 
       <section
         className="login-container"
@@ -272,7 +272,8 @@ export default function Signup() {
           </Link>
         </div>
       </section>
-    </main>
+      </main>
+    </div>
   );
 }
 

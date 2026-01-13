@@ -24,6 +24,8 @@ export default function Profile() {
     setIsEditing(false);
   }
 
+  const isEditable = profile?.provider === "dev";
+
   return (
     <AppShell title="Profile" breadcrumbs={["Profile"]} subtitle="Manage your workspace identity.">
       <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6">
@@ -75,8 +77,15 @@ export default function Profile() {
                 </div>
               </div>
 
-              <div className="mt-6 flex items-center justify-end">
-                <Button onClick={beginEdit}>Edit profile</Button>
+              <div className="mt-6 flex items-center justify-end gap-2">
+                {!isEditable && (
+                  <div className="text-xs text-muted">
+                    Profile is managed by your sign-in provider.
+                  </div>
+                )}
+                <Button onClick={beginEdit} disabled={!isEditable}>
+                  Edit profile
+                </Button>
               </div>
             </>
           )}

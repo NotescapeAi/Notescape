@@ -149,7 +149,8 @@ export default function NotescapeStartPage() {
   };
 
   return (
-    <main className="page">
+    <div className="auth-root">
+      <main className="page">
       <header className="logo">
         <img src="/logo1.png" alt="Notescape logo" width={70} height={50} />
         <h1>Notescape</h1>
@@ -271,7 +272,8 @@ export default function NotescapeStartPage() {
           </Link>
         </div>
       </section>
-    </main>
+      </main>
+    </div>
   );
 }
 

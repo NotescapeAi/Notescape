@@ -45,41 +45,41 @@ useEffect(() => {
   return (
     <>
       <Navbar/>
+      <div className="landing-root">
+        {/* Hero Section */}
+        <section id="hero" className="landing-hero fade-in">
+          <div className="container hero-grid">
+            <div className="hero-copy slide-left">
+              <h1 className="hero-title agr-hero">
+                Digitize.<br />Understand.<br />Master.
+              </h1>
+              <p className="hero-sub">
+                Instantly convert your notes into flashcards, quizzes and concise summaries
+                clear up any concept on demand with an AI coach.
+              </p>
+            
+                <GetStartedLink className="btn-primary">
+                  Get started
+                </GetStartedLink>
+                <a className="btn-ghost slide-up" href="#how">
+                  Watch Demo
+                </a>
+            
+            </div>
 
-      {/* Hero Section */}
-      <section id="hero" className="landing-hero fade-in">
-        <div className="container hero-grid">
-          <div className="hero-copy slide-left">
-            <h1 className="hero-title agr-hero">
-              Digitize.<br />Understand.<br />Master.
-            </h1>
-            <p className="hero-sub">
-              Instantly convert your notes into flashcards, quizzes and concise summaries
-              clear up any concept on demand with an AI coach.
-            </p>
-           
-              <GetStartedLink className="btn-primary">
-                Get started
-              </GetStartedLink>
-              <a className="btn-ghost slide-up" href="#how">
-                Watch Demo
-              </a>
-          
+            <div className="hero-media zoom-in">
+              <img src="/main.png" alt="Notescape UI preview" />
+            </div>
           </div>
+        </section>
 
-          <div className="hero-media zoom-in">
-            <img src="/main.png" alt="Notescape UI preview" />
-          </div>
-        </div>
-      </section>
-
-      {/* Features Section */}
-      <section id="features" className="features">
-        <div className="container">
-          <h2 className="h2 text-center mb-12 fade-in text-4xl font-bold bg-gradient-to-r ">
-            Your Complete Personal Learning Workspace
-          </h2>
-            <div className="features-grid"><div className="feature-card slide-up">
+        {/* Features Section */}
+        <section id="features" className="features">
+          <div className="container">
+            <h2 className="h2 text-center mb-12 fade-in text-4xl font-bold bg-gradient-to-r ">
+              Your Complete Personal Learning Workspace
+            </h2>
+              <div className="features-grid"><div className="feature-card slide-up">
   <div className="fi">
     <Upload color="#4f46e5" size={22} strokeWidth={2.2} />
   </div>
@@ -131,53 +131,54 @@ useEffect(() => {
         </div>
       </section>
 
-      {/* How it works */}
-      <section id="how" className="how">
-        <div className="container">
-          <h2 className="h2 fade-in">See How it Works</h2>
+        {/* How it works */}
+        <section id="how" className="how">
+          <div className="container">
+            <h2 className="h2 fade-in">See How it Works</h2>
 
-          <div className="how-grid">
-            <div className="how-copy slide-left">
-              <h3>1. Upload Your Study Materials</h3>
-              <p>Drag and drop PDFs, slides or notes. OCR preserves diagrams and handwriting.</p>
+            <div className="how-grid">
+              <div className="how-copy slide-left">
+                <h3>1. Upload Your Study Materials</h3>
+                <p>Drag and drop PDFs, slides or notes. OCR preserves diagrams and handwriting.</p>
+              </div>
+              <img src="/step1.svg" alt="Upload mock" className="how-img slide-right" />
             </div>
-            <img src="/step1.svg" alt="Upload mock" className="how-img slide-right" />
-          </div>
 
-          <div className="how-grid reverse">
-            <img src="/step2.svg" alt="AI mock" className="how-img slide-left" />
-            <div className="how-copy slide-right">
-              <h3>2. Engage with AI-Powered Learning</h3>
-              <p>Ask questions, generate summaries and get tailored explanations.</p>
+            <div className="how-grid reverse">
+              <img src="/step2.svg" alt="AI mock" className="how-img slide-left" />
+              <div className="how-copy slide-right">
+                <h3>2. Engage with AI-Powered Learning</h3>
+                <p>Ask questions, generate summaries and get tailored explanations.</p>
+              </div>
+            </div>
+
+            <div className="how-grid">
+              <div className="how-copy ">
+                <h3>3. Practice with Auto-Generated Study Tools</h3>
+                <p>Create flashcards and quizzes automatically and track improvements.</p>
+              </div>
+              <img src="/step3.svg" alt="Practice mock" className="how-img slide-right" />
             </div>
           </div>
+        </section>
 
-          <div className="how-grid">
-            <div className="how-copy ">
-              <h3>3. Practice with Auto-Generated Study Tools</h3>
-              <p>Create flashcards and quizzes automatically and track improvements.</p>
+        {/* CTA banner */}
+        <section className="cta-wrap">
+          <div className="container">
+            <div className="cta-banner fade-in">
+              <div>
+                <h3 className="cta-title">Ready to Transform Your Study Habits?</h3>
+                <p className="cta-sub">Sign up for free today</p>
+              </div>
+              <Link to="/get-started" className="btn-primary">
+                Sign Up for Free
+              </Link>
             </div>
-            <img src="/step3.svg" alt="Practice mock" className="how-img slide-right" />
           </div>
-        </div>
-      </section>
+        </section>
 
-      {/* CTA banner */}
-      <section className="cta-wrap">
-        <div className="container">
-          <div className="cta-banner fade-in">
-            <div>
-              <h3 className="cta-title">Ready to Transform Your Study Habits?</h3>
-              <p className="cta-sub">Sign up for free today</p>
-            </div>
-            <Link to="/get-started" className="btn-primary">
-              Sign Up for Free
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      <Footer />
+        <Footer />
+      </div>
     </>
   );
 }

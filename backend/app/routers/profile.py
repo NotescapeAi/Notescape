@@ -43,6 +43,7 @@ async def _ensure_user_schema():
               email TEXT UNIQUE NOT NULL,
               full_name TEXT,
               avatar_url TEXT,
+              firebase_uid TEXT NOT NULL,
               provider TEXT NOT NULL,
               provider_id TEXT NOT NULL,
               display_name TEXT,
@@ -58,8 +59,10 @@ async def _ensure_user_schema():
         await cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS full_name TEXT")
         await cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT")
         await cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name TEXT")
+        await cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS firebase_uid TEXT NOT NULL DEFAULT ''")
         await cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS provider TEXT NOT NULL DEFAULT 'google'")
         await cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS provider_id TEXT NOT NULL DEFAULT ''")
+        await cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_firebase_uid_idx ON users (firebase_uid)")
         await cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS dark_mode BOOLEAN NOT NULL DEFAULT FALSE")
         await cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS theme_preference TEXT NOT NULL DEFAULT 'system'")
         await cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now()")
@@ -71,10 +74,12 @@ async def _upsert_user_from_firebase(user_id: str) -> Dict[str, Any]:
     await _ensure_user_schema()
     if user_id == "dev-user":
         email = "dev-user@example.com"
-        provider = "google"
+        provider = "dev"
         provider_uid = "dev-user"
         full_name = "Dev User"
         avatar_url = None
+        display_name = full_name
+        firebase_uid = "dev-user"
     else:
         try:
             user = fb_auth.get_user(user_id)
@@ -86,27 +91,33 @@ async def _upsert_user_from_firebase(user_id: str) -> Dict[str, Any]:
         provider_id = user.provider_data[0].provider_id if user.provider_data else "google.com"
         provider = _map_provider(provider_id)
         provider_uid = user.provider_data[0].uid if user.provider_data else user_id
+        firebase_uid = user_id
+        display_name = user.display_name or full_name or email
 
     async with db_conn() as (conn, cur):
         await cur.execute(
             """
-            INSERT INTO users (email, full_name, avatar_url, provider, provider_id, display_name)
-            VALUES (%s, %s, %s, %s, %s, %s)
-            ON CONFLICT (provider, provider_id)
+            INSERT INTO users (email, full_name, avatar_url, firebase_uid, provider, provider_id, display_name)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (firebase_uid)
             DO UPDATE SET
               email=EXCLUDED.email,
               full_name=EXCLUDED.full_name,
               avatar_url=EXCLUDED.avatar_url,
+              display_name=EXCLUDED.display_name,
+              provider=EXCLUDED.provider,
+              provider_id=EXCLUDED.provider_id,
               updated_at=now()
-            RETURNING id::text, email, full_name, avatar_url, provider, provider_id, display_name, dark_mode, theme_preference, created_at, updated_at
+            RETURNING id::text, email, full_name, avatar_url, firebase_uid, provider, provider_id, display_name, dark_mode, theme_preference, created_at, updated_at
             """,
             (
                 email,
                 full_name,
                 avatar_url,
+                firebase_uid,
                 provider,
                 provider_uid,
-                full_name or email,
+                display_name,
             ),
         )
         row = await cur.fetchone()
@@ -116,6 +127,7 @@ async def _upsert_user_from_firebase(user_id: str) -> Dict[str, Any]:
         "email",
         "full_name",
         "avatar_url",
+        "firebase_uid",
         "provider",
         "provider_id",
         "display_name",
@@ -137,6 +149,8 @@ async def get_profile(user_id: str = Depends(get_request_user_uid)):
 
 @router.patch("/profile")
 async def update_profile(payload: ProfileUpdate, user_id: str = Depends(get_request_user_uid)):
+    if user_id != "dev-user":
+        raise HTTPException(status_code=403, detail="Profile is managed by your identity provider.")
     data = await _upsert_user_from_firebase(user_id)
     updates = {}
     if payload.display_name is not None:
@@ -151,14 +165,13 @@ async def update_profile(payload: ProfileUpdate, user_id: str = Depends(get_requ
                 SET display_name=COALESCE(%s, display_name),
                     avatar_url=COALESCE(%s, avatar_url),
                     updated_at=now()
-                WHERE provider=%s AND provider_id=%s
-                RETURNING id::text, email, full_name, avatar_url, provider, provider_id, display_name, dark_mode, theme_preference, created_at, updated_at
+                WHERE firebase_uid=%s
+                RETURNING id::text, email, full_name, avatar_url, firebase_uid, provider, provider_id, display_name, dark_mode, theme_preference, created_at, updated_at
                 """,
                 (
                     updates.get("display_name"),
                     updates.get("avatar_url"),
-                    data["provider"],
-                    data["provider_id"],
+                    data["firebase_uid"],
                 ),
             )
             row = await cur.fetchone()
@@ -168,13 +181,14 @@ async def update_profile(payload: ProfileUpdate, user_id: str = Depends(get_requ
             "email",
             "full_name",
             "avatar_url",
+            "firebase_uid",
             "provider",
             "provider_id",
             "display_name",
             "dark_mode",
-        "created_at",
-        "updated_at",
-    ]
+            "created_at",
+            "updated_at",
+        ]
         return dict(zip(cols, row))
     return data
 
@@ -195,10 +209,10 @@ async def update_settings(payload: SettingsUpdate, user_id: str = Depends(get_re
             """
             UPDATE users
             SET dark_mode=%s, updated_at=now()
-            WHERE provider=%s AND provider_id=%s
-            RETURNING dark_mode
-            """,
-            (payload.dark_mode, data["provider"], data["provider_id"]),
+        WHERE firebase_uid=%s
+        RETURNING dark_mode
+        """,
+            (payload.dark_mode, data["firebase_uid"]),
         )
         row = await cur.fetchone()
         await conn.commit()
@@ -223,10 +237,10 @@ async def update_preferences(payload: PreferencesUpdate, user_id: str = Depends(
             """
             UPDATE users
             SET theme_preference=%s, updated_at=now()
-            WHERE provider=%s AND provider_id=%s
-            RETURNING theme_preference
-            """,
-            (theme, data["provider"], data["provider_id"]),
+        WHERE firebase_uid=%s
+        RETURNING theme_preference
+        """,
+            (theme, data["firebase_uid"]),
         )
         row = await cur.fetchone()
         await conn.commit()
@@ -241,6 +255,7 @@ async def reset_flashcards(user_id: str = Depends(get_request_user_uid)):
         await cur.execute("DELETE FROM card_review_state WHERE user_id=%s", (user_id,))
         await cur.execute("DELETE FROM study_events WHERE user_id=%s", (user_id,))
         await cur.execute("DELETE FROM study_event_rollups_daily WHERE user_id=%s", (user_id,))
+        await cur.execute("DELETE FROM study_sessions WHERE user_id=%s", (user_id,))
         await cur.execute("DELETE FROM flashcard_jobs WHERE user_id=%s", (user_id,))
         await cur.execute("DELETE FROM card_review_state WHERE user_id=%s", (user_id,))
         await cur.execute("DELETE FROM study_events WHERE user_id=%s", (user_id,))
@@ -295,6 +310,7 @@ async def delete_account(user_id: str = Depends(get_request_user_uid)):
         await cur.execute("DELETE FROM card_review_state WHERE user_id=%s", (user_id,))
         await cur.execute("DELETE FROM study_events WHERE user_id=%s", (user_id,))
         await cur.execute("DELETE FROM study_event_rollups_daily WHERE user_id=%s", (user_id,))
+        await cur.execute("DELETE FROM study_sessions WHERE user_id=%s", (user_id,))
         await cur.execute("DELETE FROM flashcard_jobs WHERE user_id=%s", (user_id,))
         await cur.execute(
             """
@@ -321,8 +337,8 @@ async def delete_account(user_id: str = Depends(get_request_user_uid)):
         )
         await cur.execute("DELETE FROM classes WHERE owner_uid=%s", (user_id,))
         await cur.execute(
-            "DELETE FROM users WHERE provider=%s AND provider_id=%s",
-            (data["provider"], data["provider_id"]),
+            "DELETE FROM users WHERE firebase_uid=%s",
+            (data["firebase_uid"],),
         )
         await conn.commit()
     return {"ok": True, "deleted_at": datetime.utcnow().isoformat() + "Z"}
