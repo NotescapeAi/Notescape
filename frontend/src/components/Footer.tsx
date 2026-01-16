@@ -38,8 +38,8 @@ const Footer: React.FC = () => {
         <div>
           <h4>Product</h4>
           <Link to="/">Home</Link>
-          <a href="/#how">How It Works</a>
-          <a href="/#features">Features</a>
+          <Link to="/#how">How It Works</Link>
+          <Link to="/#features">Features</Link>
         </div>
 
         <div>

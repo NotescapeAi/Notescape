@@ -66,7 +66,7 @@ const Navbar: React.FC = () => {
 
         {/* Desktop Nav */}
         <div className="hidden md:flex items-center gap-6">
-          <a href="/" className="ns-link hover:text-blue-600">Features</a>
+          <Link to="/#features" className="ns-link hover:text-blue-600">Features</Link>
           <NavLink to="/pricing" className="ns-link hover:text-blue-600">Pricing</NavLink>
           <NavLink to="/support" className="ns-link hover:text-blue-600">Support</NavLink>
         </div>
@@ -87,7 +87,7 @@ const Navbar: React.FC = () => {
       {/* Mobile Dropdown */}
       {isOpen && (
         <div className="md:hidden surface-95 backdrop-blur border-t shadow-md px-6 py-4 flex flex-col gap-3">
-          <a href="/" className="ns-link hover:text-blue-600" onClick={() => setIsOpen(false)}>Features</a>
+          <Link to="/#features" className="ns-link hover:text-blue-600" onClick={() => setIsOpen(false)}>Features</Link>
           <NavLink to="/pricing" className="ns-link hover:text-blue-600" onClick={() => setIsOpen(false)}>Pricing</NavLink>
           <NavLink to="/support" className="ns-link hover:text-blue-600" onClick={() => setIsOpen(false)}>Support</NavLink>
           <Link to="/get-started" className="btn-primary cta-purple mt-2" onClick={() => setIsOpen(false)}>Sign Up</Link>

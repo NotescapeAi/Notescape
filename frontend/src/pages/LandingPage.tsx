@@ -15,32 +15,33 @@ import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
 import "./landing.css";
 export default function LandingPage() {
-  //  Scroll animations trigger
-useEffect(() => {
-  const observer = new IntersectionObserver(
-    (entries) => {
-      entries.forEach((entry) => {
-        if (entry.isIntersecting) {
-          entry.target.classList.add("active");
-          observer.unobserve(entry.target);       // <- key: never retrigger
-        }
-      });
-    },
-    { threshold: 0.15 }
-  );
+  useEffect(() => {
+    const prefersReduce = window.matchMedia("(prefers-reduced-motion: reduce)");
+    if (prefersReduce.matches) return;
 
-  document
-    .querySelectorAll(
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("active");
+          } else {
+            entry.target.classList.remove("active");
+          }
+        });
+      },
+      { threshold: 0.15 }
+    );
+
+    const nodes = document.querySelectorAll(
       ".reveal, .fade-in, .slide-left, .slide-right, .slide-up, .slide-down, .zoom-in, .flip-up, .rotate-in, .scale-up, .bounce-in"
-    )
-    .forEach((el) => {
-      // Skip CTA buttons entirely
+    );
+    nodes.forEach((el) => {
       if (el.classList.contains("btn-primary")) return;
       observer.observe(el);
     });
 
-  return () => observer.disconnect();
-}, []);
+    return () => observer.disconnect();
+  }, []);
 
   return (
     <>

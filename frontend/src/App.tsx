@@ -142,6 +142,16 @@ function AppRoutes() {
 }
 
 export default function App() {
+  useEffect(() => {
+    if ("scrollRestoration" in window.history) {
+      const prev = window.history.scrollRestoration;
+      window.history.scrollRestoration = "manual";
+      return () => {
+        window.history.scrollRestoration = prev;
+      };
+    }
+    return undefined;
+  }, []);
   return (
     // Make sure there is exactly one BrowserRouter in the whole app.
     <ThemeProvider>
