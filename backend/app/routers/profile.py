@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 from firebase_admin import auth as fb_auth
 
 from app.core.db import db_conn
+from app.core.settings import settings
 from app.dependencies import get_request_user_uid
 
 router = APIRouter(prefix="/api", tags=["profile"])
@@ -250,6 +251,8 @@ async def update_preferences(payload: PreferencesUpdate, user_id: str = Depends(
 @router.post("/settings/reset-flashcards")
 async def reset_flashcards(user_id: str = Depends(get_request_user_uid)):
     await _ensure_user_schema()
+    if settings.safe_mode:
+        raise HTTPException(status_code=403, detail="Flashcard reset disabled in safe mode.")
     async with db_conn() as (conn, cur):
         await cur.execute("DELETE FROM sr_card_state WHERE user_id=%s", (user_id,))
         await cur.execute("DELETE FROM card_review_state WHERE user_id=%s", (user_id,))
@@ -267,6 +270,8 @@ async def reset_flashcards(user_id: str = Depends(get_request_user_uid)):
 @router.post("/settings/clear-chat")
 async def clear_chat(user_id: str = Depends(get_request_user_uid)):
     await _ensure_user_schema()
+    if settings.safe_mode:
+        raise HTTPException(status_code=403, detail="Chat clearing disabled in safe mode.")
     async with db_conn() as (conn, cur):
         await cur.execute(
             """
@@ -282,6 +287,8 @@ async def clear_chat(user_id: str = Depends(get_request_user_uid)):
 @router.post("/settings/clear-embeddings")
 async def clear_embeddings(user_id: str = Depends(get_request_user_uid)):
     await _ensure_user_schema()
+    if settings.safe_mode:
+        raise HTTPException(status_code=403, detail="Embedding clear disabled in safe mode.")
     async with db_conn() as (conn, cur):
         await cur.execute(
             """
@@ -303,6 +310,8 @@ async def clear_embeddings(user_id: str = Depends(get_request_user_uid)):
 @router.delete("/account")
 async def delete_account(user_id: str = Depends(get_request_user_uid)):
     data = await _upsert_user_from_firebase(user_id)
+    if settings.safe_mode:
+        raise HTTPException(status_code=403, detail="Account delete disabled in safe mode.")
     async with db_conn() as (conn, cur):
         await cur.execute("DELETE FROM chat_messages WHERE session_id IN (SELECT id FROM chat_sessions WHERE user_id=%s)", (user_id,))
         await cur.execute("DELETE FROM chat_sessions WHERE user_id=%s", (user_id,))

@@ -13,7 +13,7 @@
 .pricing-root .pricing-hero {
   min-height: 100vh;
   width: 100%;
-  background: white;
+  background: transparent;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -132,33 +132,32 @@
 }
 /* Input */
 .pricing-root .input {
-  flex: 1 1 auto; /* flex-grow and shrink but no overflow */
+  flex: 1 1 auto;
   min-width: 220px;
-  max-width: 100%; /* allow full width if needed */
+  max-width: 100%;
   height: 46px;
-  border: 1px solid #E2E8F0;
   border-radius: 14px;
   padding: 0 16px;
   outline: none;
   font-size: 15px;
-  background: #fff;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
   transition: border 0.2s, box-shadow 0.2s, transform 0.1s;
   box-sizing: border-box;
 }
 
-/* Placeholder Styling */
 .pricing-root .input::placeholder {
-  color: #94A3B8;   /* soft gray */
-  opacity: 1;       /* ensures consistent visibility */
-  font-size: 15px;  /* fixed size across breakpoints */
+  color: var(--placeholder);
+  opacity: 1;
+  font-size: 15px;
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis; /* truncate instead of breaking */
+  text-overflow: ellipsis;
 }
 
-/* Input focus */
 .pricing-root .input:focus {
-  border-color: var(--violet);
+  border-color: var(--primary);
   box-shadow: 0 0 0 3px var(--ring);
   transform: scale(1.01);
 }

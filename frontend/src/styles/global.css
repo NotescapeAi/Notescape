@@ -4,9 +4,9 @@
 @tailwind utilities;
 
 :root {
-  --bg: #f8f6ff;
+  --bg: #ffffff;
   --surface: #ffffff;
-  --surface-2: #f4f2ff;
+  --surface-2: #ffffff;
   --surface-inverse: #0f1020;
   --surface-tint: rgba(123, 95, 239, 0.12);
   --surface-80: rgba(255, 255, 255, 0.8);
@@ -20,6 +20,7 @@
   --border-strong: rgba(15, 16, 32, 0.4);
   --ring: rgba(123, 95, 239, 0.35);
   --primary: #7b5fef;
+  --brand-purple: #7b5fef;
   --c2: #8b5cf6;
   --c3: #ec4899;
   --accent-pink: #ef5f8b;
@@ -49,6 +50,7 @@
   --border-strong: rgba(255, 255, 255, 0.35);
   --ring: rgba(123, 95, 239, 0.55);
   --primary: #7b5fef;
+  --brand-purple: #7b5fef;
   --accent-pink: #ef5f8b;
   --accent-pink-soft: rgba(239, 95, 139, 0.2);
   --accent-pink-weak: rgba(239, 95, 139, 0.12);
@@ -76,6 +78,26 @@ body {
   font-family: "Space Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial;
   color: var(--text);
   background: var(--bg);
+}
+
+#root {
+  min-height: 100vh;
+  width: 100%;
+}
+
+.app-shell {
+  min-height: 100vh;
+  width: 100%;
+  background: var(--bg);
+  color: var(--text);
+  transition: background 0.3s ease, color 0.3s ease;
+}
+
+.app-content {
+  min-height: 100vh;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 @keyframes hero-gradient-pan {

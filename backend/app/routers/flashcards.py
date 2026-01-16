@@ -1,15 +1,20 @@
-from typing import Optional, List, Tuple, Dict  # Importing Tuple here
+from datetime import datetime, timezone
+import json
+import logging
+import uuid
+from typing import Dict, List, Optional, Tuple
+
 from fastapi import APIRouter, HTTPException, Path, Query, Depends
 from pydantic import BaseModel, Field
-from app.core.db import db_conn
-from app.core.llm import get_embedder
-from app.core.embedding_cache import embed_texts_cached
-from app.dependencies import get_request_user_uid
-from app.lib.study_analytics import apply_study_review
-from app.lib.flashcard_generation import vec_literal, pick_relevant_chunks, insert_flashcards
-import json
-from datetime import datetime, timezone
 
+from app.core.db import db_conn
+from app.core.embedding_cache import embed_texts_cached
+from app.core.llm import get_embedder
+from app.dependencies import get_request_user_uid
+from app.lib.flashcard_generation import insert_flashcards, pick_relevant_chunks, vec_literal
+from app.lib.study_analytics import apply_study_review
+
+log = logging.getLogger("uvicorn.error")
 router = APIRouter(prefix="/api/flashcards", tags=["flashcards"])
 
 
@@ -115,8 +120,22 @@ class FlashcardJobOut(BaseModel):
     deck_id: int
     status: str
     progress: int
+    correlation_id: Optional[str] = None
     error_message: Optional[str] = None
     created_at: Optional[str] = None
+
+
+def _job_from_row(row: Tuple) -> FlashcardJobOut:
+    correlation = row[4]
+    return FlashcardJobOut(
+        job_id=row[0],
+        deck_id=row[1],
+        status=row[2],
+        progress=row[3],
+        correlation_id=str(correlation) if correlation else None,
+        error_message=row[5],
+        created_at=row[6].isoformat() if row[6] else None,
+    )
 
 class FlashcardOut(BaseModel):
     id: str
@@ -544,6 +563,12 @@ async def _enqueue_flashcard_job(req: GenerateReq, user_id: str) -> FlashcardJob
     await _ensure_class_owner(req.class_id, user_id)
     if not req.file_ids:
         raise HTTPException(status_code=400, detail="file_ids is required")
+    log.info(
+        "[flashcards] generation request received user_id=%s class_id=%s requested_files=%d",
+        user_id,
+        req.class_id,
+        len(req.file_ids),
+    )
 
     async with db_conn() as (conn, cur):
         await cur.execute(
@@ -557,25 +582,27 @@ async def _enqueue_flashcard_job(req: GenerateReq, user_id: str) -> FlashcardJob
         payload = req.model_dump()
         payload["file_ids"] = valid_ids
 
+        correlation_id = str(uuid.uuid4())
         await cur.execute(
             """
-            INSERT INTO flashcard_jobs (user_id, deck_id, status, progress, payload)
-            VALUES (%s, %s, 'queued', 0, %s::jsonb)
-            RETURNING id::text, deck_id, status, progress, error_message, created_at
+            INSERT INTO flashcard_jobs (user_id, deck_id, status, progress, payload, correlation_id)
+            VALUES (%s, %s, 'queued', 0, %s::jsonb, %s)
+            RETURNING id::text, deck_id, status, progress, correlation_id, error_message, created_at
             """,
-            (user_id, req.class_id, json.dumps(payload)),
+            (user_id, req.class_id, json.dumps(payload), correlation_id),
         )
         row = await cur.fetchone()
         await conn.commit()
 
-    return FlashcardJobOut(
-        job_id=row[0],
-        deck_id=row[1],
-        status=row[2],
-        progress=row[3],
-        error_message=row[4],
-        created_at=row[5].isoformat() if row[5] else None,
+    log.info(
+        "[flashcards] job queued user_id=%s class_id=%s files=%d job_id=%s correlation_id=%s",
+        user_id,
+        req.class_id,
+        len(valid_ids),
+        row[0],
+        row[4],
     )
+    return _job_from_row(row)
 
 # ---------- ROUTES ----------
 
@@ -612,7 +639,7 @@ async def get_flashcard_job_status(job_id: str, user_id: str = Depends(get_reque
     async with db_conn() as (conn, cur):
         await cur.execute(
             """
-            SELECT id::text, deck_id, status, progress, error_message, created_at
+            SELECT id::text, deck_id, status, progress, correlation_id, error_message, created_at
             FROM flashcard_jobs
             WHERE id::text=%s AND user_id=%s
             """,
@@ -621,14 +648,7 @@ async def get_flashcard_job_status(job_id: str, user_id: str = Depends(get_reque
         row = await cur.fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Job not found")
-    return FlashcardJobOut(
-        job_id=row[0],
-        deck_id=row[1],
-        status=row[2],
-        progress=row[3],
-        error_message=row[4],
-        created_at=row[5].isoformat() if row[5] else None,
-    )
+    return _job_from_row(row)
 
 
 @router.get("/{class_id}", response_model=List[FlashcardOut])

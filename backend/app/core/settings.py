@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     chat_provider: str = Field(default="groq", alias="CHAT_PROVIDER")
     chat_model: str = Field(default="llama-3.3-70b-versatile", alias="CHAT_MODEL")
     groq_api_key: str | None = Field(default=None, alias="GROQ_API_KEY")
+    safe_mode: bool = Field(default=False, alias="SAFE_MODE")
 
 
 settings = Settings()

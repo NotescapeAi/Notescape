@@ -4,11 +4,19 @@ from fastapi.security import OAuth2PasswordBearer
 import firebase_admin
 from firebase_admin import auth
 from firebase_admin import credentials
+import logging
+import os
+
+SERVICE_ACCOUNT_PATH = os.environ.get("FIREBASE_SERVICE_ACCOUNT_KEY", "/app/secrets/serviceAccountKey.json")
+log = logging.getLogger("uvicorn.error")
+
 # Initialize Firebase if not already done
 if not firebase_admin._apps:
-    cred = credentials.Certificate("/app/secrets/serviceAccountKey.json")
-
-    firebase_admin.initialize_app(cred)
+    if os.path.exists(SERVICE_ACCOUNT_PATH):
+        cred = credentials.Certificate(SERVICE_ACCOUNT_PATH)
+        firebase_admin.initialize_app(cred)
+    else:
+        log.warning("Firebase service account not found at %s; auth is disabled in this process.", SERVICE_ACCOUNT_PATH)
 
 # This reads the "Authorization: Bearer <token>" header
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")  # tokenUrl is unused here, only required for OAuth2

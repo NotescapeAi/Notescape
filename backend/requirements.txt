@@ -17,6 +17,8 @@ pytesseract==0.3.13
 Pillow==10.4.0
 opencv-python-headless==4.10.0.84
 redis==5.0.8
+pytest==7.4.2
+pytest-asyncio==0.22.0
 
 
 # For GPU CUDA 12.1

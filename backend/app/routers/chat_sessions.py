@@ -135,6 +135,13 @@ async def create_session(payload: ChatSessionCreate, user_id: str = Depends(get_
         )
         row = await cur.fetchone()
         await conn.commit()
+    log.info(
+        "[chat] session created user_id=%s session_id=%s class_id=%s document_id=%s",
+        user_id,
+        row[0],
+        payload.class_id,
+        payload.document_id or "none",
+    )
     cols = ["id", "class_id", "document_id", "title", "created_at", "updated_at"]
     return dict(zip(cols, row))
 
@@ -158,6 +165,12 @@ async def list_sessions(
             (user_id, class_id, document_id, document_id),
         )
         rows = await cur.fetchall()
+    log.info(
+        "[chat] sessions listed user_id=%s class_id=%s return=%d",
+        user_id,
+        class_id,
+        len(rows),
+    )
     cols = ["id", "class_id", "document_id", "title", "created_at", "updated_at"]
     return [dict(zip(cols, r)) for r in rows]
 
@@ -226,6 +239,12 @@ async def get_session(session_id: str, user_id: str = Depends(get_request_user_u
                 (session_id,),
             )
         msgs = await cur.fetchall()
+    log.info(
+        "[chat] list_messages session_id=%s user_id=%s count=%d",
+        session_id,
+        user_id,
+        len(msgs),
+    )
     sess_cols = ["id", "class_id", "document_id", "title", "created_at", "updated_at"]
     msg_cols = (
         [
@@ -368,6 +387,13 @@ async def add_messages(session_id: str, payload: ChatMessageCreate, user_id: str
             raise HTTPException(status_code=404, detail="Session not found")
         class_id = row[0]
         document_id = row[1]
+        log.info(
+            "[chat] add_messages session_id=%s user_id=%s class_id=%s document_id=%s",
+            session_id,
+            user_id,
+            class_id,
+            document_id or "none",
+        )
         if payload.file_id:
             await cur.execute(
                 "SELECT 1 FROM files WHERE id=%s AND class_id=%s",
@@ -443,7 +469,12 @@ async def add_messages(session_id: str, payload: ChatMessageCreate, user_id: str
                 (session_id,),
             )
         msgs = await cur.fetchall()
-    log.info(f"[chat] add_messages session_id={session_id} saved=2 total={len(msgs)}")
+    log.info(
+        "[chat] add_messages session_id=%s user_id=%s saved=2 total=%d",
+        session_id,
+        user_id,
+        len(msgs),
+    )
     msg_cols = (
         [
             "id",

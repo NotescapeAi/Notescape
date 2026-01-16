@@ -1,6 +1,9 @@
-import time
+import asyncio
 import json
-from typing import Dict, Any, List
+import logging
+from typing import Any, Dict, List
+
+from psycopg import errors as pg_errors
 
 from app.core.db import db_conn
 from app.core.llm import get_embedder, get_card_generator
@@ -8,6 +11,7 @@ from app.core.embedding_cache import embed_texts_cached
 from app.lib.flashcard_generation import pick_relevant_chunks, insert_flashcards
 
 POLL_SECONDS = 2
+log = logging.getLogger("uvicorn.error")
 
 
 async def _fetch_and_claim_job() -> Dict[str, Any] | None:
@@ -30,20 +34,36 @@ async def _fetch_and_claim_job() -> Dict[str, Any] | None:
         if row:
             await conn.commit()
             cols = [d[0] for d in cur.description]
-            return dict(zip(cols, row))
+            job = dict(zip(cols, row))
+            try:
+                await cur.execute(
+                    "SELECT correlation_id::text FROM flashcard_jobs WHERE id::text=%s",
+                    (job["id"],),
+                )
+                corr_row = await cur.fetchone()
+                job["correlation_id"] = corr_row[0] if corr_row else None
+            except pg_errors.UndefinedColumn:
+                job["correlation_id"] = None
+            return job
     return None
 
 
-async def _update_progress(job_id: str, progress: int):
+async def _update_progress(job_id: str, progress: int, correlation_id: str | None = None):
     async with db_conn() as (conn, cur):
         await cur.execute(
             "UPDATE flashcard_jobs SET progress=%s WHERE id::text=%s",
             (progress, job_id),
         )
         await conn.commit()
+    log.info(
+        "[flashcards] job progress job_id=%s correlation_id=%s progress=%d",
+        job_id,
+        correlation_id,
+        progress,
+    )
 
 
-async def _fail_job(job_id: str, error_message: str):
+async def _fail_job(job_id: str, error_message: str, correlation_id: str | None = None):
     async with db_conn() as (conn, cur):
         await cur.execute(
             """
@@ -54,9 +74,15 @@ async def _fail_job(job_id: str, error_message: str):
             (error_message, job_id),
         )
         await conn.commit()
+    log.error(
+        "[flashcards] job failed job_id=%s correlation_id=%s error=%s",
+        job_id,
+        correlation_id,
+        error_message,
+    )
 
 
-async def _complete_job(job_id: str):
+async def _complete_job(job_id: str, correlation_id: str | None = None):
     async with db_conn() as (conn, cur):
         await cur.execute(
             """
@@ -67,9 +93,14 @@ async def _complete_job(job_id: str):
             (job_id,),
         )
         await conn.commit()
+    log.info(
+        "[flashcards] job completed job_id=%s correlation_id=%s",
+        job_id,
+        correlation_id,
+    )
 
 
-async def _generate_cards_from_payload(payload: Dict[str, Any], user_id: str) -> List[str]:
+async def _generate_cards_from_payload(payload: Dict[str, Any], user_id: str, correlation_id: str | None) -> List[str]:
     embedder = get_embedder()
     generator = get_card_generator()
 
@@ -127,17 +158,33 @@ async def _generate_cards_from_payload(payload: Dict[str, Any], user_id: str) ->
 
     source_chunk_id = hits[0][0] if hits else None
     source_file_id = hits[0][2] if hits else (file_ids[0] if file_ids else None)
-    return await insert_flashcards(class_id, source_file_id, collected, source_chunk_id, created_by=user_id)
+    inserted = await insert_flashcards(class_id, source_file_id, collected, source_chunk_id, created_by=user_id)
+    log.info(
+        "[flashcards] inserted cards job_class=%s user_id=%s correlation_id=%s inserted=%d",
+        class_id,
+        user_id,
+        correlation_id,
+        len(inserted),
+    )
+    return inserted
 
 
 async def run():
     while True:
         job = await _fetch_and_claim_job()
         if not job:
-            time.sleep(POLL_SECONDS)
+            await asyncio.sleep(POLL_SECONDS)
             continue
 
         job_id = job["id"]
+        correlation_id = job.get("correlation_id")
+        log.info(
+            "[flashcards] job claimed job_id=%s correlation_id=%s user_id=%s deck_id=%s",
+            job_id,
+            correlation_id,
+            job.get("user_id"),
+            job.get("deck_id"),
+        )
         try:
             payload = job.get("payload") or {}
             if isinstance(payload, str):
@@ -145,11 +192,11 @@ async def run():
             if not payload.get("file_ids"):
                 raise RuntimeError("Job payload missing file_ids")
 
-            await _update_progress(job_id, 20)
-            await _generate_cards_from_payload(payload, job["user_id"])
-            await _complete_job(job_id)
+            await _update_progress(job_id, 20, correlation_id)
+            await _generate_cards_from_payload(payload, job["user_id"], correlation_id)
+            await _complete_job(job_id, correlation_id)
         except Exception as exc:
-            await _fail_job(job_id, str(exc))
+            await _fail_job(job_id, str(exc), correlation_id)
 
 
 if __name__ == "__main__":

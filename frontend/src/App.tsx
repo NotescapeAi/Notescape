@@ -1,6 +1,6 @@
 // src/App.tsx
 
-import React, { Suspense, lazy, useEffect } from "react";
+import React, { Suspense, lazy, useEffect, useLayoutEffect } from "react";
 import {
   BrowserRouter,
   Routes,
@@ -66,12 +66,24 @@ function NotFound() {
 
 function ScrollToTop() {
   const { pathname } = useLocation();
-  useEffect(() => {
-    window.scrollTo(0, 0);
-    document.body.style.zoom = "100%";
-    document.body.style.overflow = "auto";
+  useLayoutEffect(() => {
+    const target = document.scrollingElement || document.documentElement;
+    if (target?.scrollTo) {
+      target.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    } else {
+      window.scrollTo(0, 0);
+    }
   }, [pathname]);
   return null;
+}
+
+function AppLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="app-shell">
+      <ScrollToTop />
+      <div className="app-content">{children}</div>
+    </div>
+  );
 }
 
 /**
@@ -135,10 +147,11 @@ export default function App() {
     <ThemeProvider>
       <UserProvider>
         <BrowserRouter>
-          <ScrollToTop />
-          <Suspense fallback={<div style={{ padding: 24 }}>Loading...</div>}>
-            <AppRoutes />
-          </Suspense>
+          <AppLayout>
+            <Suspense fallback={<div style={{ padding: 24 }}>Loading...</div>}>
+              <AppRoutes />
+            </Suspense>
+          </AppLayout>
         </BrowserRouter>
       </UserProvider>
     </ThemeProvider>
