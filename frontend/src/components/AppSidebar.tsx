@@ -18,9 +18,8 @@ type Props = {
 };
 
 const item =
-  "group relative flex items-center gap-3 rounded-2xl px-3 py-3 text-[15px] font-semibold transition";
-const active =
-  "before:absolute before:left-0 before:top-1/2 before:-translate-y-1/2 before:h-8 before:w-1 before:rounded-full before:bg-[var(--primary)] before:shadow-[0_0_10px_rgba(123,95,239,0.4)]";
+  "group relative flex items-center gap-3 rounded-[18px] px-3 py-3 text-[15px] font-semibold transition-colors duration-200";
+const active = "border-l-4 border-[var(--primary)] bg-[var(--surface)] shadow-[var(--shadow-soft)] text-[var(--text)]";
 
 export default function AppSidebar({ collapsed, onToggle }: Props) {
   const location = useLocation();
@@ -57,12 +56,11 @@ export default function AppSidebar({ collapsed, onToggle }: Props) {
       ignore = true;
     };
   }, []);
-  const shellClass = "bg-[var(--surface)] text-[var(--text)] border border-[var(--border)] shadow-[var(--shadow)] rounded-[28px] overflow-hidden";
-  const textMuted = "text-[var(--muted)]";
-  const textHover = "hover:text-[var(--primary)]";
-  const iconMuted = "text-[var(--primary)]";
-  const iconHover = "group-hover:text-[var(--primary)]";
-  const activeText = "text-[var(--primary)]";
+  const shellClass =
+    "bg-[var(--surface-2)] text-[var(--text)] border border-[var(--border-soft)] shadow-[var(--shadow-soft)] rounded-[32px] overflow-hidden";
+  const textNeutral = "text-[var(--text-muted)]";
+  const iconNeutral = "text-[var(--text-muted)]";
+  const hoverText = "hover:text-[var(--text-main)]";
 
   return (
     <aside
@@ -116,7 +114,7 @@ export default function AppSidebar({ collapsed, onToggle }: Props) {
             to="/dashboard"
             className={({ isActive }) =>
               `${item} ${isActive ? active : ""} ${collapsed ? "justify-center" : ""} ${
-                isActive ? activeText : `${textMuted} ${textHover}`
+                isActive ? "text-[var(--text-main)]" : `${textNeutral} ${hoverText}`
               }`
             }
             title={collapsed ? "Dashboard" : undefined}
@@ -124,7 +122,7 @@ export default function AppSidebar({ collapsed, onToggle }: Props) {
             {({ isActive }) => (
               <>
                 <LayoutDashboard
-                  className={`h-5 w-5 ${isActive ? activeText : `${iconMuted} ${iconHover}`}`}
+                  className={`h-5 w-5 ${isActive ? "text-[var(--primary)]" : `${iconNeutral}`}`}
                 />
                 {!collapsed && <span>Dashboard</span>}
               </>
@@ -134,7 +132,7 @@ export default function AppSidebar({ collapsed, onToggle }: Props) {
             to="/classes"
             className={({ isActive }) =>
               `${item} ${isActive ? active : ""} ${collapsed ? "justify-center" : ""} ${
-                isActive ? activeText : `${textMuted} ${textHover}`
+                isActive ? "text-[var(--text-main)]" : `${textNeutral} ${hoverText}`
               }`
             }
             title={collapsed ? "Classes" : undefined}
@@ -142,7 +140,7 @@ export default function AppSidebar({ collapsed, onToggle }: Props) {
             {({ isActive }) => (
               <>
                 <FolderOpen
-                  className={`h-5 w-5 ${isActive ? activeText : `${iconMuted} ${iconHover}`}`}
+                  className={`h-5 w-5 ${isActive ? "text-[var(--primary)]" : `${iconNeutral}`}`}
                 />
                 {!collapsed && <span>Classes</span>}
               </>
@@ -152,12 +150,12 @@ export default function AppSidebar({ collapsed, onToggle }: Props) {
             type="button"
             onClick={() => navigate("/flashcards")}
             className={`${item} ${isFlashcardsActive ? active : ""} ${collapsed ? "justify-center" : ""} ${
-              isFlashcardsActive ? activeText : `${textMuted} ${textHover}`
+              isFlashcardsActive ? "text-[var(--text-main)]" : `${textNeutral} ${hoverText}`
             }`}
             title={collapsed ? "Flashcards" : undefined}
           >
             <Sparkles
-              className={`h-5 w-5 ${isFlashcardsActive ? activeText : `${iconMuted} ${iconHover}`}`}
+              className={`h-5 w-5 ${isFlashcardsActive ? "text-[var(--primary)]" : `${iconNeutral}`}`}
             />
             {!collapsed && <span>Flashcards</span>}
           </button>
@@ -165,7 +163,7 @@ export default function AppSidebar({ collapsed, onToggle }: Props) {
             to="/chatbot"
             className={({ isActive }) =>
               `${item} ${isActive ? active : ""} ${collapsed ? "justify-center" : ""} ${
-                isActive ? activeText : `${textMuted} ${textHover}`
+                isActive ? "text-[var(--text-main)]" : `${textNeutral} ${hoverText}`
               }`
             }
             title={collapsed ? "Study Assistant" : undefined}
@@ -173,16 +171,16 @@ export default function AppSidebar({ collapsed, onToggle }: Props) {
             {({ isActive }) => (
               <>
                 <MessageCircle
-                  className={`h-5 w-5 ${isActive ? activeText : `${iconMuted} ${iconHover}`}`}
+                  className={`h-5 w-5 ${isActive ? "text-[var(--primary)]" : iconNeutral}`}
                 />
-                {!collapsed && <span className={isActive ? activeText : ""}>Study Assistant</span>}
+                {!collapsed && <span>Study Assistant</span>}
               </>
             )}
           </NavLink>
         </nav>
 
         {!collapsed && (
-        <div className="mt-6 border-t border-token pt-4 text-xs uppercase tracking-[0.2em] text-muted">
+          <div className="mt-6 border-t border-token pt-4 text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">
             Account
           </div>
         )}
@@ -191,7 +189,7 @@ export default function AppSidebar({ collapsed, onToggle }: Props) {
             to="/settings"
             className={({ isActive }) =>
               `${item} ${isActive ? active : ""} ${collapsed ? "justify-center" : ""} ${
-                isActive ? activeText : `${textMuted} ${textHover}`
+                isActive ? "text-[var(--text-main)]" : `${textNeutral} ${hoverText}`
               }`
             }
             title={collapsed ? "Settings" : undefined}
@@ -199,7 +197,7 @@ export default function AppSidebar({ collapsed, onToggle }: Props) {
             {({ isActive }) => (
               <>
                 <Settings
-                  className={`h-5 w-5 ${isActive ? activeText : `${iconMuted} ${iconHover}`}`}
+                  className={`h-5 w-5 ${isActive ? "text-[var(--primary)]" : iconNeutral}`}
                 />
                 {!collapsed && <span>Settings</span>}
               </>
@@ -209,7 +207,7 @@ export default function AppSidebar({ collapsed, onToggle }: Props) {
             to="/profile"
             className={({ isActive }) =>
               `${item} ${isActive ? active : ""} ${collapsed ? "justify-center" : ""} ${
-                isActive ? activeText : `${textMuted} ${textHover}`
+                isActive ? "text-[var(--text-main)]" : `${textNeutral} ${hoverText}`
               }`
             }
             title={collapsed ? "Profile" : undefined}
@@ -217,7 +215,7 @@ export default function AppSidebar({ collapsed, onToggle }: Props) {
             {({ isActive }) => (
               <>
                 <User
-                  className={`h-5 w-5 ${isActive ? activeText : `${iconMuted} ${iconHover}`}`}
+                  className={`h-5 w-5 ${isActive ? "text-[var(--primary)]" : iconNeutral}`}
                 />
                 {!collapsed && <span>Profile</span>}
               </>
@@ -227,7 +225,7 @@ export default function AppSidebar({ collapsed, onToggle }: Props) {
             to="/logout"
             className={({ isActive }) =>
               `${item} ${isActive ? active : ""} ${collapsed ? "justify-center" : ""} ${
-                isActive ? activeText : `${textMuted} ${textHover}`
+                isActive ? "text-[var(--text-main)]" : `${textNeutral} ${hoverText}`
               }`
             }
             title={collapsed ? "Logout" : undefined}
@@ -235,7 +233,7 @@ export default function AppSidebar({ collapsed, onToggle }: Props) {
             {({ isActive }) => (
               <>
                 <LogOut
-                  className={`h-5 w-5 ${isActive ? activeText : `${iconMuted} ${iconHover}`}`}
+                  className={`h-5 w-5 ${isActive ? "text-[var(--primary)]" : iconNeutral}`}
                 />
                 {!collapsed && <span>Logout</span>}
               </>

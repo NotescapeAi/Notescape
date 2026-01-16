@@ -123,12 +123,9 @@ function Tabs({
       {items.map(([key, label]) => (
         <button
           key={key}
+          type="button"
           onClick={() => onChange(key)}
-          className={`rounded-full border px-4 py-1.5 text-sm font-semibold transition ${
-            active === key
-              ? "border-strong bg-inverse text-inverse"
-              : "border-token surface text-muted hover:border-token"
-          }`}
+          className={`tab-pill ${active === key ? "tab-pill-active" : "tab-pill-muted"}`}
         >
           {label}
         </button>
@@ -215,6 +212,17 @@ function ClassesContent() {
     const st = (location as any)?.state;
     if (st?.selectId) setSelectedId(Number(st.selectId));
   }, [location]);
+
+  useEffect(() => {
+    if (selectedId != null || classes.length === 0) return;
+    const stored = Number(localStorage.getItem("last_class_id"));
+    const fallback = classes[0]?.id ?? null;
+    if (Number.isFinite(stored) && classes.some((c) => c.id === stored)) {
+      setSelectedId(stored);
+    } else if (fallback !== null) {
+      setSelectedId(fallback);
+    }
+  }, [classes, selectedId]);
 
   useEffect(() => {
     if (selectedId == null) {
@@ -915,6 +923,53 @@ function ClassesContent() {
     }
   }
 
+  function renderMessage(m: Msg) {
+    const show =
+      showCitations && m.role === "assistant" && (m.citations?.length ?? 0) > 0;
+    return (
+      <div key={m.id} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+        <div
+          className={`chat-bubble ${
+            m.role === "user" ? "chat-bubble-user" : "chat-bubble-assistant"
+          }`}
+        >
+          {m.selected_text && (
+            <div
+              className={`mb-2 rounded-lg border px-3 py-2 text-xs ${
+                m.role === "user"
+                  ? "border-strong bg-[var(--overlay)] text-inverse"
+                  : "border-token surface-2 text-muted"
+              }`}
+            >
+              <div className="text-[10px] uppercase tracking-wide opacity-70">Selected text</div>
+              <div className="mt-1 whitespace-pre-wrap">{m.selected_text}</div>
+            </div>
+          )}
+          {m.image_attachment?.data_url && (
+            <div className="mb-2">
+              <img
+                src={m.image_attachment.data_url}
+                alt="Snippet preview"
+                className="max-h-40 w-full rounded-lg border border-[var(--border)] object-cover"
+              />
+            </div>
+          )}
+          <div className="whitespace-pre-wrap">{m.content}</div>
+          {show && (
+            <div className="mt-2 space-y-1 text-[11px] text-[var(--text-secondary)]">
+              {(m.citations ?? []).slice(0, 6).map((c: any, idx: number) => (
+                <div key={`${c?.chunk_id ?? idx}`}>
+                  {c?.filename ?? "Source"}
+                  {c?.page_start ? ` (p${c.page_start}-${c.page_end ?? c.page_start})` : ""}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   const currentClass = selectedId
     ? classes.find((c) => c.id === selectedId)?.name
     : null;
@@ -965,28 +1020,33 @@ function ClassesContent() {
           >
             {!selectedId ? (
               classes.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-token surface p-10 text-center">
+                <div className="panel panel-muted border-dashed text-center space-y-3">
                   <div className="text-lg font-semibold text-main">Create your first class</div>
-                  <div className="mt-2 text-sm text-muted">
+                  <div className="text-sm text-[var(--text-secondary)]">
                     Start a class to upload documents and chat with your study assistant.
                   </div>
-                  <Button variant="primary" className="mt-5" onClick={() => setShowCreate(true)}>
+                  <Button variant="primary" className="mt-2" onClick={() => setShowCreate(true)}>
                     Create class
                   </Button>
                 </div>
               ) : (
-                <div className="rounded-2xl border border-dashed border-token surface p-10 text-center">
+                <div className="panel panel-muted border-dashed text-center space-y-3">
                   <div className="text-lg font-semibold text-main">Choose a class to begin</div>
-                  <div className="mt-2 text-sm text-muted">
+                  <div className="text-sm text-[var(--text-secondary)]">
                     Select a class from the left to open documents and chat.
                   </div>
                 </div>
               )
             ) : (
               <>
-                <div className="flex items-center justify-between flex-wrap gap-3 rounded-2xl border border-token surface px-5 py-4 shadow-sm">
-                  <div>
-                    <div className="text-sm font-semibold text-main">{currentClass}</div>
+                <div className="panel panel-compact">
+                  <div className="flex items-center justify-between gap-4 flex-wrap">
+                    <div>
+                      <div className="text-sm font-semibold text-main">{currentClass}</div>
+                      <div className="text-[0.7rem] uppercase tracking-[0.4em] text-[var(--text-muted-soft)]">
+                        Study workspace
+                      </div>
+                    </div>
                   </div>
                 </div>
 
@@ -1001,7 +1061,7 @@ function ClassesContent() {
                 {activeTab === "documents" && (
                   <div className="mt-6 space-y-4">
                     {!activeFile ? (
-                      <div className="rounded-2xl border border-token surface p-6 text-sm text-muted shadow-sm">
+                      <div className="panel panel-muted text-sm text-[var(--text-secondary)]">
                         Select a document to open the study workspace.
                       </div>
                     ) : (
@@ -1009,15 +1069,15 @@ function ClassesContent() {
                         <div className={`grid gap-4 ${layoutClass}`}>
                       {showPdf && (
                         <div className="space-y-4">
-                          <div className="rounded-2xl border border-token surface shadow-token">
-                            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-token px-5 py-4">
+                          <div className="panel panel-elevated space-y-0 overflow-hidden">
+                            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-5 py-4">
                               <div>
                                 <div className="text-sm font-semibold text-main">{activeFile.filename}</div>
-                                <div className="text-xs text-muted">Document workspace</div>
+                                <div className="text-xs text-[var(--text-muted-soft)]">Document workspace</div>
                               </div>
                               <div className="flex items-center gap-2">
                                 <button
-                                  className="rounded-lg border border-token px-2.5 py-1.5 text-xs text-muted xl:hidden"
+                                  className="rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-xs text-[var(--text-muted)] xl:hidden"
                                   onClick={() => setChatDrawerOpen(true)}
                                 >
                                   Open assistant
@@ -1026,7 +1086,7 @@ function ClassesContent() {
                                   href={activeFileViewUrl ?? "#"}
                                   target="_blank"
                                   rel="noreferrer"
-                                  className={`rounded-lg border border-token px-2.5 py-1.5 text-xs text-muted ${
+                                  className={`rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-xs text-[var(--text-muted)] ${
                                     activeFileViewUrl ? "" : "pointer-events-none opacity-50"
                                   }`}
                                 >
@@ -1035,14 +1095,14 @@ function ClassesContent() {
                                 <a
                                   href={activeFileViewUrl ?? "#"}
                                   download
-                                  className={`rounded-lg border border-token px-2.5 py-1.5 text-xs text-muted ${
+                                  className={`rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-xs text-[var(--text-muted)] ${
                                     activeFileViewUrl ? "" : "pointer-events-none opacity-50"
                                   }`}
                                 >
                                   Download
                                 </a>
                                 <button
-                                  className="rounded-lg border border-token px-2.5 py-1.5 text-xs text-muted"
+                                  className="rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-xs text-[var(--text-muted)]"
                                   onClick={() => setActiveFile(null)}
                                 >
                                   Close
@@ -1178,52 +1238,7 @@ function ClassesContent() {
                                 No messages yet. Ask about the document on the left.
                               </div>
                             ) : (
-                              messages.map((m) => {
-                                const show =
-                                  showCitations && m.role === "assistant" && (m.citations?.length ?? 0) > 0;
-                                return (
-                                  <div key={m.id} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-                                    <div
-                                      className={`max-w-[85%] rounded-2xl border px-4 py-3 text-sm leading-6 ${
-                                        m.role === "user"
-                                          ? "bg-inverse text-inverse border-strong"
-                                          : "surface border-token"
-                                      }`}
-                                    >
-                                      {m.selected_text && (
-                                        <div
-                                          className={`mb-2 rounded-lg border px-3 py-2 text-xs ${
-                                            m.role === "user"
-                                              ? "border-strong bg-[var(--overlay)] text-inverse"
-                                              : "border-token surface-2 text-muted"
-                                          }`}
-                                        >
-                                          {m.selected_text}
-                                        </div>
-                                      )}
-                                      {m.image_attachment?.data_url && (
-                                        <div className="mb-2">
-                                          <img
-                                            src={m.image_attachment.data_url}
-                                            alt="Snippet preview"
-                                            className="max-h-40 rounded-lg border border-token"
-                                          />
-                                        </div>
-                                      )}
-                                      <div>{m.content}</div>
-                                      {show && (
-                                        <div className="mt-2 space-y-1 text-[11px] text-muted">
-                                          {m.citations.map((c: any, idx: number) => (
-                                            <div key={idx}>
-                                              {c.filename} (p. {c.page_start ?? "?"})
-                                            </div>
-                                          ))}
-                                        </div>
-                                      )}
-                                    </div>
-                                  </div>
-                                );
-                              })
+                              messages.map(renderMessage)
                             )}
                           </div>
                           <div className="border-t border-token p-3">
@@ -1310,19 +1325,7 @@ function ClassesContent() {
                                 No messages yet. Ask about the document on the left.
                               </div>
                             ) : (
-                              messages.map((m) => (
-                                <div key={m.id} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-                                  <div
-                                    className={`max-w-[85%] rounded-2xl border px-4 py-3 text-sm leading-6 ${
-                                      m.role === "user"
-                                        ? "bg-inverse text-inverse border-strong"
-                                        : "surface border-token"
-                                    }`}
-                                  >
-                                    <div>{m.content}</div>
-                                  </div>
-                                </div>
-                              ))
+                              messages.map(renderMessage)
                             )}
                           </div>
                           <div className="border-t border-token p-3">
@@ -1440,19 +1443,7 @@ function ClassesContent() {
                                 No messages yet. Ask about the document on the left.
                               </div>
                             ) : (
-                              messages.map((m) => (
-                                <div key={m.id} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-                                  <div
-                                    className={`max-w-[85%] rounded-2xl border px-4 py-3 text-sm leading-6 ${
-                                      m.role === "user"
-                                        ? "bg-inverse text-inverse border-strong"
-                                        : "surface border-token"
-                                    }`}
-                                  >
-                                    <div>{m.content}</div>
-                                  </div>
-                                </div>
-                              ))
+                              messages.map(renderMessage)
                             )}
                           </div>
                           <div className="border-t border-token p-3">
@@ -1731,53 +1722,7 @@ function ClassesContent() {
                       ) : messages.length === 0 ? (
                         <div className="text-sm text-muted">No messages yet. Ask about your class materials.</div>
                       ) : (
-                        messages.map((m) => {
-                          const show = showCitations && m.role === "assistant" && (m.citations?.length ?? 0) > 0;
-                          return (
-                            <div key={m.id} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-                              <div
-                                className={`max-w-[75%] rounded-2xl border px-4 py-3 text-sm leading-6 ${
-                                  m.role === "user"
-                                    ? "bg-inverse text-inverse border-strong"
-                                    : "surface border-token"
-                                }`}
-                              >
-                                {m.selected_text && (
-                                  <div
-                                    className={`mb-2 rounded-lg border px-3 py-2 text-xs ${
-                                      m.role === "user"
-                                        ? "border-strong bg-[var(--overlay)] text-inverse"
-                                        : "border-token surface-2 text-muted"
-                                    }`}
-                                  >
-                                    <div className="text-[10px] uppercase tracking-wide opacity-70">Selected text</div>
-                                    <div className="mt-1 whitespace-pre-wrap">{m.selected_text}</div>
-                                  </div>
-                                )}
-                                {m.image_attachment?.data_url && (
-                                  <div className="mb-2">
-                                    <img
-                                      src={m.image_attachment.data_url}
-                                      alt="Snippet"
-                                      className="max-h-40 rounded-lg border border-token object-contain"
-                                    />
-                                  </div>
-                                )}
-                                <div className="whitespace-pre-wrap">{m.content}</div>
-                                {show && (
-                                  <div className="mt-3 border-t border-token pt-2 text-xs text-muted">
-                                    {(m.citations ?? []).slice(0, 6).map((c: any, idx: number) => (
-                                      <div key={`${c?.chunk_id ?? idx}`}>
-                                        {c?.filename ?? "Source"}
-                                        {c?.page_start ? ` (p${c.page_start}-${c.page_end ?? c.page_start})` : ""}
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })
+                        messages.map(renderMessage)
                       )}
                       {chatBusy && <div className="text-xs text-muted">Thinking...</div>}
                           </div>
@@ -2014,53 +1959,7 @@ function ClassesContent() {
               ) : messages.length === 0 ? (
                 <div className="text-sm text-muted">No messages yet. Ask about the document on the left.</div>
               ) : (
-                messages.map((m) => {
-                  const show = showCitations && m.role === "assistant" && (m.citations?.length ?? 0) > 0;
-                  return (
-                    <div key={m.id} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-                      <div
-                        className={`max-w-[85%] rounded-2xl border px-4 py-3 text-sm leading-6 ${
-                          m.role === "user"
-                            ? "bg-inverse text-inverse border-strong"
-                            : "surface border-token"
-                        }`}
-                      >
-                        {m.selected_text && (
-                          <div
-                            className={`mb-2 rounded-lg border px-3 py-2 text-xs ${
-                              m.role === "user"
-                                ? "border-strong bg-[var(--overlay)] text-inverse"
-                                : "border-token surface-2 text-muted"
-                            }`}
-                          >
-                            <div className="text-[10px] uppercase tracking-wide opacity-70">Selected text</div>
-                            <div className="mt-1 whitespace-pre-wrap">{m.selected_text}</div>
-                          </div>
-                        )}
-                        {m.image_attachment?.data_url && (
-                          <div className="mb-2">
-                            <img
-                              src={m.image_attachment.data_url}
-                              alt="Snippet"
-                              className="max-h-32 rounded-lg border border-token object-contain"
-                            />
-                          </div>
-                        )}
-                        <div className="whitespace-pre-wrap">{m.content}</div>
-                        {show && (
-                          <div className="mt-3 border-t border-token pt-2 text-xs text-muted">
-                            {(m.citations ?? []).slice(0, 4).map((c: any, idx: number) => (
-                              <div key={`${c?.chunk_id ?? idx}`}>
-                                {c?.filename ?? "Source"}
-                                {c?.page_start ? ` (p${c.page_start}-${c.page_end ?? c.page_start})` : ""}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })
+                messages.map(renderMessage)
               )}
               {chatBusy && <div className="text-xs text-muted">Thinking...</div>}
             </div>

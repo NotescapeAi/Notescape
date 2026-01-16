@@ -37,7 +37,7 @@ export default function TopBar({ title, breadcrumbs, subtitle, showGreeting, bac
   }, [open]);
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-4 rounded-[28px] border border-token bg-[var(--surface)] px-6 py-5 shadow-[var(--shadow)]">
+    <div className="flex flex-wrap items-center justify-between gap-4 rounded-[28px] border border-[var(--border)] bg-[var(--surface)] px-6 py-5 shadow-[var(--shadow-soft)]">
       <div>
         {backLabel && (
           <div className="mb-2">
@@ -45,23 +45,25 @@ export default function TopBar({ title, breadcrumbs, subtitle, showGreeting, bac
           </div>
         )}
         {crumbs.length > 0 && (
-          <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--muted)]">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--text-muted-soft)]">
             {crumbs.map((c, idx) => (
-              <span key={`${c}-${idx}`} className="text-[11px] tracking-[0.1em] text-[var(--muted)]">
+              <span key={`${c}-${idx}`} className="text-[11px] tracking-[0.1em] text-[var(--text-muted-soft)]">
                 {c}
               </span>
             ))}
           </div>
         )}
         {showGreeting && null}
-        <div className="mt-2 text-2xl font-semibold text-[var(--text)]">{title}</div>
-        {subtitle && <div className="text-sm text-[var(--muted)]">{subtitle}</div>}
+        <div className="mt-2 text-2xl font-semibold leading-tight text-[var(--text)]">{title}</div>
+        {subtitle && (
+          <div className="mt-1 text-sm leading-relaxed text-[var(--text-muted)]">{subtitle}</div>
+        )}
       </div>
       <div className="flex items-center gap-3">
         <button
           type="button"
           onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
-          className="flex h-11 w-11 items-center justify-center rounded-full text-[var(--muted)] hover:bg-[rgba(123,95,239,0.12)]"
+          className="flex h-11 w-11 items-center justify-center rounded-full border border-[var(--border-soft)] text-[var(--text-muted)] hover:bg-[var(--surface-accent-soft)]"
           aria-label="Theme"
           title="Theme"
         >
@@ -71,7 +73,7 @@ export default function TopBar({ title, breadcrumbs, subtitle, showGreeting, bac
           <button
             type="button"
             onClick={() => setOpen((v) => !v)}
-            className="flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface)] px-2 py-1"
+          className="flex items-center gap-2 rounded-full border border-[var(--border)]/80 bg-[var(--surface)] px-3 py-1"
             aria-label="Open profile menu"
           >
             {profile?.avatar_url ? (
@@ -85,21 +87,21 @@ export default function TopBar({ title, breadcrumbs, subtitle, showGreeting, bac
           </button>
           {open && (
             <div className="absolute right-0 top-12 z-20 w-48 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-2 shadow-[var(--shadow)]">
-              <div className="px-3 py-2 text-xs text-[var(--muted)]">{displayName}</div>
+              <div className="px-3 py-2 text-xs text-[var(--text-muted)]">{displayName}</div>
               <button
-                className="w-full rounded-xl px-3 py-2 text-left text-sm text-[var(--text)] hover:bg-[rgba(123,95,239,0.08)]"
+                className="w-full rounded-xl px-3 py-2 text-left text-sm text-[var(--text)] hover:bg-[var(--surface-accent-soft)]"
                 onClick={() => navigate("/profile")}
               >
                 Profile
               </button>
               <button
-                className="w-full rounded-xl px-3 py-2 text-left text-sm text-[var(--text)] hover:bg-[rgba(123,95,239,0.08)]"
+                className="w-full rounded-xl px-3 py-2 text-left text-sm text-[var(--text)] hover:bg-[var(--surface-accent-soft)]"
                 onClick={() => navigate("/settings")}
               >
                 Settings
               </button>
               <button
-                className="w-full rounded-xl px-3 py-2 text-left text-sm text-[var(--accent-pink)] hover:bg-[rgba(239,95,139,0.12)]"
+                className="w-full rounded-xl px-3 py-2 text-left text-sm text-[var(--accent-pink)] hover:bg-[var(--accent-pink-soft)]"
                 onClick={() => navigate("/logout")}
               >
                 Logout

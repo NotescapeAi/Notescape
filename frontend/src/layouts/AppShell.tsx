@@ -55,13 +55,13 @@ export default function AppShell({
 
   return (
     <LayoutContext.Provider value={layout}>
-      <div className="min-h-screen bg-[var(--bg)] text-[var(--text)]">
+      <div className="min-h-screen bg-[var(--base-bg)] text-[var(--text)]">
         <AppSidebar collapsed={collapsed} onToggle={handleToggle} />
         <div
-          className="min-h-screen px-4 py-5 transition-[margin-left] duration-200 ease-in-out lg:px-6"
+          className="min-h-screen px-4 py-6 transition-[margin-left] duration-200 ease-in-out lg:px-6"
           style={{ marginLeft: collapsed ? "76px" : "260px" }}
         >
-          <div className="flex min-w-0 flex-col gap-6">
+          <div className="flex min-w-0 flex-col gap-8">
             <div className={`mx-auto w-full ${headerMaxWidthClassName}`}>
               <TopBar
                 title={title}

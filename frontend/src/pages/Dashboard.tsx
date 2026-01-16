@@ -131,203 +131,205 @@ export default function Dashboard() {
 
   return (
     <AppShell title="Dashboard" headerMaxWidthClassName="max-w-[1200px]">
-      <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6">
-        <section className="grid grid-cols-1 gap-4 lg:grid-cols-[1.2fr_1fr]">
-          <div className="relative overflow-hidden rounded-[28px] bg-gradient-to-br from-[var(--primary)] via-[var(--primary)] to-[var(--accent-pink)] p-8 text-inverse shadow-[0_24px_60px_rgba(123,95,239,0.32)] animate-hero-gradient">
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.22),_transparent_55%)]" />
-            <div className="relative space-y-3">
-              <div className="text-xs uppercase tracking-[0.35em] text-inverse opacity-80">Continue</div>
-              <h2 className="text-3xl font-semibold">Pick up the next concept.</h2>
-              <p className="text-sm text-inverse opacity-80">Resume your last class or jump into due cards.</p>
-              <Link
-                to="/classes"
-                className="inline-flex items-center gap-2 rounded-full surface px-5 py-2.5 text-sm font-semibold text-[var(--primary)] shadow-lg"
-              >
-                <Sparkles className="h-4 w-4" />
-                Continue studying
-              </Link>
-            </div>
-          </div>
-
-          <div className="rounded-[28px] surface p-6 shadow-[0_16px_40px_rgba(15,16,32,0.08)]">
-            <div className="flex items-start justify-between">
-              <div>
-                <div className="text-xs uppercase tracking-[0.3em] text-[var(--primary)]">Resume</div>
-                <div className="mt-2 text-xl font-semibold text-main">
-                  {classes[0]?.name ?? "No class yet"}
-                </div>
-                <div className="text-sm text-muted">
-                  {resumeFile ? `Last document: ${resumeFile}` : "Upload a document to continue."}
-                </div>
-              </div>
-              {classes[0] && (
-                <button
-                  className="rounded-full bg-[var(--primary)] px-4 py-2 text-xs font-semibold text-inverse"
-                  onClick={() => navigate("/classes", { state: { selectId: classes[0].id } })}
+      <div className="mx-auto w-full max-w-[1200px] px-2 sm:px-0">
+        <div className="flex flex-col gap-10">
+          <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+            <div className="card-accent p-8 text-inverse">
+              <div className="card-accent-content space-y-3">
+                <div className="text-xs uppercase tracking-[0.35em] text-inverse/80">Continue</div>
+                <h2 className="text-3xl font-semibold leading-tight">Pick up the next concept.</h2>
+                <p className="text-sm text-inverse/80">
+                  Resume your most recent class or jump into due cards to keep your streak alive.
+                </p>
+                <Link
+                  to="/classes"
+                  className="inline-flex items-center gap-2 rounded-full border border-transparent bg-[var(--surface)] px-5 py-2 text-sm font-semibold text-[var(--text)] shadow-[var(--shadow-soft)]"
                 >
-                  Open class
-                </button>
-              )}
-            </div>
-          </div>
-        </section>
-
-        <section className="grid grid-cols-[repeat(auto-fit,minmax(260px,1fr))] gap-4">
-          {metrics.map((metric) => (
-            <div
-              key={metric.label}
-              className="rounded-[24px] surface p-5 shadow-[0_14px_36px_rgba(15,16,32,0.08)]"
-            >
-              <div className="text-xs uppercase tracking-[0.3em] text-[var(--primary)]">{metric.label}</div>
-              <div className="mt-2 text-3xl font-semibold text-main">{metric.value}</div>
-              <div className="mt-2 text-xs text-muted">{metric.hint}</div>
-            </div>
-          ))}
-        </section>
-
-        <section className="grid grid-cols-1 gap-4 lg:grid-cols-[1.2fr_1fr]">
-          <div className="rounded-[28px] surface p-6 shadow-[0_16px_40px_rgba(15,16,32,0.08)]">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-xs uppercase tracking-[0.3em] text-[var(--primary)]">Due Today</div>
-                <div className="mt-2 text-lg font-semibold text-main">Flashcards ready</div>
+                  <Sparkles className="h-4 w-4" />
+                  Continue studying
+                </Link>
               </div>
-              {classes[0] && (
-                <button
-                  className="inline-flex items-center gap-2 rounded-full border border-token px-4 py-2 text-xs font-semibold text-muted"
-                  onClick={() =>
-                    navigate(`/classes/${classes[0].id}/flashcards/study`, {
-                      state: { cards: dueCards, className: classes[0].name, startIndex: 0 },
-                    })
-                  }
-                >
-                  Study now
-                  <ArrowUpRight className="h-3.5 w-3.5" />
-                </button>
-              )}
             </div>
-            <div className="mt-4 space-y-3">
-              {dueCards.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-token surface-2 px-5 py-6 text-sm text-muted">
-                  No cards due yet. You are all caught up.
-                </div>
-              ) : (
-                dueCards.map((card) => (
-                  <div
-                    key={card.id}
-                    className="rounded-2xl border border-token surface-2 px-4 py-3 text-sm text-main"
-                  >
-                    <div className="font-semibold">{card.question}</div>
-                    <div className="text-xs text-muted">
-                      {card.difficulty ?? "medium"} difficulty
-                    </div>
+
+            <div className="card-neutral p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="text-xs uppercase tracking-[0.3em] text-[var(--text-muted-soft)]">Resume</div>
+                  <div className="mt-2 text-xl font-semibold text-[var(--text-main)]">
+                    {classes[0]?.name ?? "No class yet"}
                   </div>
-                ))
-              )}
-            </div>
-          </div>
-
-          <div className="rounded-[28px] surface p-6 shadow-[0_16px_40px_rgba(15,16,32,0.08)]">
-            <div className="text-xs uppercase tracking-[0.3em] text-[var(--primary)]">Recent classes</div>
-            <div className="mt-4 grid grid-cols-1 gap-3 text-sm text-main">
-              {recentClasses.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-token surface-2 px-4 py-5 text-center text-sm text-muted">
-                  No classes yet.
+                  <div className="text-sm text-[var(--text-secondary)]">
+                    {resumeFile ? `Last document: ${resumeFile}` : "Upload a document to continue."}
+                  </div>
                 </div>
-              ) : (
-                recentClasses.map((c) => (
-                  <div
-                    key={c.id}
-                    className="flex items-center justify-between rounded-2xl border border-token surface-2 px-4 py-3"
+                {classes[0] && (
+                  <button
+                    className="rounded-full border border-[var(--border-soft)] px-4 py-2 text-xs font-semibold text-[var(--text-main)] shadow-[var(--shadow-soft)]"
+                    onClick={() => navigate("/classes", { state: { selectId: classes[0].id } })}
                   >
-                    <div className="flex items-center gap-3">
-                      <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--primary)] text-[11px] font-semibold text-inverse">
-                        {c.name.slice(0, 2).toUpperCase()}
-                      </span>
-                      <div>
-                        <div className="font-semibold text-main">{c.name}</div>
-                        <div className="text-xs text-muted">{c.subject ?? "General"}</div>
+                    Open class
+                  </button>
+                )}
+              </div>
+            </div>
+          </section>
+
+          <section className="grid gap-4 sm:grid-cols-[repeat(auto-fit,minmax(220px,1fr))]">
+            {metrics.map((metric) => (
+              <div key={metric.label} className="card-muted p-5">
+                <div className="text-xs uppercase tracking-[0.3em] text-[var(--text-muted-soft)]">{metric.label}</div>
+                <div className="mt-2 text-3xl font-semibold text-[var(--text-main)]">{metric.value}</div>
+                <div className="mt-2 text-[0.85rem] text-[var(--text-secondary)]">{metric.hint}</div>
+              </div>
+            ))}
+          </section>
+
+          <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+            <div className="card-neutral p-6 space-y-5">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-xs uppercase tracking-[0.3em] text-[var(--text-muted-soft)]">Due Today</div>
+                  <div className="mt-2 text-lg font-semibold text-[var(--text-main)]">Flashcards ready</div>
+                </div>
+                {classes[0] && (
+                  <button
+                    className="inline-flex items-center gap-2 rounded-full border border-[var(--border-soft)] px-4 py-2 text-xs font-semibold text-[var(--text-main)] shadow-[var(--shadow-soft)]"
+                    onClick={() =>
+                      navigate(`/classes/${classes[0].id}/flashcards/study`, {
+                        state: { cards: dueCards, className: classes[0].name, startIndex: 0 },
+                      })
+                    }
+                  >
+                    Study now
+                    <ArrowUpRight className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+              <div className="space-y-3">
+                {dueCards.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-[var(--border-soft)] bg-[var(--surface-2)] px-5 py-6 text-sm text-[var(--text-secondary)]">
+                    No cards due yet. You are all caught up.
+                  </div>
+                ) : (
+                  dueCards.map((card) => (
+                    <div
+                      key={card.id}
+                      className="rounded-2xl border border-[var(--border-soft)] bg-[var(--surface)] px-4 py-3 text-sm text-[var(--text-secondary)]"
+                    >
+                      <div className="font-semibold text-[var(--text-main)]">{card.question}</div>
+                      <div className="text-xs text-[var(--text-muted-soft)]">
+                        {card.difficulty ?? "medium"} difficulty
                       </div>
                     </div>
-                    <button
-                      className="rounded-full border border-token px-3 py-1 text-[11px] text-muted"
-                      onClick={() => navigate("/classes", { state: { selectId: c.id } })}
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="card-neutral p-6 space-y-4">
+              <div className="text-xs uppercase tracking-[0.3em] text-[var(--text-muted-soft)]">Recent classes</div>
+              <div className="space-y-3">
+                {recentClasses.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-[var(--border-soft)] bg-[var(--surface-2)] px-4 py-5 text-center text-sm text-[var(--text-muted-soft)]">
+                    No classes yet.
+                  </div>
+                ) : (
+                  recentClasses.map((c) => (
+                    <div
+                      key={c.id}
+                      className="flex items-center justify-between rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 shadow-[var(--shadow-soft)]"
                     >
-                      View
-                    </button>
+                      <div className="flex items-center gap-3">
+                        <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--primary)] text-[11px] font-semibold text-inverse">
+                          {c.name.slice(0, 2).toUpperCase()}
+                        </span>
+                        <div>
+                          <div className="font-semibold text-[var(--text-main)]">{c.name}</div>
+                          <div className="text-xs text-[var(--text-secondary)]">{c.subject ?? "General"}</div>
+                        </div>
+                      </div>
+                      <button
+                        className="rounded-full border border-[var(--border-soft)] px-3 py-1 text-[11px] font-semibold text-[var(--text-secondary)]"
+                        onClick={() => navigate("/classes", { state: { selectId: c.id } })}
+                      >
+                        View
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </section>
+
+          <section className="card-neutral p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-xs uppercase tracking-[0.3em] text-[var(--text-muted-soft)]">Recent activity</div>
+                <div className="mt-2 text-lg font-semibold text-[var(--text-main)]">Learning overview</div>
+              </div>
+              <span className="text-xs text-[var(--text-secondary)]">Last 7 days</span>
+            </div>
+            <div className="mt-5 space-y-4 text-sm text-[var(--text-secondary)]">
+              {activityItems.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-[var(--border-soft)] bg-[var(--surface-2)] px-5 py-6 text-center text-sm text-[var(--text-secondary)]">
+                  No activity yet. Create a class to begin your learning flow.
+                </div>
+              ) : (
+                activityItems.map((item, idx) => (
+                  <div key={item.id} className="flex items-start gap-4">
+                    <div className="mt-1 flex h-9 w-9 items-center justify-center rounded-full bg-[var(--surface-muted)] text-[var(--primary)]">
+                      {idx === 0 ? <FileText className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
+                    </div>
+                    <div className="flex-1">
+                      <div className="font-semibold text-[var(--text-main)]">{item.label}</div>
+                      {item.detail && (
+                        <div className="text-xs text-[var(--text-secondary)]">{item.detail}</div>
+                      )}
+                    </div>
                   </div>
                 ))
               )}
             </div>
-          </div>
-        </section>
+          </section>
 
-        <section className="rounded-[28px] surface p-6 shadow-[0_16px_40px_rgba(15,16,32,0.08)]">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-xs uppercase tracking-[0.3em] text-[var(--primary)]">Recent activity</div>
-              <div className="mt-2 text-lg font-semibold text-main">Learning overview</div>
-            </div>
-            <span className="text-xs text-muted">Last 7 days</span>
-          </div>
-          <div className="mt-5 space-y-4 text-sm text-muted">
-            {activityItems.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-token surface-2 px-5 py-6 text-center text-sm text-muted">
-                No activity yet. Create a class to begin your learning flow.
+          <section className="card-neutral p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-xs uppercase tracking-[0.3em] text-[var(--text-muted-soft)]">Study sessions</div>
+                <div className="mt-2 text-lg font-semibold text-[var(--text-main)]">Recent study time</div>
               </div>
-            ) : (
-              activityItems.map((item, idx) => (
-                <div key={item.id} className="flex items-start gap-4">
-                  <div className="mt-1 flex h-9 w-9 items-center justify-center rounded-full surface-tint text-[var(--primary)]">
-                    {idx === 0 ? <FileText className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
-                  </div>
-                  <div className="flex-1">
-                    <div className="font-semibold text-main">{item.label}</div>
-                    {item.detail && <div className="text-xs text-muted">{item.detail}</div>}
-                  </div>
+              {studyOverview && (
+                <span className="text-xs text-[var(--text-secondary)]">{studyOverview.sessions_7d} sessions (7d)</span>
+              )}
+            </div>
+            <div className="mt-5 space-y-3 text-sm">
+              {recentSessions.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-[var(--border-soft)] bg-[var(--surface-2)] px-5 py-6 text-center text-sm text-[var(--text-secondary)]">
+                  No study sessions yet. Start a study session to see time tracked.
                 </div>
-              ))
-            )}
-          </div>
-        </section>
-
-        <section className="rounded-[28px] surface p-6 shadow-[0_16px_40px_rgba(15,16,32,0.08)]">
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="text-xs uppercase tracking-[0.3em] text-[var(--primary)]">Study sessions</div>
-              <div className="mt-2 text-lg font-semibold text-main">Recent study time</div>
-            </div>
-            {studyOverview && (
-              <span className="text-xs text-muted">{studyOverview.sessions_7d} sessions (7d)</span>
-            )}
-          </div>
-          <div className="mt-5 space-y-3 text-sm text-muted">
-            {recentSessions.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-token surface-2 px-5 py-6 text-center text-sm text-muted">
-                No study sessions yet. Start a study session to see time tracked.
-              </div>
-            ) : (
-              recentSessions.map((session) => (
-                <div
-                  key={session.id}
-                  className="flex items-center justify-between rounded-2xl border border-token surface-2 px-4 py-3"
-                >
-                  <div>
-                    <div className="font-semibold text-main">
-                      {session.class_name || (session.class_id ? `Class #${session.class_id}` : "Study session")}
+              ) : (
+                recentSessions.map((session) => (
+                  <div
+                    key={session.id}
+                    className="flex items-center justify-between rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 shadow-[var(--shadow-soft)]"
+                  >
+                    <div>
+                      <div className="font-semibold text-[var(--text-main)]">
+                        {session.class_name || (session.class_id ? `Class #${session.class_id}` : "Study session")}
+                      </div>
+                      <div className="text-xs text-[var(--text-secondary)]">
+                        {session.started_at ? new Date(session.started_at).toLocaleString() : "Session"}
+                      </div>
                     </div>
-                    <div className="text-xs text-muted">
-                      {session.started_at ? new Date(session.started_at).toLocaleString() : "Session"}
+                    <div className="text-xs text-[var(--text-secondary)]">
+                      {formatDuration(Math.max(0, session.duration_seconds ?? session.active_seconds ?? 0))}
                     </div>
                   </div>
-                  <div className="text-xs text-muted">
-                    {formatDuration(Math.max(0, session.duration_seconds ?? session.active_seconds ?? 0))}
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </section>
+                ))
+              )}
+            </div>
+          </section>
+        </div>
       </div>
     </AppShell>
   );
