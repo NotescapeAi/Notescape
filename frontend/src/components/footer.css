@@ -78,21 +78,36 @@
 .subscribe input {
   flex: 1;
   min-width: 160px;
-  padding: 0.6rem 0.8rem;
-  border-radius: 8px;
-  border: none;
-  background: var(--surface-95);
+  padding: 0.65rem 0.9rem;
+  border-radius: 10px;
+  border: 1px solid #d1d5db;
+  background: #ffffff;
   outline: none;
-  font-size: 0.9rem;
-  color: var(--text);
-  transition: border 0.3s ease, box-shadow 0.3s ease;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #111827;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.08);
+  appearance: none;
 }
 .subscribe input::placeholder {
-  color: var(--placeholder);
+  color: #6b7280;
+  opacity: 1;
 }
-.subscribe input:focus {
-  border: 1px solid rgba(15, 16, 32, 0.15);
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.2);
+.subscribe input:focus-visible {
+  border-color: #7c3aed;
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.35);
+}
+.subscribe input:-webkit-autofill,
+.subscribe input:-webkit-autofill:focus,
+.subscribe input:-webkit-autofill:active {
+  -webkit-text-fill-color: #111827;
+  -webkit-background-clip: text;
+  box-shadow: 0 0 0 1000px #fff inset;
+}
+.subscribe input:-moz-autofill {
+  box-shadow: 0 0 0 1000px #fff inset;
+  -moz-text-fill-color: #111827;
 }
 .subscribe button {
   background: #0b1221;

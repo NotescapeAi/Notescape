@@ -7,34 +7,67 @@ import {
   LineChart
 } from "lucide-react";
 
-
 import { Link } from "react-router-dom";
 import { useEffect } from "react";
-import GetStartedLink from "../components/GetStartedLink";
 import Navbar from "../components/Navbar";
 import Footer from "../components/Footer";
 import "./landing.css";
+
+const featureCards = [
+  {
+    title: "Effortless Material Upload",
+    description: "Upload PDFs, slides and even handwritten notes - organized automatically.",
+    icon: Upload
+  },
+  {
+    title: "AI-Powered Assistance",
+    description: "Get instant summaries and clarifications from the integrated AI coach.",
+    icon: Bot
+  },
+  {
+    title: "Active Learning Tools",
+    description: "Auto-generate flashcards and quizzes with spaced repetition.",
+    icon: BookOpenCheck
+  },
+  {
+    title: "Smart Content Retrieval",
+    description: "Find exactly what you need instantly with context-aware search.",
+    icon: Search
+  },
+  {
+    title: "Centralized Storage",
+    description: "Access all your files, sessions and progress data in one secure space.",
+    icon: Database
+  },
+  {
+    title: "Progress Tracking",
+    description: "Identify strengths and gaps with rich analytics and insights.",
+    icon: LineChart
+  }
+];
+
+
 export default function LandingPage() {
   useEffect(() => {
+    const selectors =
+      ".reveal, .fade-in, .slide-left, .slide-right, .slide-up, .slide-down, .zoom-in, .flip-up, .rotate-in, .scale-up, .bounce-in";
+    const nodes = document.querySelectorAll(selectors);
     const prefersReduce = window.matchMedia("(prefers-reduced-motion: reduce)");
-    if (prefersReduce.matches) return;
+
+    if (prefersReduce.matches) {
+      nodes.forEach((el) => el.classList.add("active"));
+      return;
+    }
 
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            entry.target.classList.add("active");
-          } else {
-            entry.target.classList.remove("active");
-          }
+          entry.target.classList.toggle("active", entry.isIntersecting);
         });
       },
-      { threshold: 0.15 }
+      { threshold: 0.15, rootMargin: "0px 0px -10% 0px" }
     );
 
-    const nodes = document.querySelectorAll(
-      ".reveal, .fade-in, .slide-left, .slide-right, .slide-up, .slide-down, .zoom-in, .flip-up, .rotate-in, .scale-up, .bounce-in"
-    );
     nodes.forEach((el) => {
       if (el.classList.contains("btn-primary")) return;
       observer.observe(el);
@@ -45,7 +78,7 @@ export default function LandingPage() {
 
   return (
     <>
-      <Navbar/>
+      <Navbar />
       <div className="landing-root">
         {/* Hero Section */}
         <section id="hero" className="landing-hero fade-in">
@@ -59,9 +92,9 @@ export default function LandingPage() {
                 clear up any concept on demand with an AI coach.
               </p>
             
-                <GetStartedLink className="btn-primary cta-purple">
+                <Link to="/signup" className="btn-primary cta-purple">
                   Get started
-                </GetStartedLink>
+                </Link>
                 <a className="btn-ghost slide-up" href="#how">
                   Watch Demo
                 </a>
@@ -80,57 +113,27 @@ export default function LandingPage() {
             <h2 className="h2 text-center mb-12 fade-in text-4xl font-bold bg-gradient-to-r ">
               Your Complete Personal Learning Workspace
             </h2>
-              <div className="features-grid"><div className="feature-card slide-up">
-  <div className="fi">
-    <Upload color="#4f46e5" size={22} strokeWidth={2.2} />
-  </div>
-  <div className="feature-title">Effortless Material Upload</div>
-  <div className="feature-desc">Upload PDFs, slides and even handwritten notes—organized automatically.</div>
-</div>
-
-<div className="feature-card slide-up">
-  <div className="fi">
-    <Bot color="#4f46e5" size={22} strokeWidth={2.2} />
-  </div>
-  <div className="feature-title">AI-Powered Assistance</div>
-  <div className="feature-desc">Get instant summaries and clarifications from the integrated AI coach.</div>
-</div>
-
-<div className="feature-card slide-up">
-  <div className="fi">
-    <BookOpenCheck color="#4f46e5" size={22} strokeWidth={2.2} />
-  </div>
-  <div className="feature-title">Active Learning Tools</div>
-  <div className="feature-desc">Auto-generate flashcards and quizzes with spaced repetition.</div>
-</div>
-
-<div className="feature-card slide-up">
-  <div className="fi">
-    <Search color="#4f46e5" size={22} strokeWidth={2.2} />
-  </div>
-  <div className="feature-title">Smart Content Retrieval</div>
-  <div className="feature-desc">Find exactly what you need instantly with context-aware search.</div>
-</div>
-
-<div className="feature-card slide-up">
-  <div className="fi">
-    <Database color="#4f46e5" size={22} strokeWidth={2.2} />
-  </div>
-  <div className="feature-title">Centralized Storage</div>
-  <div className="feature-desc">Access all your files, sessions and progress data in one secure space.</div>
-</div>
-
-<div className="feature-card slide-up">
-  <div className="fi">
-    <LineChart color="#4f46e5" size={22} strokeWidth={2.2} />
-  </div>
-  <div className="feature-title">Progress Tracking</div>
-  <div className="feature-desc">Identify strengths and gaps with rich analytics and insights.</div>
-</div>
-
-  </div>
-        </div>
-      </section>
+            <div className="features-grid">
+              {featureCards.map((feature, index) => {
+                const Icon = feature.icon;
+                const delay = 80 + index * 20;
+                return (
+                  <article
+                    key={feature.title}
+                    className="feature-card slide-up"
+                    style={{ transitionDelay: `${delay}ms` }}
+                  >
+                    <div className="fi">
+                      <Icon color="#4f46e5" size={22} strokeWidth={2.2} />
+                    </div>
+                    <div className="feature-title">{feature.title}</div>
+                    <div className="feature-desc">{feature.description}</div>
+                  </article>
+                );
+              })}
+            </div>
+          </div>
+        </section>
 
         {/* How it works */}
         <section id="how" className="how">

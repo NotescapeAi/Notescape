@@ -143,7 +143,7 @@ export default function Dashboard() {
                 </p>
                 <Link
                   to="/classes"
-                  className="inline-flex items-center gap-2 rounded-full border border-transparent bg-[var(--surface)] px-5 py-2 text-sm font-semibold text-[var(--text)] shadow-[var(--shadow-soft)]"
+                  className="inline-flex items-center gap-2 rounded-full border border-transparent bg-[var(--surface)] px-5 py-2 text-sm font-semibold text-[var(--text)] dark:text-white shadow-[var(--shadow-soft)]"
                 >
                   <Sparkles className="h-4 w-4" />
                   Continue studying
