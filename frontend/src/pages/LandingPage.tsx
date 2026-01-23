@@ -145,7 +145,7 @@ export default function LandingPage() {
                 <h3>1. Upload Your Study Materials</h3>
                 <p>Drag and drop PDFs, slides or notes. OCR preserves diagrams and handwriting.</p>
               </div>
-              <img src="/class.png" alt="Upload mock" className="how-img slide-right" />
+              <img src="/class1.svg" alt="Upload mock" className="how-img slide-right" />
             </div>
 
             <div className="how-grid reverse">
