@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { FormEvent, useState } from "react";
-import './footer.css';
+import emailjs from "@emailjs/browser";
+import "./footer.css";
 
 const Footer: React.FC = () => {
   const [subscribed, setSubscribed] = useState(false);
@@ -9,18 +10,21 @@ const Footer: React.FC = () => {
   const handleSubscribe = async (e: FormEvent) => {
     e.preventDefault();
 
-    // Call backend API or email service here
     try {
-      await fetch("https://your-backend-url.com/api/subscribe", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
-      });
+      await emailjs.send(
+        import.meta.env.VITE_EMAILJS_SERVICE_ID,
+        import.meta.env.VITE_EMAILJS_TEMPLATE_ID,
+        {
+          user_email: email,
+        },
+        import.meta.env.VITE_EMAILJS_PUBLIC_KEY
+      );
+
       setSubscribed(true);
       setEmail("");
     } catch (error) {
       console.error("Subscription failed", error);
-      alert("Something went wrong. Please try again later.");
+      alert("Subscription failed. Try again.");
     }
   };
 
@@ -32,7 +36,9 @@ const Footer: React.FC = () => {
             <img src="/logo1.png" alt="Notescape logo" />
             <strong className="agr-text">Notescape</strong>
           </div>
-          <p className="foot-note">The first AI workspace for faster learning.</p>
+          <p className="foot-note">
+            The first AI workspace for faster learning.
+          </p>
         </div>
 
         <div>
@@ -53,7 +59,9 @@ const Footer: React.FC = () => {
         <div>
           <h4>Subscribe</h4>
           {subscribed ? (
-            <p className="text-green-600 font-semibold mt-2">✅ Subscribed!</p>
+            <p className="text-green-600 font-semibold mt-2">
+              ✅ Subscribed!
+            </p>
           ) : (
             <form className="subscribe" onSubmit={handleSubscribe}>
               <input

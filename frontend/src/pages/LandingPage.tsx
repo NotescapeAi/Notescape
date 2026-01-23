@@ -149,7 +149,7 @@ export default function LandingPage() {
             </div>
 
             <div className="how-grid reverse">
-              <img src="/step2.svg" alt="AI mock" className="how-img slide-left" />
+              <img src="/class2.svg" alt="AI mock" className="how-img slide-left" />
               <div className="how-copy slide-right">
                 <h3>2. Engage with AI-Powered Learning</h3>
                 <p>Ask questions, generate summaries and get tailored explanations.</p>
