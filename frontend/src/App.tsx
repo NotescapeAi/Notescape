@@ -1,6 +1,6 @@
 // src/App.tsx
 
-import React, { Suspense, lazy, useEffect, useLayoutEffect } from "react";
+import React, { Suspense, lazy, useEffect, useState } from "react";
 import {
   BrowserRouter,
   Routes,
@@ -8,37 +8,46 @@ import {
   Navigate,
   useLocation,
 } from "react-router-dom";
-import RequireAuth from "./components/RequireAuth";
 
-// lazy-load pages (your originals)
+import { onAuthStateChanged, User } from "firebase/auth";
+import { auth } from "./firebase/firebase";
+
+import RequireAuth from "./components/RequireAuth";
+import ScrollToTop from "./components/ScrollToTop";
+import { UserProvider } from "./hooks/useUser";
+import { ThemeProvider } from "./hooks/useTheme";
+
+/* =========================
+   Lazy-loaded Pages
+========================= */
+
 const LandingPage        = lazy(() => import("./pages/LandingPage"));
 const NotescapeStartPage = lazy(() => import("./pages/NotescapeStartPage"));
 const Signup             = lazy(() => import("./pages/Signup"));
 const Login              = lazy(() => import("./pages/Login"));
 const ForgotPassword     = lazy(() => import("./pages/ForgotPassword"));
+const LogoutPage         = lazy(() => import("./pages/Logout"));
+
 const Classes            = lazy(() => import("./pages/Classes"));
+const Dashboard          = lazy(() => import("./pages/Dashboard"));
+const Settings           = lazy(() => import("./pages/Settings"));
+const Profile            = lazy(() => import("./pages/Profile"));
+const Chatbot            = lazy(() => import("./pages/Chatbot"));
+
+const FlashcardsPage     = lazy(() => import("./pages/FlashcardsPage"));
+const FlashcardsHub      = lazy(() => import("./pages/FlashcardsHub"));
+const FlashcardsViewMode = lazy(() => import("./pages/FlashcardsViewMode"));
+const FlashcardsStudyMode = lazy(() => import("./pages/FlashcardsStudyMode"));
+const FlashcardsBookmarks = lazy(() => import("./pages/FlashcardsBookmarks"));
+
 const Pricing            = lazy(() => import("./pages/Pricing"));
 const TermsPage          = lazy(() => import("./pages/TermsPage"));
 const PrivacyPolicy      = lazy(() => import("./pages/PrivacyPolicy"));
 const ContactPage        = lazy(() => import("./pages/ContactPage"));
-const Dashboard          = lazy(() => import("./pages/Dashboard"));
-const Settings           = lazy(() => import("./pages/Settings"));
-const LogoutPage         = lazy(() => import("./pages/Logout"));
-const FlashcardsPage     = lazy(() => import("./pages/FlashcardsPage"));
-const FlashcardsHub      = lazy(() => import("./pages/FlashcardsHub"));
-const Profile            = lazy(() => import("./pages/Profile"));
-const Chatbot            = lazy(() => import("./pages/Chatbot"));
 
-//  these two routes must exist for the menu navigation to show a new UI
-const FlashcardsViewMode  = lazy(() => import("./pages/FlashcardsViewMode"));
-const FlashcardsStudyMode = lazy(() => import("./pages/FlashcardsStudyMode"));
-const FlashcardsBookmarks = lazy(() => import("./pages/FlashcardsBookmarks"));
-
-import { onAuthStateChanged, User } from "firebase/auth";
-import { auth } from "./firebase/firebase";
-import { useState } from "react";
-import { UserProvider } from "./hooks/useUser";
-import { ThemeProvider } from "./hooks/useTheme";
+/* =========================
+   Helpers
+========================= */
 
 function GetStartedGate() {
   const [user, setUser] = useState<User | null>(null);
@@ -52,7 +61,7 @@ function GetStartedGate() {
     return () => unsub();
   }, []);
 
-  if (!ready) return <div style={{ padding: 24 }}>Loading</div>;
+  if (!ready) return <div style={{ padding: 24 }}>Loading…</div>;
   return <Navigate to={user ? "/classes" : "/signup"} replace />;
 }
 
@@ -64,76 +73,122 @@ function NotFound() {
   );
 }
 
-function ScrollToTop() {
-  const { pathname } = useLocation();
-  useLayoutEffect(() => {
-    const target = document.scrollingElement || document.documentElement;
-    if (target?.scrollTo) {
-      target.scrollTo({ top: 0, left: 0, behavior: "auto" });
-    } else {
-      window.scrollTo(0, 0);
-    }
-  }, [pathname]);
-  return null;
-}
-
 function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="app-shell">
-      <ScrollToTop />
       <div className="app-content">{children}</div>
     </div>
   );
 }
 
-/**
- * IMPORTANT:
- * Wrap Routes in a component that reads `location` and keys by pathname.
- * This guarantees React mounts the correct element when you navigate
- * from /flashcards  /flashcards/view or /flashcards/study so you don't get
- * the URL changes but same UI problem.
- */
+/* =========================
+   Routes
+========================= */
+
 function AppRoutes() {
   const location = useLocation();
 
   return (
-    // Key the switch by the current path to force a new tree when route changes.
     <Routes location={location} key={location.pathname}>
-      {/* marketing / auth */}
-      <Route path="/"                element={<LandingPage />} />
-      <Route path="/start"           element={<NotescapeStartPage />} />
-      <Route path="/get-started"     element={<GetStartedGate />} />
-      <Route path="/signup"          element={<Signup />} />
-      <Route path="/login"           element={<Login />} />
+      {/* Marketing / Auth */}
+      <Route path="/" element={<LandingPage />} />
+      <Route path="/start" element={<NotescapeStartPage />} />
+      <Route path="/get-started" element={<GetStartedGate />} />
+      <Route path="/signup" element={<Signup />} />
+      <Route path="/login" element={<Login />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
-      <Route path="/logout"          element={<LogoutPage />} />
+      <Route path="/logout" element={<LogoutPage />} />
 
-      {/* app */}
-      <Route path="/classes" element={<RequireAuth><Classes /></RequireAuth>} />
+      {/* App (Protected) */}
+      <Route
+        path="/classes"
+        element={
+          <RequireAuth>
+            <Classes />
+          </RequireAuth>
+        }
+      />
 
+      <Route
+        path="/classes/:classId/flashcards/view"
+        element={
+          <RequireAuth>
+            <FlashcardsViewMode />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/classes/:classId/flashcards/study"
+        element={
+          <RequireAuth>
+            <FlashcardsStudyMode />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/classes/:classId/flashcards/bookmarks"
+        element={
+          <RequireAuth>
+            <FlashcardsBookmarks />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/classes/:classId/flashcards"
+        element={
+          <RequireAuth>
+            <FlashcardsPage />
+          </RequireAuth>
+        }
+      />
 
-      {/* Put the specific routes FIRST (good practice, though v6 matches exactly) */}
-      <Route path="/classes/:classId/flashcards/view"      element={<FlashcardsViewMode />} />
-      <Route path="/classes/:classId/flashcards/study"     element={<FlashcardsStudyMode />} />
-      <Route path="/classes/:classId/flashcards/bookmarks" element={<FlashcardsBookmarks />} />
-      <Route path="/classes/:classId/flashcards"           element={<FlashcardsPage />} />
-      <Route path="/flashcards" element={<FlashcardsHub />} />
-      <Route path="/chatbot" element={<Chatbot />} />
+      <Route
+        path="/flashcards"
+        element={
+          <RequireAuth>
+            <FlashcardsHub />
+          </RequireAuth>
+        }
+      />
 
-      <Route path="/classes/:classId/flashcards/view" element={<RequireAuth><FlashcardsViewMode /></RequireAuth>} />
-      <Route path="/classes/:classId/flashcards/study" element={<RequireAuth><FlashcardsStudyMode /></RequireAuth>} />
-      <Route path="/classes/:classId/flashcards/bookmarks" element={<RequireAuth><FlashcardsBookmarks /></RequireAuth>} />
-      <Route path="/classes/:classId/flashcards" element={<RequireAuth><FlashcardsPage /></RequireAuth>} />
-      <Route path="/flashcards" element={<RequireAuth><FlashcardsHub /></RequireAuth>} />
-      <Route path="/dashboard" element={<RequireAuth><Dashboard /></RequireAuth>} />
-      <Route path="/settings" element={<RequireAuth><Settings /></RequireAuth>} />
-      <Route path="/profile" element={<RequireAuth><Profile /></RequireAuth>} />
+      <Route
+        path="/dashboard"
+        element={
+          <RequireAuth>
+            <Dashboard />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/settings"
+        element={
+          <RequireAuth>
+            <Settings />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/profile"
+        element={
+          <RequireAuth>
+            <Profile />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/chatbot"
+        element={
+          <RequireAuth>
+            <Chatbot />
+          </RequireAuth>
+        }
+      />
 
-      {/* legal / info */}
-      <Route path="/pricing"   element={<Pricing />} />
-      <Route path="/terms"     element={<TermsPage />} />
-      <Route path="/privacy"   element={<PrivacyPolicy />} />
-      <Route path="/support"   element={<ContactPage />} />
+      {/* Legal / Info */}
+      <Route path="/pricing" element={<Pricing />} />
+      <Route path="/terms" element={<TermsPage />} />
+      <Route path="/privacy" element={<PrivacyPolicy />} />
+      <Route path="/support" element={<ContactPage />} />
 
       {/* 404 */}
       <Route path="*" element={<NotFound />} />
@@ -141,24 +196,24 @@ function AppRoutes() {
   );
 }
 
+/* =========================
+   App Root
+========================= */
+
 export default function App() {
   useEffect(() => {
     if ("scrollRestoration" in window.history) {
-      const prev = window.history.scrollRestoration;
       window.history.scrollRestoration = "manual";
-      return () => {
-        window.history.scrollRestoration = prev;
-      };
     }
-    return undefined;
   }, []);
+
   return (
-    // Make sure there is exactly one BrowserRouter in the whole app.
     <ThemeProvider>
       <UserProvider>
         <BrowserRouter>
+          <ScrollToTop />
           <AppLayout>
-            <Suspense fallback={<div style={{ padding: 24 }}>Loading...</div>}>
+            <Suspense fallback={<div style={{ padding: 24 }}>Loading…</div>}>
               <AppRoutes />
             </Suspense>
           </AppLayout>
