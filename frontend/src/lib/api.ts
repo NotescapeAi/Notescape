@@ -6,7 +6,8 @@ import { onAuthStateChanged } from "firebase/auth";
 
 /** Base URL: prefer Vite env, else relative /api */
 const API_BASE =
-  (import.meta as any)?.env?.VITE_API_BASE_URL?.toString() ?? "/api";
+  (import.meta as any)?.env?.VITE_API_BASE_URL?.toString() ?? "http://localhost:8000/api";
+
 
 const http = axios.create({
   baseURL: API_BASE,
@@ -882,3 +883,154 @@ export async function getStudyTrends(params?: { days?: number }): Promise<StudyT
 }
 
 
+
+
+// -----------------------
+// Quizzes API - ENHANCED VERSION
+// -----------------------
+
+// -----------------------
+// Quizzes API - WITH MCQ_COUNT SUPPORT
+// -----------------------
+
+export type QuizQuestion = {
+  id: number;
+  position: number;
+  qtype: string;
+  question: string;
+  options?: string[];
+  explanation?: string;
+  difficulty?: string;
+  page_start?: number;
+  page_end?: number;
+};
+
+export type QuizListItem = {
+  id: string;
+  class_id: number;
+  file_id: string;
+  title: string;
+  created_at?: string;
+};
+
+export type QuizDetail = {
+  quiz: QuizListItem;
+  items: QuizQuestion[];
+};
+
+export type QuizJobResponse = {
+  job_id: string;
+  status: "queued" | "running" | "completed" | "failed";
+  progress: number;
+  error_message?: string;
+};
+
+export type StartAttemptResponse = {
+  attempt_id: string;
+  quiz_id: string;
+  total: number;
+};
+
+export type SubmitAttemptResponse = {
+  attempt_id: string;
+  quiz_id: string;
+  score: number;
+  total: number;
+  results: Array<{
+    question_id: number;
+    qtype: string;
+    is_correct: boolean | null;
+    correct_index?: number;
+    answer_key?: string;
+  }>;
+};
+
+// Create quiz generation job - NOW WITH mcq_count SUPPORT
+export async function createQuizJob(payload: {
+  class_id: number;
+  file_id: string;
+  n_questions: number;
+  mcq_count?: number;  // NEW: Optional specific MCQ count
+  types: Array<"mcq" | "conceptual" | "definition" | "scenario" | "short_qa">;
+  difficulty: "easy" | "medium" | "hard";
+}): Promise<QuizJobResponse> {
+  const headers = await userHeader();
+  const { data } = await http.post<QuizJobResponse>("/quizzes/jobs", payload, { headers });
+  return data;
+}
+
+// Get quiz job status
+export async function getQuizJobStatus(jobId: string): Promise<QuizJobResponse> {
+  const headers = await userHeader();
+  const { data } = await http.get<QuizJobResponse>(`/quizzes/jobs/${jobId}`, { headers });
+  return data;
+}
+
+// List quizzes for a class
+export async function listQuizzes(classId: number): Promise<QuizListItem[]> {
+  const headers = await userHeader();
+  const { data } = await http.get<QuizListItem[]>(`/quizzes`, { 
+    params: { class_id: classId },
+    headers 
+  });
+  return Array.isArray(data) ? data : [];
+}
+
+// Get quiz details without answers
+export async function getQuiz(quizId: string): Promise<QuizDetail> {
+  const headers = await userHeader();
+  const { data } = await http.get<QuizDetail>(`/quizzes/${quizId}`, { headers });
+  return data;
+}
+
+// Get quiz answer key (optional endpoint)
+export async function getQuizAnswers(quizId: string): Promise<Array<{
+  question_id: number;
+  correct_index?: number;
+  answer_key?: string;
+}>> {
+  const headers = await userHeader();
+  try {
+    const { data } = await http.get(`/quizzes/${quizId}/answers`, { headers });
+    return Array.isArray(data) ? data : [];
+  } catch (error) {
+    console.warn("Answer key endpoint not available:", error);
+    return [];
+  }
+}
+
+// Start a quiz attempt
+export async function startQuizAttempt(quizId: string): Promise<StartAttemptResponse> {
+  const headers = await userHeader();
+  const { data } = await http.post<StartAttemptResponse>(
+    `/quizzes/${quizId}/attempts`,
+    {},
+    { headers }
+  );
+  return data;
+}
+
+// Submit quiz attempt with answers
+export async function submitQuizAttempt(
+  attemptId: string,
+  answers: Array<{
+    question_id: number;
+    selected_index?: number;
+    written_answer?: string;
+  }>,
+  revealAnswers: boolean = true
+): Promise<SubmitAttemptResponse> {
+  const headers = await userHeader();
+  const { data } = await http.post<SubmitAttemptResponse>(
+    `/quizzes/attempts/${attemptId}/submit`,
+    { answers, reveal_answers: revealAnswers },
+    { headers }
+  );
+  return data;
+}
+
+// Delete quiz
+export async function deleteQuiz(quizId: string): Promise<void> {
+  const headers = await userHeader();
+  await http.delete(`/quizzes/${quizId}`, { headers });
+}
