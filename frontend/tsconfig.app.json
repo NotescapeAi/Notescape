@@ -8,6 +8,7 @@
     "noEmit": true,
     "skipLibCheck": true,
     "strict": true
+    
     /* other options you already have... */
   },
   "include": ["src", "src/pages/PrivacyPolicy.tsx", "src/pages/ContactPage.tsx"]
