@@ -24,6 +24,7 @@ from app.routers.chat_ocr import router as chat_ocr_router
 from app.routers import subscribe
 from app.routers.analytics import router as analytics_router
 from app.routers.study_sessions import router as study_sessions_router
+from app.routers.quizzes import router as quizzes_router
 
 
 
@@ -70,6 +71,7 @@ app.include_router(profile_router)
 app.include_router(chat_ocr_router)
 app.include_router(analytics_router)
 app.include_router(study_sessions_router)
+app.include_router(quizzes_router)
 
 @app.on_event("startup")
 async def show_routes():
