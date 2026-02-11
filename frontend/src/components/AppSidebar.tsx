@@ -5,6 +5,7 @@ import {
   FolderOpen,
   MessageCircle,
   Sparkles,
+  ClipboardList, // ✅ ADDED
   Settings,
   User,
   LogOut,
@@ -19,7 +20,8 @@ type Props = {
 
 const item =
   "group relative flex items-center gap-3 rounded-[18px] px-3 py-3 text-[15px] font-semibold transition-colors duration-200";
-const active = "border-l-4 border-[var(--primary)] bg-[var(--surface)] shadow-[var(--shadow-soft)] text-[var(--text)]";
+const active =
+  "border-l-4 border-[var(--primary)] bg-[var(--surface)] shadow-[var(--shadow-soft)] text-[var(--text)]";
 
 export default function AppSidebar({ collapsed, onToggle }: Props) {
   const location = useLocation();
@@ -128,6 +130,7 @@ export default function AppSidebar({ collapsed, onToggle }: Props) {
               </>
             )}
           </NavLink>
+
           <NavLink
             to="/classes"
             className={({ isActive }) =>
@@ -146,6 +149,7 @@ export default function AppSidebar({ collapsed, onToggle }: Props) {
               </>
             )}
           </NavLink>
+
           <button
             type="button"
             onClick={() => navigate("/flashcards")}
@@ -159,6 +163,27 @@ export default function AppSidebar({ collapsed, onToggle }: Props) {
             />
             {!collapsed && <span>Flashcards</span>}
           </button>
+
+          {/* ✅ ADDED: QUIZZES */}
+          <NavLink
+            to="/quizzes"
+            className={({ isActive }) =>
+              `${item} ${isActive ? active : ""} ${collapsed ? "justify-center" : ""} ${
+                isActive ? "text-[var(--text-main)]" : `${textNeutral} ${hoverText}`
+              }`
+            }
+            title={collapsed ? "Quizzes" : undefined}
+          >
+            {({ isActive }) => (
+              <>
+                <ClipboardList
+                  className={`h-5 w-5 ${isActive ? "text-[var(--primary)]" : iconNeutral}`}
+                />
+                {!collapsed && <span>Quizzes</span>}
+              </>
+            )}
+          </NavLink>
+
           <NavLink
             to="/chatbot"
             className={({ isActive }) =>
@@ -184,6 +209,7 @@ export default function AppSidebar({ collapsed, onToggle }: Props) {
             Account
           </div>
         )}
+
         <div className="mt-4 space-y-2">
           <NavLink
             to="/settings"
@@ -203,6 +229,7 @@ export default function AppSidebar({ collapsed, onToggle }: Props) {
               </>
             )}
           </NavLink>
+
           <NavLink
             to="/profile"
             className={({ isActive }) =>
@@ -221,6 +248,7 @@ export default function AppSidebar({ collapsed, onToggle }: Props) {
               </>
             )}
           </NavLink>
+
           <NavLink
             to="/logout"
             className={({ isActive }) =>
