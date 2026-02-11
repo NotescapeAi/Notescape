@@ -34,11 +34,15 @@ const FlashcardsViewMode  = lazy(() => import("./pages/FlashcardsViewMode"));
 const FlashcardsStudyMode = lazy(() => import("./pages/FlashcardsStudyMode"));
 const FlashcardsBookmarks = lazy(() => import("./pages/FlashcardsBookmarks"));
 
+const QuizzesPage = lazy(() => import("./pages/quizzes/QuizzesPage"));
+const QuizAttemptPage = lazy(() => import("./pages/quizzes/QuizAttemptPage"));
+
 import { onAuthStateChanged, User } from "firebase/auth";
 import { auth } from "./firebase/firebase";
 import { useState } from "react";
 import { UserProvider } from "./hooks/useUser";
 import { ThemeProvider } from "./hooks/useTheme";
+
 
 function GetStartedGate() {
   const [user, setUser] = useState<User | null>(null);
@@ -119,6 +123,8 @@ function AppRoutes() {
       <Route path="/classes/:classId/flashcards"           element={<FlashcardsPage />} />
       <Route path="/flashcards" element={<FlashcardsHub />} />
       <Route path="/chatbot" element={<Chatbot />} />
+      <Route path="/quizzes" element={<RequireAuth><QuizzesPage /></RequireAuth>} />
+      <Route path="/quizzes/:quizId" element={<RequireAuth><QuizAttemptPage /></RequireAuth>} />
 
       <Route path="/classes/:classId/flashcards/view" element={<RequireAuth><FlashcardsViewMode /></RequireAuth>} />
       <Route path="/classes/:classId/flashcards/study" element={<RequireAuth><FlashcardsStudyMode /></RequireAuth>} />
