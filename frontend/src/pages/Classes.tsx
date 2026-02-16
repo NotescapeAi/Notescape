@@ -144,6 +144,7 @@ function ClassesContent() {
 
   const [files, setFiles] = useState<FileRow[] | undefined>([]);
   const [sel, setSel] = useState<Record<string, boolean>>({});
+  const [flashcardSourceIds, setFlashcardSourceIds] = useState<string[]>([]);
   const selectedIds = useMemo(
     () => (files ?? []).filter((f) => sel[f.id]).map((f) => f.id),
     [files, sel]
@@ -231,6 +232,7 @@ function ClassesContent() {
     if (selectedId == null) {
       setFiles([]);
       setSel({});
+      setFlashcardSourceIds([]);
       setCards([]);
       setActiveTab("documents");
       setSessions([]);
@@ -257,6 +259,22 @@ function ClassesContent() {
       }
     })();
   }, [selectedId]);
+
+  useEffect(() => {
+    const currentFiles = files ?? [];
+    if (!selectedId || currentFiles.length === 0) {
+      setFlashcardSourceIds([]);
+      return;
+    }
+    const fileIds = new Set(currentFiles.map((f) => f.id));
+    const indexedIds = currentFiles.filter((f) => f.status === "INDEXED").map((f) => f.id);
+    const defaultId = indexedIds[0] ?? currentFiles[0]?.id ?? null;
+    setFlashcardSourceIds((prev) => {
+      const kept = prev.filter((id) => fileIds.has(id));
+      if (kept.length > 0) return kept;
+      return defaultId ? [defaultId] : [];
+    });
+  }, [selectedId, files]);
 
   useEffect(() => {
     if (!selectedId || !files?.length || activeFile || manualDocumentClose) return;
@@ -649,12 +667,12 @@ function ClassesContent() {
   }) {
     if (!selectedId) return alert("Select a class first");
     if ((files?.length ?? 0) === 0) return alert("Upload at least one file first");
-    if (selectedIds.length === 0) {
+    if (flashcardSourceIds.length === 0) {
       showToastMessage("Select study sources first.");
       return;
     }
 
-    const ids = selectedIds;
+    const ids = flashcardSourceIds;
     const pending = (files ?? []).filter((f) => ids.includes(f.id) && f.status !== "INDEXED");
     if (pending.length > 0) {
       return alert("Some files are still processing. Wait for INDEXED before generating flashcards.");
@@ -1017,17 +1035,22 @@ function ClassesContent() {
         ? "grid-cols-1 lg:grid-cols-[minmax(0,1fr)_48px]"
         : "grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(320px,25%)] xl:grid-cols-[minmax(0,1fr)_minmax(360px,30%)]";
   const hasAnyFiles = (files?.length ?? 0) > 0;
-  const selectedIndexedCount = (files ?? []).filter((f) => selectedIds.includes(f.id) && f.status === "INDEXED").length;
-  const canGenerateFlashcards = Boolean(selectedId) && selectedIndexedCount > 0;
+  const selectedFlashcardFiles = (files ?? []).filter((f) => flashcardSourceIds.includes(f.id));
+  const selectedIndexedCount = selectedFlashcardFiles.filter((f) => f.status === "INDEXED").length;
+  const selectedPendingCount = selectedFlashcardFiles.filter((f) => f.status !== "INDEXED").length;
+  const canGenerateFlashcards =
+    Boolean(selectedId) && flashcardSourceIds.length > 0 && selectedIndexedCount > 0 && selectedPendingCount === 0;
   const generateDisabledReason = !selectedId
     ? "Select a class first."
     : !hasAnyFiles
       ? "Upload at least one document first."
-      : selectedIds.length === 0
-        ? "Select at least one document in Documents."
-        : selectedIndexedCount === 0
-          ? "Selected documents are still processing."
-          : undefined;
+      : flashcardSourceIds.length === 0
+        ? "Select at least one source document below."
+      : selectedIndexedCount === 0
+          ? "Selected document is still processing."
+          : selectedPendingCount > 0
+            ? "Some selected documents are still processing."
+            : undefined;
 
   return (
     <>
@@ -1658,9 +1681,61 @@ function ClassesContent() {
                       generateDisabledReason={generateDisabledReason}
                     />
                   </div>
+                  <div className="mt-4 rounded-xl border border-token surface-2 p-4">
+                    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Source material</div>
+                    {(files?.length ?? 0) === 0 ? (
+                      <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-token bg-white px-3 py-3 text-sm text-muted">
+                        <span>Upload a document to generate flashcards.</span>
+                        <Button onClick={() => setActiveTab("documents")}>Go to Documents</Button>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="mt-3 text-sm text-main">
+                          Generating from:{" "}
+                          <span className="font-semibold">
+                            {selectedFlashcardFiles.length > 0
+                              ? selectedFlashcardFiles.map((f) => f.filename).join(", ")
+                              : "No source selected"}
+                          </span>
+                        </div>
+                        <div className="mt-3 grid gap-2">
+                          {(files ?? []).map((f) => {
+                            const checked = flashcardSourceIds.includes(f.id);
+                            const disabled = f.status !== "INDEXED";
+                            return (
+                              <label
+                                key={f.id}
+                                className={`flex items-center justify-between rounded-lg border px-3 py-2 text-xs ${
+                                  checked ? "border-strong surface" : "border-token bg-white"
+                                } ${disabled ? "opacity-70" : ""}`}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    disabled={disabled}
+                                    onChange={(e) => {
+                                      setFlashcardSourceIds((prev) => {
+                                        if (e.target.checked) return [...prev, f.id];
+                                        return prev.filter((id) => id !== f.id);
+                                      });
+                                    }}
+                                  />
+                                  <span className="font-medium text-main">{f.filename}</span>
+                                </div>
+                                <span className="text-[11px] text-muted">
+                                  {f.status === "INDEXED" ? "Ready" : "Processing"}
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
+                  </div>
                   <div className="mt-4 flex flex-wrap gap-2 text-xs text-muted">
                     <span className="rounded-full border border-token surface-2 px-3 py-1">
-                      {selectedIds.length || (files?.length ?? 0)} file(s) in scope
+                      {flashcardSourceIds.length} source file(s) selected
                     </span>
                     {generateDisabledReason ? (
                       <span className="rounded-full border border-token surface-2 px-3 py-1">
