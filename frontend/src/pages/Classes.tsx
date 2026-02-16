@@ -1,6 +1,7 @@
 // src/pages/Classes.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { useLocation } from "react-router-dom";
+import { Download, MessageCircle, Upload, X } from "lucide-react";
 
 import ClassSidebar from "../components/ClassSidebar";
 import ClassHeaderButtons from "../components/ClassHeaderButtons";
@@ -143,6 +144,7 @@ function ClassesContent() {
 
   const [files, setFiles] = useState<FileRow[] | undefined>([]);
   const [sel, setSel] = useState<Record<string, boolean>>({});
+  const [flashcardSourceIds, setFlashcardSourceIds] = useState<string[]>([]);
   const selectedIds = useMemo(
     () => (files ?? []).filter((f) => sel[f.id]).map((f) => f.id),
     [files, sel]
@@ -187,8 +189,10 @@ function ClassesContent() {
 
   const location = useLocation();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const documentListRef = useRef<HTMLDivElement | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [newClassName, setNewClassName] = useState("");
+  const [manualDocumentClose, setManualDocumentClose] = useState(false);
 
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -228,6 +232,7 @@ function ClassesContent() {
     if (selectedId == null) {
       setFiles([]);
       setSel({});
+      setFlashcardSourceIds([]);
       setCards([]);
       setActiveTab("documents");
       setSessions([]);
@@ -238,8 +243,10 @@ function ClassesContent() {
       setSelectedQuote(null);
       setSelectionMenu(null);
       setChatDrawerOpen(false);
+      setManualDocumentClose(false);
       return;
     }
+    setManualDocumentClose(false);
     localStorage.setItem("last_class_id", String(selectedId));
     (async () => {
       const fs = await listFiles(selectedId);
@@ -254,12 +261,28 @@ function ClassesContent() {
   }, [selectedId]);
 
   useEffect(() => {
-    if (!selectedId || !files?.length || activeFile) return;
+    const currentFiles = files ?? [];
+    if (!selectedId || currentFiles.length === 0) {
+      setFlashcardSourceIds([]);
+      return;
+    }
+    const fileIds = new Set(currentFiles.map((f) => f.id));
+    const indexedIds = currentFiles.filter((f) => f.status === "INDEXED").map((f) => f.id);
+    const defaultId = indexedIds[0] ?? currentFiles[0]?.id ?? null;
+    setFlashcardSourceIds((prev) => {
+      const kept = prev.filter((id) => fileIds.has(id));
+      if (kept.length > 0) return kept;
+      return defaultId ? [defaultId] : [];
+    });
+  }, [selectedId, files]);
+
+  useEffect(() => {
+    if (!selectedId || !files?.length || activeFile || manualDocumentClose) return;
     const stored = localStorage.getItem(`chat_last_file_${selectedId}`);
     if (!stored) return;
     const match = (files ?? []).find((f) => f.id === stored);
     if (match) setActiveFile(match);
-  }, [selectedId, files, activeFile]);
+  }, [selectedId, files, activeFile, manualDocumentClose]);
 
   useEffect(() => {
     if (!selectedId || !activeFile) return;
@@ -531,7 +554,7 @@ function ClassesContent() {
         setFiles((xs) => [row, ...(xs ?? [])]);
       }
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "Upload failed");
+      showToastMessage("Upload failed. Please try again.");
     } finally {
       setBusyUpload(false);
       setDropping(false);
@@ -581,6 +604,27 @@ function ClassesContent() {
     }
   }
 
+  function openDocumentInWorkspace(file: FileRow) {
+    setManualDocumentClose(false);
+    setActiveTab("documents");
+    setActiveFile(file);
+  }
+
+  function closeActiveDocument() {
+    setManualDocumentClose(true);
+    setActiveFile(null);
+    setActiveFileViewUrl(null);
+    setActiveFileViewError(null);
+    setActiveFileViewLoading(false);
+    setSelectionMenu(null);
+    setSelectedQuote(null);
+    setPendingSnip(null);
+    setChatDrawerOpen(false);
+    window.requestAnimationFrame(() => {
+      documentListRef.current?.focus();
+    });
+  }
+
   async function resolveDocumentUrl(file: FileRow): Promise<string | null> {
     if (!selectedId) return null;
     try {
@@ -623,12 +667,12 @@ function ClassesContent() {
   }) {
     if (!selectedId) return alert("Select a class first");
     if ((files?.length ?? 0) === 0) return alert("Upload at least one file first");
-    if (selectedIds.length === 0) {
+    if (flashcardSourceIds.length === 0) {
       showToastMessage("Select study sources first.");
       return;
     }
 
-    const ids = selectedIds;
+    const ids = flashcardSourceIds;
     const pending = (files ?? []).filter((f) => ids.includes(f.id) && f.status !== "INDEXED");
     if (pending.length > 0) {
       return alert("Some files are still processing. Wait for INDEXED before generating flashcards.");
@@ -977,7 +1021,7 @@ function ClassesContent() {
   const isChatFullscreen = chatDockState === "fullscreen";
   const showChatDock = pdfFocusMode ? focusChatVisible : !isChatCollapsed && !isChatFullscreen;
   const showChatFullscreen = !pdfFocusMode && isChatFullscreen;
-  const showChatRail = !pdfFocusMode && isChatCollapsed;
+  const showChatRail = false;
   const showPdf = !isChatFullscreen;
   const isWorkspaceWide = activeTab === "documents" && !!activeFile;
   const hideReadingClutter = Boolean(activeFile) && (showChatDock || showChatFullscreen || chatDrawerOpen);
@@ -990,6 +1034,23 @@ function ClassesContent() {
       : isChatCollapsed
         ? "grid-cols-1 lg:grid-cols-[minmax(0,1fr)_48px]"
         : "grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(320px,25%)] xl:grid-cols-[minmax(0,1fr)_minmax(360px,30%)]";
+  const hasAnyFiles = (files?.length ?? 0) > 0;
+  const selectedFlashcardFiles = (files ?? []).filter((f) => flashcardSourceIds.includes(f.id));
+  const selectedIndexedCount = selectedFlashcardFiles.filter((f) => f.status === "INDEXED").length;
+  const selectedPendingCount = selectedFlashcardFiles.filter((f) => f.status !== "INDEXED").length;
+  const canGenerateFlashcards =
+    Boolean(selectedId) && flashcardSourceIds.length > 0 && selectedIndexedCount > 0 && selectedPendingCount === 0;
+  const generateDisabledReason = !selectedId
+    ? "Select a class first."
+    : !hasAnyFiles
+      ? "Upload at least one document first."
+      : flashcardSourceIds.length === 0
+        ? "Select at least one source document below."
+      : selectedIndexedCount === 0
+          ? "Selected document is still processing."
+          : selectedPendingCount > 0
+            ? "Some selected documents are still processing."
+            : undefined;
 
   return (
     <>
@@ -1043,9 +1104,6 @@ function ClassesContent() {
                   <div className="flex items-center justify-between gap-4 flex-wrap">
                     <div>
                       <div className="text-sm font-semibold text-main">{currentClass}</div>
-                      <div className="text-[0.7rem] uppercase tracking-[0.4em] text-[var(--text-muted-soft)]">
-                        Study workspace
-                      </div>
                     </div>
                   </div>
                 </div>
@@ -1055,8 +1113,14 @@ function ClassesContent() {
                   <div className="flex items-center gap-3">
                     {busyUpload && <span className="text-xs text-muted">Uploading...</span>}
                     {busyFlow && <span className="text-xs text-muted">Processing...</span>}
-                    <ClassHeaderButtons classId={String(selectedId)} onGenerate={onGenerateFlashcards} />
-                  </div>
+                    <Button
+                      onClick={() => setActiveTab("chat")}
+                      className="rounded-full"
+                    >
+                      <MessageCircle className="mr-1 h-4 w-4" />
+                      Study Assistant
+                    </Button>
+                    </div>
                 </div>
                 {activeTab === "documents" && (
                   <div className="mt-6 space-y-4">
@@ -1073,38 +1137,26 @@ function ClassesContent() {
                             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-5 py-4">
                               <div>
                                 <div className="text-sm font-semibold text-main">{activeFile.filename}</div>
-                                <div className="text-xs text-[var(--text-muted-soft)]">Document workspace</div>
+                                <div className="text-xs text-[var(--text-muted-soft)]">
+                                  {activeFile.status === "INDEXED" ? "Ready" : "Processing"}
+                                </div>
                               </div>
                               <div className="flex items-center gap-2">
-                                <button
-                                  className="rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-xs text-[var(--text-muted)] xl:hidden"
-                                  onClick={() => setChatDrawerOpen(true)}
-                                >
-                                  Open assistant
-                                </button>
-                                <a
-                                  href={activeFileViewUrl ?? "#"}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className={`rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-xs text-[var(--text-muted)] ${
-                                    activeFileViewUrl ? "" : "pointer-events-none opacity-50"
-                                  }`}
-                                >
-                                  Open
-                                </a>
                                 <a
                                   href={activeFileViewUrl ?? "#"}
                                   download
-                                  className={`rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-xs text-[var(--text-muted)] ${
+                                  className={`inline-flex h-9 items-center gap-1 rounded-lg border border-[var(--border)] px-3 text-xs font-semibold text-[var(--text-muted)] transition hover:border-[var(--primary)] hover:text-[var(--primary)] ${
                                     activeFileViewUrl ? "" : "pointer-events-none opacity-50"
                                   }`}
                                 >
+                                  <Download className="h-3.5 w-3.5" />
                                   Download
                                 </a>
                                 <button
-                                  className="rounded-lg border border-[var(--border)] px-2.5 py-1.5 text-xs text-[var(--text-muted)]"
-                                  onClick={() => setActiveFile(null)}
+                                  className="inline-flex h-9 items-center gap-1 rounded-lg border border-[var(--border)] px-3 text-xs font-semibold text-[var(--text-muted)] transition hover:border-[var(--primary)] hover:text-[var(--primary)]"
+                                  onClick={closeActiveDocument}
                                 >
+                                  <X className="h-3.5 w-3.5" />
                                   Close
                                 </button>
                               </div>
@@ -1470,28 +1522,6 @@ function ClassesContent() {
                 )}
                 {!hideReadingClutter && (
                   <>
-                    <div
-                    onDragOver={onDragOver}
-                    onDragLeave={onDragLeave}
-                    onDrop={onDrop}
-                    onClick={() => fileInputRef.current?.click()}
-                    role="button"
-                    className={`rounded-2xl border-2 border-dashed px-6 py-8 text-center transition ${
-                      dropping ? "border-strong surface-2" : "border-token surface"
-                    }`}
-                  >
-                    <div className="text-base font-semibold text-main">Upload class materials</div>
-                    <div className="mt-1 text-sm text-muted">Drag files here or click to select</div>
-                    <div className="mt-4 inline-flex items-center gap-2 rounded-lg border border-token px-3 py-1 text-xs text-muted">
-                      PDF, PPTX, DOCX
-                    </div>
-                    {invalidDropCount > 0 && (
-                      <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
-                        Ignored {invalidDropCount} unsupported file{invalidDropCount > 1 ? "s" : ""}.
-                      </div>
-                    )}
-                  </div>
-
                   <input
                     ref={fileInputRef}
                     type="file"
@@ -1506,11 +1536,30 @@ function ClassesContent() {
                     onChange={onUploadChange}
                   />
 
-                  <div className="rounded-2xl border border-token surface shadow-sm">
+                  <div
+                    ref={documentListRef}
+                    tabIndex={-1}
+                    className={`rounded-2xl border surface shadow-sm transition ${
+                      dropping ? "border-dashed border-[var(--primary)] bg-[var(--surface-2)]" : "border-token"
+                    }`}
+                    onDragOver={onDragOver}
+                    onDragLeave={onDragLeave}
+                    onDrop={onDrop}
+                  >
                     <div className="flex items-center justify-between border-b border-token px-4 py-3">
-                      <div className="text-sm font-semibold">Documents</div>
+                      <div>
+                        <div className="text-sm font-semibold">Documents</div>
+                        <div className="text-xs text-muted">PDF, PPTX, DOCX</div>
+                      </div>
                       <div className="flex items-center gap-2 text-xs text-muted">
                         <span>{selectedIds.length} selected</span>
+                        <button
+                          className="inline-flex items-center gap-1 rounded-lg border border-token surface px-2.5 py-1.5 text-xs font-semibold text-muted hover:border-[var(--primary)]"
+                          onClick={() => fileInputRef.current?.click()}
+                        >
+                          <Upload className="h-3.5 w-3.5" />
+                          Upload
+                        </button>
                         {selectedIds.length > 0 && (
                           <button
                             className="rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700"
@@ -1526,6 +1575,11 @@ function ClassesContent() {
                         )}
                       </div>
                     </div>
+                    {invalidDropCount > 0 && (
+                      <div className="mx-4 mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                        Ignored {invalidDropCount} unsupported file{invalidDropCount > 1 ? "s" : ""}.
+                      </div>
+                    )}
                     <div className="overflow-auto">
                       <table className="w-full text-sm">
                         <thead className="surface-2 text-xs text-muted">
@@ -1561,7 +1615,7 @@ function ClassesContent() {
                                 <div className="flex items-center gap-2">
                                   <button
                                     className="font-semibold text-main hover:underline"
-                                    onClick={() => setActiveFile(f)}
+                                    onClick={() => openDocumentInWorkspace(f)}
                                   >
                                     {f.filename}
                                   </button>
@@ -1578,7 +1632,7 @@ function ClassesContent() {
                               <td className="px-4 py-3">
                                 <KebabMenu
                                   items={[
-                                    { label: "Open in viewer", onClick: () => setActiveFile(f) },
+                                    { label: "Open in viewer", onClick: () => openDocumentInWorkspace(f) },
                                     { label: "Open in new tab", onClick: () => openDocument(f) },
                                     { label: "Download", onClick: () => downloadDocument(f) },
                                     { label: "Delete", onClick: () => onDeleteFile(f.id, f.filename) },
@@ -1589,8 +1643,15 @@ function ClassesContent() {
                           ))}
                           {(files?.length ?? 0) === 0 && (
                             <tr>
-                              <td colSpan={7} className="px-4 py-6 text-sm text-muted">
-                                No documents yet. Upload a PDF, PPTX, or DOCX to begin.
+                              <td colSpan={7} className="px-4 py-8">
+                                <button
+                                  className="mx-auto flex w-full max-w-md flex-col items-center rounded-xl border border-dashed border-token px-4 py-6 text-center hover:border-[var(--primary)]"
+                                  onClick={() => fileInputRef.current?.click()}
+                                >
+                                  <Upload className="h-7 w-7 text-[var(--primary)]" />
+                                  <div className="mt-2 text-sm font-semibold text-main">Upload your materials</div>
+                                  <div className="mt-1 text-xs text-muted">Click to upload - PDF, PPTX, DOCX</div>
+                                </button>
                               </td>
                             </tr>
                           )}
@@ -1613,20 +1674,78 @@ function ClassesContent() {
                         Generate cards from your selected documents or open study mode.
                       </div>
                     </div>
-                    <Link
-                      to={`/classes/${selectedId}/flashcards`}
-                      className="rounded-lg border border-token surface px-3 py-2 text-xs font-semibold text-muted"
-                    >
-                      Open flashcards
-                    </Link>
+                    <ClassHeaderButtons
+                      classId={String(selectedId)}
+                      onGenerate={onGenerateFlashcards}
+                      canGenerateFlashcards={canGenerateFlashcards}
+                      generateDisabledReason={generateDisabledReason}
+                    />
+                  </div>
+                  <div className="mt-4 rounded-xl border border-token surface-2 p-4">
+                    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Source material</div>
+                    {(files?.length ?? 0) === 0 ? (
+                      <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-token bg-white px-3 py-3 text-sm text-muted">
+                        <span>Upload a document to generate flashcards.</span>
+                        <Button onClick={() => setActiveTab("documents")}>Go to Documents</Button>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="mt-3 text-sm text-main">
+                          Generating from:{" "}
+                          <span className="font-semibold">
+                            {selectedFlashcardFiles.length > 0
+                              ? selectedFlashcardFiles.map((f) => f.filename).join(", ")
+                              : "No source selected"}
+                          </span>
+                        </div>
+                        <div className="mt-3 grid gap-2">
+                          {(files ?? []).map((f) => {
+                            const checked = flashcardSourceIds.includes(f.id);
+                            const disabled = f.status !== "INDEXED";
+                            return (
+                              <label
+                                key={f.id}
+                                className={`flex items-center justify-between rounded-lg border px-3 py-2 text-xs ${
+                                  checked ? "border-strong surface" : "border-token bg-white"
+                                } ${disabled ? "opacity-70" : ""}`}
+                              >
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    disabled={disabled}
+                                    onChange={(e) => {
+                                      setFlashcardSourceIds((prev) => {
+                                        if (e.target.checked) return [...prev, f.id];
+                                        return prev.filter((id) => id !== f.id);
+                                      });
+                                    }}
+                                  />
+                                  <span className="font-medium text-main">{f.filename}</span>
+                                </div>
+                                <span className="text-[11px] text-muted">
+                                  {f.status === "INDEXED" ? "Ready" : "Processing"}
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </>
+                    )}
                   </div>
                   <div className="mt-4 flex flex-wrap gap-2 text-xs text-muted">
                     <span className="rounded-full border border-token surface-2 px-3 py-1">
-                      {selectedIds.length || (files?.length ?? 0)} file(s) in scope
+                      {flashcardSourceIds.length} source file(s) selected
                     </span>
-                    <span className="rounded-full border border-token surface-2 px-3 py-1">
-                      Use the Generate button above
-                    </span>
+                    {generateDisabledReason ? (
+                      <span className="rounded-full border border-token surface-2 px-3 py-1">
+                        {generateDisabledReason}
+                      </span>
+                    ) : (
+                      <span className="rounded-full border border-token surface-2 px-3 py-1">
+                        {selectedIndexedCount} indexed document(s) ready
+                      </span>
+                    )}
                   </div>
                   <div className="mt-4 rounded-xl border border-token surface-2 p-4">
                     <div className="text-xs font-semibold text-muted">Needs attention</div>
@@ -1640,7 +1759,7 @@ function ClassesContent() {
                           <div key={c.card_id} className="rounded-lg border border-token bg-white/60 px-3 py-2 text-xs">
                             <div className="font-semibold text-main line-clamp-2">{c.question}</div>
                             <div className="mt-1 text-[11px] text-muted">
-                              Struggle {Math.round(c.struggle_rate * 100)}% · Avg {Math.round(c.avg_response_time)}ms ·
+                              Struggle {Math.round(c.struggle_rate * 100)}% - Avg {Math.round(c.avg_response_time)}ms -
                               Score {c.weakness_score.toFixed(2)}
                             </div>
                           </div>

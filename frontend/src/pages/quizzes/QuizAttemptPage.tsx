@@ -4,8 +4,10 @@ import AppShell from "../../layouts/AppShell";
 import { ArrowLeft, CheckCircle2, XCircle, Send, Clock, BookOpen } from "lucide-react";
 import {
   getQuiz,
+  getQuizBreakdown,
   startQuizAttempt,
   submitQuizAttempt,
+  type QuizBreakdown,
   type QuizDetail,
   type SubmitAttemptResponse,
 } from "../../lib/api";
@@ -25,6 +27,7 @@ export default function QuizAttemptPage() {
   const [submitting, setSubmitting] = useState(false);
   const [attemptResult, setAttemptResult] = useState<SubmitAttemptResponse | null>(null);
   const [attemptId, setAttemptId] = useState<string | null>(null);
+  const [tagBreakdown, setTagBreakdown] = useState<QuizBreakdown | null>(null);
 
   // Timer
   const [startTime, setStartTime] = useState<number>(Date.now());
@@ -143,6 +146,12 @@ export default function QuizAttemptPage() {
 
       const result = await submitQuizAttempt(currentAttemptId, payload, true);
       setAttemptResult(result);
+      try {
+        const breakdown = await getQuizBreakdown(currentAttemptId);
+        setTagBreakdown(breakdown);
+      } catch {
+        setTagBreakdown(null);
+      }
       
       // Scroll to top to show score
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -453,8 +462,35 @@ export default function QuizAttemptPage() {
                     </div>
 
                     <div className="rounded-[14px] bg-amber-50 dark:bg-amber-900/20 p-4 text-xs leading-relaxed text-amber-800 dark:text-amber-300">
-                      <strong>Note:</strong> Only MCQs are auto-scored. Subjective answers require manual review.
+                      <strong>Note:</strong> Subjective answers are rubric-scored; review missing points to improve.
                     </div>
+                    {tagBreakdown && tagBreakdown.by_tag.length > 0 && (
+                      <div className="card-neutral p-4">
+                        <div className="text-xs uppercase tracking-wider text-[var(--text-muted)]">
+                          Tag breakdown
+                        </div>
+                        {tagBreakdown.struggled_tags.length > 0 && (
+                          <div className="mt-2 text-xs text-[var(--text-muted)]">
+                            You struggled with: {tagBreakdown.struggled_tags.join(", ")}
+                          </div>
+                        )}
+                        <div className="mt-3 space-y-2">
+                          {tagBreakdown.by_tag.map((row) => (
+                            <div key={row.tag_id} className="rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs">
+                              <div className="font-semibold text-[var(--text-main)]">{row.tag}</div>
+                              <div className="text-[var(--text-muted)]">
+                                Accuracy {Math.round(row.accuracy_pct)}% ({row.struggled_questions}/{row.total_questions} struggled)
+                              </div>
+                              {row.missing_points.length > 0 && (
+                                <div className="mt-1 text-[var(--text-muted)]">
+                                  Missing points: {row.missing_points.slice(0, 2).join("; ")}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </>
                 )}
 

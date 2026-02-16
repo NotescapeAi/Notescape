@@ -5,6 +5,8 @@ import Button from "./Button";
 
 type Props = {
   classId: string | number;
+  canGenerateFlashcards?: boolean;
+  generateDisabledReason?: string;
   onGenerate?: (opts: {
     difficulty: "easy" | "medium" | "hard";
     n_cards: number;
@@ -29,7 +31,12 @@ function isStyle(x: unknown): x is Style {
   return x === "mixed" || x === "definitions" || x === "conceptual" || x === "qa";
 }
 
-export default function ClassHeaderButtons({ classId, onGenerate }: Props) {
+export default function ClassHeaderButtons({
+  classId,
+  onGenerate,
+  canGenerateFlashcards = true,
+  generateDisabledReason,
+}: Props) {
   const navigate = useNavigate();
   const toId = Number(classId);
 
@@ -71,7 +78,7 @@ export default function ClassHeaderButtons({ classId, onGenerate }: Props) {
   }, [open]);
 
   const handleGenerate = async () => {
-    if (!toId) return;
+    if (!toId || !canGenerateFlashcards) return;
     if (!onGenerate) {
       navigate(`/classes/${toId}/flashcards`);
       return;
@@ -90,10 +97,10 @@ export default function ClassHeaderButtons({ classId, onGenerate }: Props) {
       <Button
         variant="primary"
         onClick={handleGenerate}
-        disabled={busy}
-        title="Generate flashcards for the selected files"
+        disabled={busy || !canGenerateFlashcards}
+        title={generateDisabledReason || "Generate flashcards from selected documents"}
       >
-        {busy ? "Generating..." : "Generate"}
+        {busy ? "Generating flashcards..." : "Generate flashcards"}
       </Button>
 
       <Button

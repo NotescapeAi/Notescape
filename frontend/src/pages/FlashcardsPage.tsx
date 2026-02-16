@@ -1,6 +1,6 @@
 // src/pages/FlashcardsPage.tsx
 import { useEffect, useMemo, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   listFlashcards,
   deleteFlashcard,
@@ -8,9 +8,11 @@ import {
   listFiles,
   getFlashcardProgress,
   getMasteryStats,
+  getWeakTags,
   createFlashcard,
   updateFlashcard,
   type Flashcard,
+  type WeakTag,
 } from "../lib/api";
 import AppShell from "../layouts/AppShell";
 import Button from "../components/Button";
@@ -66,6 +68,7 @@ export default function FlashcardsPage() {
   const { classId } = useParams();
   const id = Number(classId);
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [cardsRaw, setCardsRaw] = useState<Flashcard[]>([]);
   const [className, setClassName] = useState<string>("");
@@ -75,6 +78,8 @@ export default function FlashcardsPage() {
   const [error, setError] = useState<string | null>(null);
   const [files, setFiles] = useState<{ id: string; filename: string }[]>([]);
   const [fileFilter, setFileFilter] = useState<string>("all");
+  const [tagFilter, setTagFilter] = useState<string>(() => (searchParams.get("tag") || "all").toLowerCase());
+  const [weakTags, setWeakTags] = useState<WeakTag[]>([]);
   const [progress, setProgress] = useState<{ total: number; due_now: number; due_today: number; learning: number } | null>(null);
   const [masteryStats, setMasteryStats] = useState<{
     total_unique: number;
@@ -115,6 +120,17 @@ export default function FlashcardsPage() {
   }
 
   useEffect(() => {
+    (async () => {
+      try {
+        const rows = await getWeakTags({ limit: 10 });
+        setWeakTags(rows.filter((row) => row.class_id === id || row.class_id == null));
+      } catch {
+        setWeakTags([]);
+      }
+    })();
+  }, [id]);
+
+  useEffect(() => {
     let mounted = true;
     (async () => {
       try {
@@ -142,16 +158,32 @@ export default function FlashcardsPage() {
     localStorage.setItem("last_class_id", String(id));
   }, [id]);
 
+  useEffect(() => {
+    const fromQuery = (searchParams.get("tag") || "all").toLowerCase();
+    setTagFilter(fromQuery);
+  }, [searchParams]);
+
   const filtered = useMemo(() => {
     const byDifficulty =
       difficultyFilter === "all"
         ? cardsRaw
         : cardsRaw.filter((c) => (c.difficulty ?? "medium") === difficultyFilter);
     const byDue = viewFilter === "due" ? byDifficulty.filter((c) => isDue(c)) : byDifficulty;
-    return byDue;
-  }, [cardsRaw, difficultyFilter, viewFilter]);
+    if (tagFilter === "all") return byDue;
+    return byDue.filter((c) => (c.tags ?? []).map((t) => String(t).toLowerCase()).includes(tagFilter));
+  }, [cardsRaw, difficultyFilter, viewFilter, tagFilter]);
 
   const dueCards = useMemo(() => cardsRaw.filter((c) => isDue(c)), [cardsRaw]);
+  const availableTags = useMemo(() => {
+    const values = new Set<string>();
+    cardsRaw.forEach((card) => {
+      (card.tags ?? []).forEach((tag) => {
+        const value = String(tag).trim().toLowerCase();
+        if (value) values.add(value);
+      });
+    });
+    return Array.from(values).sort((a, b) => a.localeCompare(b));
+  }, [cardsRaw]);
 
   const handleView = (cardsList: Flashcard[], startIndex = 0) => {
     navigate(`/classes/${id}/flashcards/view`, {
@@ -245,6 +277,18 @@ export default function FlashcardsPage() {
     await loadData(fileFilter);
   }
 
+  function setTagAndQuery(tag: string) {
+    setTagFilter(tag);
+    const next = new URLSearchParams(searchParams);
+    if (tag === "all") {
+      next.delete("tag");
+      setSearchParams(next, { replace: true });
+      return;
+    }
+    next.set("tag", tag);
+    setSearchParams(next, { replace: true });
+  }
+
   return (
     <AppShell title="Flashcards" breadcrumbs={["Flashcards"]} subtitle={className || undefined}>
       <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6">
@@ -304,8 +348,38 @@ export default function FlashcardsPage() {
               </option>
             ))}
           </select>
+          <select
+            value={tagFilter}
+            onChange={(e) => setTagAndQuery(e.target.value)}
+            className="h-10 rounded-2xl border border-token surface px-3 text-sm text-muted"
+          >
+            <option value="all">All tags</option>
+            {availableTags.map((tag) => (
+              <option key={tag} value={tag}>
+                {tag}
+              </option>
+            ))}
+          </select>
             </div>
           </div>
+
+        {weakTags.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {weakTags.map((tag) => (
+              <button
+                key={tag.tag_id}
+                onClick={() => setTagAndQuery(tag.tag.toLowerCase())}
+                className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+                  tagFilter === tag.tag.toLowerCase()
+                    ? "border-[var(--primary)] bg-[var(--primary)] text-inverse"
+                    : "border-token surface text-muted"
+                }`}
+              >
+                {tag.tag}
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="mt-2 grid grid-cols-1 md:grid-cols-4 gap-3">
           {[

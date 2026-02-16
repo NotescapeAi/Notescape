@@ -71,20 +71,19 @@ export default function AppSidebar({ collapsed, onToggle }: Props) {
     >
       <div className={`h-full ${collapsed ? "p-3" : "p-4"} ${shellClass}`}>
         <header
-          className={`flex h-[88px] ${
-            collapsed ? "flex-col items-center justify-start" : "items-center justify-between"
-          }`}
-          style={{ padding: "16px 12px" }}
+          className={`flex h-[62px] items-center ${collapsed ? "justify-center" : "justify-between"} px-2`}
         >
-          <div className={`flex ${collapsed ? "w-full flex-col items-center" : "items-center"}`}>
-            <div
-              className={`flex h-[52px] w-[52px] items-center justify-center rounded-full bg-[var(--primary)] text-base font-semibold text-inverse shadow-[0_12px_28px_rgba(123,95,239,0.35)] ${
-                collapsed ? "mb-2.5" : ""
-              }`}
-            >
+          {collapsed ? (
+            <div className="flex h-9 w-9 items-center justify-center rounded-full border border-token surface text-sm font-semibold text-[var(--primary)]">
               N
             </div>
-          </div>
+          ) : (
+            <div className="px-1">
+              <div className="text-[1.02rem] font-semibold tracking-tight text-[var(--text-main)]">
+                Notescape
+              </div>
+            </div>
+          )}
           <button
             type="button"
             onClick={onToggle}
@@ -103,15 +102,8 @@ export default function AppSidebar({ collapsed, onToggle }: Props) {
             />
           </button>
         </header>
-
-        {!collapsed && (
-          <div className="px-1">
-            <div className="text-lg font-semibold tracking-tight">Notescape</div>
-            <div className="text-xs text-[var(--muted)]">Learning workspace</div>
-          </div>
-        )}
-
-        <nav className="mt-8 space-y-2">
+        <div className="border-b border-token/80" />
+        <nav className="mt-5 space-y-2">
           <NavLink
             to="/dashboard"
             className={({ isActive }) =>

@@ -122,6 +122,13 @@ async def apply_study_review(
         """,
         (user_id, card_id, deck_id, topic_id_value, rating, response_time_ms),
     )
+    await cur.execute(
+        """
+        INSERT INTO flashcard_reviews (user_id, flashcard_id, rating, reviewed_at, response_time_ms)
+        VALUES (%s, %s, %s, now(), %s)
+        """,
+        (user_id, card_id, rating, response_time_ms),
+    )
 
     await cur.execute(
         """

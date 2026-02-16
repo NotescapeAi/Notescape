@@ -28,6 +28,21 @@ export default function QuizPanel({ classId, files, onQuizCreated }: QuizPanelPr
     { value: "short_qa", label: "Short Q&A", icon: "❓" },
   ];
 
+  function friendlyQuizError(err: any): string {
+    const detail = err?.response?.data?.detail;
+    const raw = typeof detail === "string" ? detail : err?.message || "Failed to generate quiz";
+    const lower = String(raw).toLowerCase();
+    if (
+      lower.includes("relation") ||
+      lower.includes("sql") ||
+      lower.includes("syntax") ||
+      lower.includes("traceback")
+    ) {
+      return "Something went wrong while generating quiz. Please try again.";
+    }
+    return String(raw);
+  }
+
   function toggleSubjectiveType(type: string) {
     setSelectedSubjectiveTypes((prev) =>
       prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type]
@@ -110,14 +125,14 @@ export default function QuizPanel({ classId, files, onQuizCreated }: QuizPanelPr
             clearInterval(pollInterval);
             setGenerating(false);
             setJobId(null);
-            setError(status.error_message || "Quiz generation failed");
+            setError(status.error_message || "Something went wrong while generating quiz. Please try again.");
           }
         } catch (err: any) {
           console.error("Error polling job:", err);
           clearInterval(pollInterval);
           setGenerating(false);
           setJobId(null);
-          setError(err?.message || "Failed to check job status");
+          setError(friendlyQuizError(err));
         }
       }, 2000);
 
@@ -131,7 +146,7 @@ export default function QuizPanel({ classId, files, onQuizCreated }: QuizPanelPr
     } catch (err: any) {
       console.error("Error creating quiz:", err);
       setGenerating(false);
-      setError(err?.message || "Failed to create quiz");
+      setError(friendlyQuizError(err));
     }
   }
 

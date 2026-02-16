@@ -1,6 +1,7 @@
 from typing import List, Optional, Tuple, Dict
 
 from app.core.db import db_conn
+from app.lib.tags import normalize_tag_names, sync_flashcard_tags
 
 
 def vec_literal(vec: List[float]) -> str:
@@ -49,7 +50,7 @@ async def insert_flashcards(
                 continue
             hint = c.get("hint")
             diff = c.get("difficulty") or "medium"
-            tags = c.get("tags") or []
+            tags = normalize_tag_names(c.get("tags") or [])
             await cur.execute(
                 """
                 INSERT INTO flashcards (class_id, file_id, source_chunk_id, question, answer, hint, difficulty, tags, created_by, updated_at)
@@ -61,6 +62,7 @@ async def insert_flashcards(
             row = await cur.fetchone()
             card_id = row[0]
             out_ids.append(card_id)
+            await sync_flashcard_tags(cur, card_id, tags)
             if created_by:
                 await cur.execute(
                     """

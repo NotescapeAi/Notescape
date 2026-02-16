@@ -59,6 +59,7 @@ services:
       GROQ_API_KEY: "${GROQ_API_KEY:-}"
       REDIS_URL: "redis://redis:6379/0"
       QUIZ_MIGRATION_FILE: "/workspace/db/init/10_quizzes.sql"
+      LEARNING_ANALYTICS_MIGRATION_FILE: "/workspace/db/init/11_learning_analytics_tags.sql"
     depends_on:
       db:
         condition: service_healthy
@@ -89,6 +90,7 @@ services:
       S3_REGION: "${S3_REGION:-us-east-1}"
       REDIS_URL: "redis://redis:6379/0"
       QUIZ_MIGRATION_FILE: "/workspace/db/init/10_quizzes.sql"
+      LEARNING_ANALYTICS_MIGRATION_FILE: "/workspace/db/init/11_learning_analytics_tags.sql"
     depends_on:
       db:
         condition: service_healthy
