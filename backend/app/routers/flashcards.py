@@ -13,6 +13,7 @@ from app.core.llm import get_embedder
 from app.dependencies import get_request_user_uid
 from app.lib.flashcard_generation import insert_flashcards, pick_relevant_chunks, vec_literal
 from app.lib.study_analytics import apply_study_review
+from app.lib.tags import normalize_tag_names, sync_flashcard_tags
 
 log = logging.getLogger("uvicorn.error")
 router = APIRouter(prefix="/api/flashcards", tags=["flashcards"])
@@ -362,12 +363,13 @@ async def create_manual_flashcard(payload: ManualCreateReq, user_id: str = Depen
                 payload.answer.strip(),
                 payload.hint,
                 payload.difficulty or "medium",
-                payload.tags or [],
+                normalize_tag_names(payload.tags or []),
                 user_id,
             ),
         )
         row = await cur.fetchone()
         card_id = row[0]
+        await sync_flashcard_tags(cur, card_id, payload.tags or [])
         await cur.execute(
             """
             INSERT INTO card_review_state (card_id, user_id, next_review_at, repetitions, interval, ease_factor, lapse_count, updated_at)
@@ -403,6 +405,7 @@ async def update_flashcard(
 
         fields = []
         values: List[object] = []
+        normalized_tags = None
         if payload.question is not None:
             fields.append("question=%s")
             values.append(payload.question.strip())
@@ -414,7 +417,8 @@ async def update_flashcard(
             values.append(payload.hint)
         if payload.tags is not None:
             fields.append("tags=%s")
-            values.append(payload.tags)
+            normalized_tags = normalize_tag_names(payload.tags)
+            values.append(normalized_tags)
         if payload.difficulty is not None:
             fields.append("difficulty=%s")
             values.append(payload.difficulty)
@@ -429,6 +433,8 @@ async def update_flashcard(
             f"UPDATE flashcards SET {', '.join(fields)} WHERE id::text=%s",
             tuple(values),
         )
+        if payload.tags is not None:
+            await sync_flashcard_tags(cur, card_id, normalized_tags or [])
 
         if payload.reset_progress:
             await cur.execute(

@@ -24,6 +24,21 @@ export default function QuizzesPage() {
   const [error, setError] = useState<string | null>(null);
   const [deletingQuizId, setDeletingQuizId] = useState<string | null>(null);
 
+  function friendlyQuizError(err: any, fallback: string) {
+    const detail = err?.response?.data?.detail;
+    const raw = typeof detail === "string" ? detail : err?.message || fallback;
+    const lower = String(raw).toLowerCase();
+    if (
+      lower.includes("relation") ||
+      lower.includes("sql") ||
+      lower.includes("syntax") ||
+      lower.includes("traceback")
+    ) {
+      return "Something went wrong while generating quiz. Please try again.";
+    }
+    return String(raw);
+  }
+
   // Load classes once
   useEffect(() => {
     (async () => {
@@ -96,7 +111,7 @@ export default function QuizzesPage() {
       await loadQuizzes();
     } catch (e: any) {
       console.error("Error deleting quiz:", e);
-      alert(e?.message || "Failed to delete quiz");
+      alert(friendlyQuizError(e, "Failed to delete quiz"));
     } finally {
       setDeletingQuizId(null);
     }

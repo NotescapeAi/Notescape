@@ -9,9 +9,11 @@ import {
   listFlashcards,
   getStudySessionOverview,
   listRecentStudySessions,
+  getWeakTags,
   type StudySession,
   type ClassRow,
   type Flashcard,
+  type WeakTag,
 } from "../lib/api";
 
 function formatDuration(seconds: number) {
@@ -35,6 +37,7 @@ export default function Dashboard() {
     avg_seconds_7d: number;
   } | null>(null);
   const [recentSessions, setRecentSessions] = useState<StudySession[]>([]);
+  const [weakTags, setWeakTags] = useState<WeakTag[]>([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
@@ -70,9 +73,10 @@ export default function Dashboard() {
           const cards = await listFlashcards(cs[0].id);
           setDueCards((cards ?? []).filter(isDue).slice(0, 5));
         }
-        const [overview, sessions] = await Promise.all([
+        const [overview, sessions, weakTagRows] = await Promise.all([
           getStudySessionOverview(),
           listRecentStudySessions(10),
+          getWeakTags({ limit: 12 }),
         ]);
         setStudyOverview({
           total_seconds_7d: overview.total_seconds_7d,
@@ -80,6 +84,7 @@ export default function Dashboard() {
           avg_seconds_7d: overview.avg_seconds_7d,
         });
         setRecentSessions(sessions);
+        setWeakTags(weakTagRows);
       } finally {
         setLoading(false);
       }
@@ -128,6 +133,20 @@ export default function Dashboard() {
         : "Start a study session",
     },
   ];
+  const hasInsightData = weakTags.length > 0;
+  const weakInsights = useMemo(
+    () => [...weakTags].sort((a, b) => a.quiz_accuracy_pct - b.quiz_accuracy_pct).slice(0, 5),
+    [weakTags]
+  );
+  const strongInsights = useMemo(
+    () => [...weakTags].sort((a, b) => b.quiz_accuracy_pct - a.quiz_accuracy_pct).slice(0, 5),
+    [weakTags]
+  );
+  const overallAccuracy = useMemo(() => {
+    if (!weakTags.length) return null;
+    const total = weakTags.reduce((sum, tag) => sum + (tag.quiz_accuracy_pct || 0), 0);
+    return Math.round(total / weakTags.length);
+  }, [weakTags]);
 
   return (
     <AppShell title="Dashboard" headerMaxWidthClassName="max-w-[1200px]">
@@ -259,6 +278,78 @@ export default function Dashboard() {
                 )}
               </div>
             </div>
+          </section>
+
+          <section className="card-neutral p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-xs uppercase tracking-[0.3em] text-[var(--text-muted-soft)]">Learning insights</div>
+                <div className="mt-2 text-lg font-semibold text-[var(--text-main)]">Weak and strong areas</div>
+              </div>
+              <span className="text-xs text-[var(--text-secondary)]">
+                {overallAccuracy == null ? "Not enough data yet" : `Accuracy ${overallAccuracy}%`}
+              </span>
+            </div>
+            {hasInsightData ? (
+              <>
+                <div className="mt-5 grid gap-4 md:grid-cols-2">
+                  <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 shadow-[var(--shadow-soft)]">
+                    <div className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--text-muted-soft)]">
+                      Weak areas
+                    </div>
+                    <div className="space-y-2">
+                      {weakInsights.map((tag) => (
+                        <div key={`weak-${tag.tag_id}`} className="flex items-center justify-between text-sm">
+                          <span className="font-semibold text-[var(--text-main)]">{tag.tag}</span>
+                          <span className="text-[var(--text-secondary)]">{Math.round(tag.quiz_accuracy_pct)}%</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-3">
+                      {weakInsights[0]?.class_id ? (
+                        <button
+                          className="rounded-full border border-[var(--border-soft)] px-3 py-1 text-[11px] font-semibold text-[var(--text-secondary)]"
+                          onClick={() =>
+                            navigate(
+                              `/classes/${weakInsights[0].class_id}/flashcards?tag=${encodeURIComponent(
+                                weakInsights[0].tag
+                              )}`
+                            )
+                          }
+                        >
+                          Study weak areas
+                        </button>
+                      ) : (
+                        <span className="text-xs text-[var(--text-secondary)]">Study weak areas</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-4 shadow-[var(--shadow-soft)]">
+                    <div className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--text-muted-soft)]">
+                      Strong areas
+                    </div>
+                    <div className="space-y-2">
+                      {strongInsights.map((tag) => (
+                        <div key={`strong-${tag.tag_id}`} className="flex items-center justify-between text-sm">
+                          <span className="font-semibold text-[var(--text-main)]">{tag.tag}</span>
+                          <span className="text-[var(--text-secondary)]">{Math.round(tag.quiz_accuracy_pct)}%</span>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mt-3 text-xs text-[var(--text-secondary)]">
+                      Doing well. Keep reviewing these to retain mastery.
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-4 text-xs text-[var(--text-secondary)]">
+                  Overall rating: Accuracy {overallAccuracy}% in recent attempts.
+                </div>
+              </>
+            ) : (
+              <div className="mt-5 rounded-2xl border border-dashed border-[var(--border-soft)] bg-[var(--surface-2)] px-5 py-6 text-sm text-[var(--text-secondary)]">
+                Complete a quiz or review flashcards to see insights.
+              </div>
+            )}
           </section>
 
           <section className="card-neutral p-6">

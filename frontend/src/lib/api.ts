@@ -135,6 +135,34 @@ export type StudyTrendPoint = {
   avg_response_time: number;
 };
 
+export type WeakTag = {
+  tag_id: number;
+  tag: string;
+  quiz_accuracy: number;
+  quiz_accuracy_pct: number;
+  flashcard_difficulty: number;
+  flashcard_difficulty_pct: number;
+  weakness_score: number;
+  class_id?: number | null;
+  last_seen?: string | null;
+};
+
+export type QuizTagBreakdown = {
+  tag_id: number;
+  tag: string;
+  accuracy: number;
+  accuracy_pct: number;
+  total_questions: number;
+  struggled_questions: number;
+  missing_points: string[];
+};
+
+export type QuizBreakdown = {
+  attempt_id: string;
+  struggled_tags: string[];
+  by_tag: QuizTagBreakdown[];
+};
+
 export type MasteryCard = {
   id: string;
   question: string;
@@ -882,6 +910,43 @@ export async function getStudyTrends(params?: { days?: number }): Promise<StudyT
   return Array.isArray(data) ? data : [];
 }
 
+export async function getWeakTags(params?: {
+  limit?: number;
+  recent_quiz_attempts?: number;
+  recent_flashcard_reviews?: number;
+}): Promise<WeakTag[]> {
+  const headers = await userHeader();
+  const search = new URLSearchParams();
+  if (params?.limit != null) search.set("limit", String(params.limit));
+  if (params?.recent_quiz_attempts != null) search.set("recent_quiz_attempts", String(params.recent_quiz_attempts));
+  if (params?.recent_flashcard_reviews != null) search.set("recent_flashcard_reviews", String(params.recent_flashcard_reviews));
+  const q = search.toString();
+  const { data } = await http.get<WeakTag[]>(`/analytics/weak-tags${q ? `?${q}` : ""}`, { headers });
+  return Array.isArray(data) ? data : [];
+}
+
+export async function getTagAnalytics(tagId: number): Promise<{
+  tag_id: number;
+  tag: string;
+  quiz_accuracy: number;
+  quiz_accuracy_pct: number;
+  flashcard_difficulty: number;
+  flashcard_difficulty_pct: number;
+  weakness_score: number;
+  quiz_question_count: number;
+  flashcard_count: number;
+}> {
+  const headers = await userHeader();
+  const { data } = await http.get(`/analytics/tag/${tagId}`, { headers });
+  return data;
+}
+
+export async function getQuizBreakdown(attemptId: string): Promise<QuizBreakdown> {
+  const headers = await userHeader();
+  const { data } = await http.get<QuizBreakdown>(`/analytics/quiz-breakdown/${attemptId}`, { headers });
+  return data;
+}
+
 
 
 
@@ -940,6 +1005,9 @@ export type SubmitAttemptResponse = {
     question_id: number;
     qtype: string;
     is_correct: boolean | null;
+    score: number;
+    feedback?: string;
+    missing_points?: string[];
     correct_index?: number;
     answer_key?: string;
   }>;
