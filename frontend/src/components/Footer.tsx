@@ -1,108 +1,114 @@
 import { Link } from "react-router-dom";
 import { FormEvent, useState } from "react";
-<<<<<<< HEAD
-import emailjs from "@emailjs/browser";
-import "./footer.css";
-=======
 import "./footer.css";
 import { sendNewsletterSubscription } from "../lib/newsletter";
->>>>>>> 79368a9 (WIP: local changes)
+
+type Feedback = {
+  variant: "success" | "error";
+  message: string;
+};
 
 const Footer: React.FC = () => {
-  const [subscribed, setSubscribed] = useState(false);
   const [email, setEmail] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState("");
+  const [feedback, setFeedback] = useState<Feedback | null>(null);
 
-  const handleSubscribe = async (e: FormEvent) => {
+  const handleSubscribe = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
+      setFeedback({ variant: "error", message: "Please provide an email address." });
+      return;
+    }
 
-<<<<<<< HEAD
+    setIsSubmitting(true);
+    setFeedback(null);
+
     try {
-      await emailjs.send(
-        import.meta.env.VITE_EMAILJS_SERVICE_ID,
-        import.meta.env.VITE_EMAILJS_TEMPLATE_ID,
-        {
-          user_email: email,
-        },
-        import.meta.env.VITE_EMAILJS_PUBLIC_KEY
-      );
-
-      setSubscribed(true);
+      await sendNewsletterSubscription(trimmedEmail, "Footer");
+      setFeedback({ variant: "success", message: "Subscribed! We'll keep you posted." });
       setEmail("");
     } catch (error) {
-      console.error("Subscription failed", error);
-      alert("Subscription failed. Try again.");
-=======
-    setError("");
-    setIsSubmitting(true);
-    try {
-      await sendNewsletterSubscription(email, "Footer");
-      setSubscribed(true);
-      setEmail("");
-    } catch (err) {
-      console.error("Subscription failed", err);
-      setError("Unable to subscribe right now. Please try again later.");
+      const message = error instanceof Error ? error.message : String(error ?? "unknown error");
+      if (message.includes("newsletter configuration is missing")) {
+        setFeedback({
+          variant: "success",
+          message: "Subscribed (demo). Thanks for showing interest!",
+        });
+        setEmail("");
+      } else {
+        setFeedback({
+          variant: "error",
+          message: "Unable to subscribe right now. Please try again later.",
+        });
+      }
     } finally {
       setIsSubmitting(false);
->>>>>>> 79368a9 (WIP: local changes)
     }
   };
 
   return (
     <footer className="ns-footer relative w-full mt-auto">
       <div className="container foot-grid">
-        <div>
+        <section>
           <div className="foot-brand">
             <img src="/logo1.png" alt="Notescape logo" />
             <strong className="agr-text">Notescape</strong>
           </div>
-          <p className="foot-note">
-            The first AI workspace for faster learning.
-          </p>
-        </div>
+          <p className="foot-note">The first AI workspace for faster learning.</p>
+        </section>
 
-        <div>
+        <section>
           <h4>Product</h4>
           <Link to="/">Home</Link>
           <Link to="/#how">How It Works</Link>
           <Link to="/#features">Features</Link>
-        </div>
+        </section>
 
-        <div>
+        <section>
           <h4>Company</h4>
           <Link to="/support">Contact</Link>
           <Link to="/support">Support</Link>
           <Link to="/privacy">Privacy Policy</Link>
           <Link to="/terms">Terms of Use</Link>
-        </div>
+        </section>
 
-        <div>
-          <h4>Subscribe</h4>
-          {subscribed ? (
-            <p className="text-green-600 font-semibold mt-2">
-              ✅ Subscribed!
-            </p>
-          ) : (
-            <form className="subscribe" onSubmit={handleSubscribe}>
-              <input
-                type="email"
-                placeholder="Enter your email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-              <button type="submit" disabled={!email.trim() || isSubmitting}>
-                {!isSubmitting ? "Subscribe" : "Subscribing…"}
-              </button>
+        <section className="footer-subscribe">
+          <div className="space-y-2">
+            <h4 className="text-white font-semibold text-lg">Subscribe</h4>
+            <p className="text-white/80 text-sm">Get product updates.</p>
+
+            <form className="pt-1" onSubmit={handleSubscribe}>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                <input
+                  type="email"
+                  placeholder="Email address"
+                  aria-label="Email address for newsletter"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="h-11 w-full sm:w-72 rounded-xl px-4 text-sm text-neutral-900 placeholder:text-neutral-400 outline-none border border-white/20 focus:border-white/40 focus:ring-2 focus:ring-white/30 bg-white"
+                />
+                <button
+                  type="submit"
+                  className="h-11 inline-flex items-center justify-center rounded-xl bg-black px-6 text-white text-sm font-semibold leading-none hover:bg-neutral-800 transition"
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? "Subscribing…" : "Subscribe"}
+                </button>
+              </div>
             </form>
-          )}
-          {error && <p className="subscribe-feedback error">{error}</p>}
-        </div>
+
+            {feedback && (
+              <p className={`subscribe-feedback ${feedback.variant}`} aria-live="polite">
+                {feedback.message}
+              </p>
+            )}
+          </div>
+        </section>
       </div>
 
       <div className="container foot-bottom">
-        © {new Date().getFullYear()} Notescape. All rights reserved.
+        (c) {new Date().getFullYear()} Notescape. All rights reserved.
       </div>
     </footer>
   );

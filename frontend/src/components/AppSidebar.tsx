@@ -59,7 +59,7 @@ export default function AppSidebar({ collapsed, onToggle }: Props) {
     };
   }, []);
   const shellClass =
-    "bg-[var(--surface-2)] text-[var(--text)] border border-[var(--border-soft)] shadow-[var(--shadow-soft)] rounded-[32px] overflow-hidden";
+    "bg-[var(--bg-surface)] text-[var(--text)] border border-[var(--border-subtle)] shadow-[var(--shadow-soft)] rounded-[32px] overflow-hidden";
   const textNeutral = "text-[var(--text-muted)]";
   const iconNeutral = "text-[var(--text-muted)]";
   const hoverText = "hover:text-[var(--text-main)]";

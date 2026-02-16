@@ -85,7 +85,9 @@ function NotFound() {
 function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="app-shell">
-      <div className="app-content">{children}</div>
+      <div id="app-scroll-container" className="app-content">
+        {children}
+      </div>
     </div>
   );
 }
@@ -105,12 +107,6 @@ function AppRoutes() {
       <Route path="/get-started" element={<GetStartedGate />} />
       <Route path="/signup" element={<Signup />} />
       <Route path="/login" element={<Login />} />
-      {/* marketing / auth */}
-      <Route path="/"                element={<LandingPage />} />
-      <Route path="/start"           element={<NotescapeStartPage />} />
-      <Route path="/get-started"     element={<GetStartedGate />} />
-      <Route path="/signup"          element={<Signup />} />
-      <Route path="/login"           element={<Login />} />
       <Route path="/verify-email"  element={<RequireAuth requireEmailVerified={false}><VerifyEmail /></RequireAuth>} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/logout" element={<LogoutPage />} />
@@ -159,13 +155,6 @@ function AppRoutes() {
       />
 
 
-      {/* Put the specific routes FIRST (good practice, though v6 matches exactly) */}
-      <Route path="/classes/:classId/flashcards/view"      element={<FlashcardsViewMode />} />
-      <Route path="/classes/:classId/flashcards/study"     element={<FlashcardsStudyMode />} />
-      <Route path="/classes/:classId/flashcards/bookmarks" element={<FlashcardsBookmarks />} />
-      <Route path="/classes/:classId/flashcards"           element={<FlashcardsPage />} />
-      <Route path="/flashcards" element={<FlashcardsHub />} />
-      <Route path="/chatbot" element={<Chatbot />} />
       <Route path="/quizzes" element={<RequireAuth><QuizzesPage /></RequireAuth>} />
       <Route path="/quizzes/:quizId" element={<RequireAuth><QuizAttemptPage /></RequireAuth>} />
 

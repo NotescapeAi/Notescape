@@ -4,12 +4,17 @@
 @tailwind utilities;
 
 :root {
-  --base-bg: #f9fafb;
-  --bg: var(--base-bg);
-  --surface: #ffffff;
-  --surface-2: #f4f6ff;
+  --bg-page: #f8fafc;
+  --bg-surface: #ffffff;
+  --border-subtle: #e5e7eb;
+  --bg-hover: #f3f4f6;
+
+  --base-bg: var(--bg-page);
+  --bg: var(--bg-page);
+  --surface: var(--bg-surface);
+  --surface-2: var(--bg-surface);
   --surface-elevated: #eef0f7;
-  --surface-muted: #f5f7ff;
+  --surface-muted: var(--bg-page);
   --surface-accent: linear-gradient(135deg, #7c3aed, #a855f7 90%);
   --surface-accent-soft: rgba(124, 58, 237, 0.12);
   --surface-inverse: #0f1020;
@@ -21,9 +26,9 @@
   --text-secondary: #6c6f7d;
   --text-inverse: #ffffff;
   --placeholder: #9195a8;
-  --border: #dee1ef;
+  --border: var(--border-subtle);
   --border-strong: #c9cdd7;
-  --border-soft: rgba(90, 94, 109, 0.2);
+  --border-soft: rgba(15, 23, 36, 0.08);
   --ring: rgba(123, 95, 239, 0.35);
   --shadow-soft: 0 12px 30px rgba(15, 16, 32, 0.08);
   --shadow: var(--shadow-soft);
@@ -42,10 +47,15 @@
 }
 
 .dark {
-  --base-bg: #0b0d17;
-  --bg: var(--base-bg);
-  --surface: #141826;
-  --surface-2: #1b2033;
+  --bg-page: #0b0d17;
+  --bg-surface: #141826;
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --bg-hover: rgba(255, 255, 255, 0.04);
+
+  --base-bg: var(--bg-page);
+  --bg: var(--bg-page);
+  --surface: var(--bg-surface);
+  --surface-2: var(--bg-surface);
   --surface-elevated: #1f2338;
   --surface-muted: #23283c;
   --surface-accent: linear-gradient(135deg, #6f34f4, #a855f7);
@@ -59,7 +69,7 @@
   --text-secondary: #a1a2ba;
   --text-inverse: #ffffff;
   --placeholder: #8c8fb1;
-  --border: rgba(255, 255, 255, 0.08);
+  --border: var(--border-subtle);
   --border-strong: rgba(255, 255, 255, 0.2);
   --border-soft: rgba(255, 255, 255, 0.12);
   --ring: rgba(123, 95, 239, 0.45);
@@ -91,7 +101,7 @@ body {
   padding: 0;
   font-family: "Space Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial;
   color: var(--text);
-  background: var(--base-bg);
+  background: var(--bg-page);
   overflow-x: hidden;
   line-height: 1.5;
 }
@@ -122,7 +132,7 @@ p {
 }
 
 .app-shell {
-  background: var(--base-bg);
+  background: var(--bg-page);
   color: var(--text);
   transition: background 0.3s ease, color 0.3s ease;
 }

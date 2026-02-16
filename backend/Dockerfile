@@ -8,13 +8,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# System deps (psycopg, pypdf)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential libpq-dev \
- && rm -rf /var/lib/apt/lists/*
 # Install Tesseract OCR and Poppler utils for PDF processing
 RUN apt-get update && \
-    apt-get install -y tesseract-ocr poppler-utils && \
+    apt-get install -y --no-install-recommends tesseract-ocr poppler-utils && \
     rm -rf /var/lib/apt/lists/*
 
 # ---- Install CPU-only PyTorch FIRST (small & fast) ----

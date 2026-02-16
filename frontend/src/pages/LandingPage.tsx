@@ -10,6 +10,9 @@ import {
 import { Link } from "react-router-dom";
 import { useEffect } from "react";
 import MarketingLayout from "../components/MarketingLayout";
+import class1Img from "../assets/class1.svg";
+import class2Img from "../assets/class2.svg";
+import practiceImg from "../assets/step3.svg";
 import "./landing.css";
 
 const featureCards = [
@@ -142,11 +145,11 @@ export default function LandingPage() {
                 <h3>1. Upload Your Study Materials</h3>
                 <p>Drag and drop PDFs, slides or notes. OCR preserves diagrams and handwriting.</p>
               </div>
-              <img src="/class1.svg" alt="Upload mock" className="how-img slide-right" />
+              <img src={class1Img} alt="Upload mock" className="how-img slide-right" />
             </div>
 
             <div className="how-grid reverse">
-              <img src="/class2.svg" alt="AI mock" className="how-img slide-left" />
+              <img src={class2Img} alt="AI mock" className="how-img slide-left" />
               <div className="how-copy slide-right">
                 <h3>2. Engage with AI-Powered Learning</h3>
                 <p>Ask questions, generate summaries and get tailored explanations.</p>
@@ -158,7 +161,7 @@ export default function LandingPage() {
                 <h3>3. Practice with Auto-Generated Study Tools</h3>
                 <p>Create flashcards and quizzes automatically and track improvements.</p>
               </div>
-              <img src="/step3.svg" alt="Practice mock" className="how-img slide-right" />
+              <img src={practiceImg} alt="Practice mock" className="how-img slide-right" />
             </div>
           </div>
         </section>

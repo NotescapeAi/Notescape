@@ -11,17 +11,32 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./db/init:/docker-entrypoint-initdb.d:ro
+    restart: unless-stopped
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PGUSER:-notescape} -d ${PGDATABASE:-notescape}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7-alpine
     container_name: notescape-redis
     ports:
       - "6379:6379"
+    restart: unless-stopped
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 2s
+      retries: 5
 
   api:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    image: notescape-backend
     container_name: notescape-api
     environment:
       DATABASE_URL: "postgresql://${PGUSER:-notescape}:${PGPASSWORD:-notescape_pass}@db:5432/${PGDATABASE:-notescape}"
@@ -43,19 +58,23 @@ services:
       CHAT_MODEL: "llama-3.3-70b-versatile"
       GROQ_API_KEY: "${GROQ_API_KEY:-}"
       REDIS_URL: "redis://redis:6379/0"
+      QUIZ_MIGRATION_FILE: "/workspace/db/init/10_quizzes.sql"
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 30s
     ports:
       - "${API_PORT:-8000}:8000"
     volumes:
       - ./backend:/app
+      - ./db:/workspace/db:ro
       - ./secrets:/app/secrets:ro
 
   ocr_worker:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: notescape-backend
     container_name: notescape-ocr-worker
     command: python -m app.workers.ocr_worker
     environment:
@@ -69,16 +88,20 @@ services:
       S3_BUCKET: "${S3_BUCKET}"
       S3_REGION: "${S3_REGION:-us-east-1}"
       REDIS_URL: "redis://redis:6379/0"
+      QUIZ_MIGRATION_FILE: "/workspace/db/init/10_quizzes.sql"
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 30s
     volumes:
       - ./backend:/app
+      - ./db:/workspace/db:ro
 
   flashcard_worker:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: notescape-backend
     container_name: notescape-flashcard-worker
     command: python -m app.workers.flashcard_worker
     environment:
@@ -101,17 +124,21 @@ services:
       CHAT_MODEL: "llama-3.3-70b-versatile"
       GROQ_API_KEY: "${GROQ_API_KEY:-}"
       REDIS_URL: "redis://redis:6379/0"
+      QUIZ_MIGRATION_FILE: "/workspace/db/init/10_quizzes.sql"
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 30s
     volumes:
       - ./backend:/app
+      - ./db:/workspace/db:ro
 
   # ✅ NEW: quiz_worker (added safely under services)
   quiz_worker:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: notescape-backend
     container_name: notescape-quiz-worker
     command: python -m app.workers.quiz_worker
     environment:
@@ -134,11 +161,17 @@ services:
       CHAT_MODEL: "llama-3.3-70b-versatile"
       GROQ_API_KEY: "${GROQ_API_KEY:-}"
       REDIS_URL: "redis://redis:6379/0"
+      QUIZ_MIGRATION_FILE: "/workspace/db/init/10_quizzes.sql"
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 30s
     volumes:
       - ./backend:/app
+      - ./db:/workspace/db:ro
 
   frontend:
     build:
@@ -149,6 +182,8 @@ services:
       - api
     ports:
       - "3000:80"
+    restart: unless-stopped
+    stop_grace_period: 30s
 
 volumes:
   pgdata:

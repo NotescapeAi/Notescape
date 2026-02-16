@@ -43,7 +43,7 @@ const ContactPage = () => {
           transition={{ duration: 0.8, ease: "easeOut" }}
         >
           <h1 className="text-[42px] font-bold text-main mb-6">
-            Contact & Support
+            Support
           </h1>
 
           <motion.p
@@ -65,7 +65,7 @@ const ContactPage = () => {
         >
           <form
             onSubmit={handleSubmit}
-            className="surface-80 backdrop-blur-md shadow-2xl rounded-2xl p-8 sm:p-10 space-y-6 border border-token"
+            className="bg-white border border-neutral-200 shadow-sm rounded-2xl p-6 sm:p-10 space-y-6"
           >
             <div>
               <label className="block text-muted font-semibold mb-2">Name</label>
@@ -75,7 +75,7 @@ const ContactPage = () => {
                 value={formData.name}
                 onChange={handleChange}
                 required
-                className="w-full border border-token surface text-main placeholder:text-muted rounded-lg px-4 py-3 focus:ring-2 focus:ring-[var(--ring)] focus:border-[var(--primary)] outline-none transition"
+                className="w-full border border-neutral-200 bg-white text-main placeholder:text-muted rounded-xl px-4 py-3 focus:ring-2 focus:ring-[var(--ring)] focus:border-[var(--primary)] outline-none transition"
                 placeholder="Enter your name"
               />
             </div>
@@ -88,7 +88,7 @@ const ContactPage = () => {
                 value={formData.email}
                 onChange={handleChange}
                 required
-                className="w-full border border-token surface text-main placeholder:text-muted rounded-lg px-4 py-3 focus:ring-2 focus:ring-[var(--ring)] focus:border-[var(--primary)] outline-none transition"
+                className="w-full border border-neutral-200 bg-white text-main placeholder:text-muted rounded-xl px-4 py-3 focus:ring-2 focus:ring-[var(--ring)] focus:border-[var(--primary)] outline-none transition"
                 placeholder="Enter your email"
               />
             </div>
@@ -100,7 +100,7 @@ const ContactPage = () => {
                 value={formData.message}
                 onChange={handleChange}
                 required
-                className="w-full border border-token surface text-main placeholder:text-muted rounded-lg px-4 py-3 h-40 focus:ring-2 focus:ring-[var(--ring)] focus:border-[var(--primary)] outline-none transition resize-none"
+                className="w-full border border-neutral-200 bg-white text-main placeholder:text-muted rounded-xl px-4 py-3 h-40 focus:ring-2 focus:ring-[var(--ring)] focus:border-[var(--primary)] outline-none transition resize-none"
                 placeholder="Write your message here..."
               />
             </div>

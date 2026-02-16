@@ -993,7 +993,7 @@ function ClassesContent() {
 
   return (
     <>
-      <div className="min-h-screen surface-2">
+      <div className="min-h-screen bg-[var(--bg-page)]">
         <div
           className="grid"
           style={{

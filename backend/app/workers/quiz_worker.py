@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 
 from app.core.db import db_conn
 from app.core.llm import get_quiz_generator  # you will add this in step 3.2
+from app.core.migrations import ensure_quiz_jobs_schema
 
 POLL_SECONDS = 2
 log = logging.getLogger("uvicorn.error")
@@ -318,6 +319,8 @@ async def _set_job_progress(job_id: str, p: int):
 # 5) Main loop
 # -------------------------
 async def run():
+    log.info("[quiz_worker] running migrations before processing jobs")
+    await ensure_quiz_jobs_schema()
     log.info("[quiz_worker] started")
     gen = get_quiz_generator()
 

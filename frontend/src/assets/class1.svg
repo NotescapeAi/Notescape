@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900">
+  <defs>
+    <style>
+      .bg{fill:#F6F7FB}
+      .panel{fill:#FFFFFF}
+      .sidebar{fill:#F1F2F8}
+      .muted{fill:#6B7280;font-size:12px;font-family:Inter,Arial}
+      .text{fill:#111827;font-size:14px;font-family:Inter,Arial}
+      .title{fill:#111827;font-size:22px;font-weight:600;font-family:Inter,Arial}
+      .btn{fill:#7C3AED}
+      .btnText{fill:white;font-size:14px;font-weight:500;font-family:Inter,Arial}
+      .pill{fill:#F3F4F6}
+    </style>
+  </defs>
+
+  <rect width="1440" height="900" class="bg"/>
+
+  <rect x="16" y="16" width="256" height="868" rx="28" class="sidebar"/>
+  <circle cx="72" cy="64" r="22" fill="#7C3AED"/>
+  <text x="72" y="70" text-anchor="middle" fill="white" font-weight="600">N</text>
+
+  <g class="text">
+    <text x="56" y="140">Dashboard</text>
+    <rect x="40" y="160" width="200" height="44" rx="12" fill="#FFFFFF"/>
+    <text x="72" y="188">Classes</text>
+    <text x="56" y="244">Flashcards</text>
+    <text x="56" y="292">Study Assistant</text>
+  </g>
+
+  <text x="56" y="720" class="muted">Settings</text>
+  <text x="56" y="760" class="muted">Profile</text>
+  <text x="56" y="800" class="muted">Logout</text>
+
+  <rect x="296" y="16" width="1128" height="72" rx="24" class="panel"/>
+  <text x="328" y="62" class="title">Classes</text>
+
+  <circle cx="1320" cy="52" r="16" fill="#F3F4F6"/>
+  <path d="M1326 44a8 8 0 1 0 0 16 10 10 0 1 1 0-16z" fill="#7C3AED"/>
+
+  <circle cx="1372" cy="52" r="18" fill="#1F2937"/>
+  <text x="1372" y="58" text-anchor="middle" fill="white" font-size="12">B</text>
+
+  <rect x="296" y="104" width="320" height="780" rx="24" class="panel"/>
+  <text x="320" y="140" class="muted">5 classes</text>
+
+  <rect x="320" y="156" width="272" height="40" rx="12" class="pill"/>
+  <text x="336" y="182" class="muted">Search classes</text>
+
+  <rect x="320" y="208" width="272" height="44" rx="14" class="btn"/>
+  <text x="456" y="236" text-anchor="middle" class="btnText">New class</text>
+
+  <g class="text">
+    <rect x="320" y="276" width="272" height="52" rx="14" fill="#EEF2FF"/>
+    <text x="388" y="308">Entrepreneur</text>
+
+    <rect x="320" y="336" width="272" height="52" rx="14" fill="#F9FAFB"/>
+    <text x="388" y="368">Physics</text>
+
+    <rect x="320" y="396" width="272" height="52" rx="14" fill="#F9FAFB"/>
+    <text x="388" y="428">Artificial Intelligence</text>
+
+    <rect x="320" y="456" width="272" height="52" rx="14" fill="#F9FAFB"/>
+    <text x="388" y="488">Deep Learning</text>
+
+    <rect x="320" y="516" width="272" height="52" rx="14" fill="#F9FAFB"/>
+    <text x="388" y="548">DataBase</text>
+  </g>
+
+  <rect x="632" y="104" width="792" height="780" rx="28" class="panel"/>
+
+  <text x="664" y="148" font-size="18" font-weight="600" fill="#111827">Entrepreneur</text>
+  <text x="664" y="168" class="muted">STUDY WORKSPACE</text>
+
+  <rect x="656" y="184" width="360" height="44" rx="22" fill="#F9FAFB"/>
+
+  <rect x="664" y="190" width="110" height="32" rx="16" fill="#EDE9FE"/>
+  <text x="719" y="212" fill="#7C3AED" font-size="12" text-anchor="middle">Documents</text>
+
+  <rect x="780" y="190" width="110" height="32" rx="16" class="pill"/>
+  <text x="835" y="212" class="muted" text-anchor="middle">Flashcards</text>
+
+  <rect x="896" y="190" width="96" height="32" rx="16" class="pill"/>
+  <text x="944" y="212" class="muted" text-anchor="middle">Chat</text>
+
+  <rect x="1040" y="184" width="120" height="40" rx="14" class="btn"/>
+  <text x="1100" y="210" text-anchor="middle" class="btnText">Generate</text>
+
+  <rect x="664" y="248" width="728" height="140" rx="20" fill="#F9FAFB"
+        stroke="#D1D5DB" stroke-dasharray="6 6"/>
+  <text x="1028" y="312" text-anchor="middle" class="text">Upload class materials</text>
+
+  <g class="text">
+    <rect x="664" y="420" width="728" height="52" rx="14" fill="#F9FAFB"/>
+    <text x="700" y="452">entrepreneur_intro.pdf</text>
+
+    <rect x="664" y="480" width="728" height="52" rx="14" fill="#F9FAFB"/>
+    <text x="700" y="512">startup_fundamentals.pptx</text>
+
+    <rect x="664" y="540" width="728" height="52" rx="14" fill="#F9FAFB"/>
+    <text x="700" y="572">business_model_canvas.docx</text>
+  </g>
+</svg>
