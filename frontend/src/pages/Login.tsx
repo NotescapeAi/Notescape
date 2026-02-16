@@ -1,6 +1,9 @@
+// src/pages/Login.tsx
 import React, { useState, FormEvent, MouseEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { login, signInWithGoogle, signInWithApple } from "../firebase/firebaseAuth";
+import { login, signInWithGoogle, signInWithGithub } from "../firebase/firebaseAuth";
+import { auth } from "../firebase/firebase";
+import "./NotescapeStartPage.css"
 
 export default function Login() {
   const navigate = useNavigate();
@@ -25,14 +28,14 @@ export default function Login() {
   };
 
   // Social login handler
-  const onSocial = async (provider: "Apple" | "Google", e: MouseEvent<HTMLButtonElement>) => {
+  const onSocial = async (provider: "Github" | "Google", e: MouseEvent<HTMLButtonElement>) => {
     addRipple(e);
     setError("");
     try {
       if (provider === "Google") {
         await signInWithGoogle();
-      } else if (provider === "Apple") {
-        await signInWithApple();
+      } else if (provider === "Github") {
+        await signInWithGithub();
       }
       navigate("/dashboard");
     } catch (err: unknown) {
@@ -58,6 +61,12 @@ export default function Login() {
     setSubmitting(true);
     try {
       await login(email, password);
+      const user = auth.currentUser;
+      if (user && !user.emailVerified) {
+        setError("Email not verified. Please verify to continue.");
+        navigate("/verify-email");
+        return;
+      }
       navigate("/dashboard");
     } catch (err: unknown) {
       console.error("Login error:", err);
@@ -72,77 +81,81 @@ export default function Login() {
   };
 
   return (
-    <main className="page">
-      <header className="logo">
-        <img src="/logo1.png" alt="Notescape logo" width={70} height={50} />
-        <h1>Notescape</h1>
+    <div className="auth-root">
+      <main className="page">
+        <header className="logo">
+          <img src="/logo1.png" alt="Notescape logo" width={70} height={50} />
+          <h1>Notescape</h1>
       </header>
 
-      <div className="login-container">
-        <h2 className="login-title">Log in</h2>
+      <div className="auth-page">
+        <div className="login-container">
+          <h2 className="login-title">Log in</h2>
 
-        {/* Apple Sign In */}
-        <button type="button" className="social-btn" onClick={(e) => onSocial("Apple", e)}>
-          <img src="/apple.svg" alt="Apple logo" className="icon" width={18} height={18} />
-          CONTINUE WITH APPLE
-        </button>
-
-        {/* Google Sign In */}
-        <button type="button" className="social-btn" onClick={(e) => onSocial("Google", e)}>
-          <img src="/google.svg" alt="Google logo" className="icon" width={18} height={18} />
-          CONTINUE WITH GOOGLE
-        </button>
-
-        <div className="divider" role="separator" aria-label="or">
-          <span />
-          <p>OR</p>
-          <span />
-        </div>
-
-        {error && <p className="error" role="status">{error}</p>}
-
-        <form onSubmit={onSubmit} noValidate>
-          <div className="form-field">
-            <input
-              type="email"
-              placeholder="Email"
-              value={email}
-              onChange={(ev) => setEmail(ev.target.value)}
-              required
-              aria-label="Email"
-            />
-          </div>
-
-          <div className="form-field">
-            <input
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={(ev) => setPassword(ev.target.value)}
-              required
-              aria-label="Password"
-            />
-          </div>
-
-          <button
-            type="submit"
-            className="login-btn"
-            onClick={(e) => addRipple(e)}
-            disabled={submitting}
-          >
-            {!submitting ? "LOG IN" : <span className="spinner" aria-hidden />}
+          {/* GitHub Sign In */}
+          <button type="button" className="social-btn" onClick={(e) => onSocial("Github", e)}>
+            <img src="/github-mark.png" alt="Github logo" className="icon" width={18} height={18} />
+            Continue with GitHub
           </button>
-        </form>
 
-        <div className="links2">
-          <Link to="/get-started" className="ghost-btn">
-            Create account
-          </Link>
-          <Link to="/forgot-password" className="ghost-btn">
-            Forgot password?
-          </Link>
+          {/* Google Sign In */}
+          <button type="button" className="social-btn" onClick={(e) => onSocial("Google", e)}>
+            <img src="/google.svg" alt="Google logo" className="icon" width={18} height={18} />
+            Continue with Google
+          </button>
+
+          <div className="divider" role="separator" aria-label="or">
+            <span />
+            <p>OR</p>
+            <span />
+          </div>
+
+          {error && <p className="error" role="status">{error}</p>}
+
+          <form onSubmit={onSubmit} noValidate>
+            <div className="form-field">
+              <input
+                type="email"
+                placeholder="Email"
+                value={email}
+                onChange={(ev) => setEmail(ev.target.value)}
+                required
+                aria-label="Email"
+              />
+            </div>
+
+            <div className="form-field">
+              <input
+                type="password"
+                placeholder="Password"
+                value={password}
+                onChange={(ev) => setPassword(ev.target.value)}
+                required
+                aria-label="Password"
+              />
+            </div>
+
+            <button
+              type="submit"
+              className="login-btn"
+              onClick={(e) => addRipple(e)}
+              disabled={submitting}
+            >
+              {!submitting ? "LOG IN" : <span className="spinner" aria-hidden />}
+            </button>
+          </form>
+
+          <div className="links2">
+            <Link to="/get-started" className="ghost-btn">
+              Create account
+            </Link>
+            <Link to="/forgot-password" className="ghost-btn">
+              Forgot password?
+            </Link>
+          </div>
         </div>
       </div>
-    </main>
+      </main>
+    </div>
   );
 }

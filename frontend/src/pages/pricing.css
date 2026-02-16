@@ -1,148 +1,178 @@
-/* --- Notescape Pricing (standalone CSS) --- */
-:root{
-  --violet:#7B5FEF;
-  --pink:#EF5F8B;
-  --lime:#D3EF5F;
-  --mint:#5FEFC3;
-  --ink:#0B1221;        /* near-black */
-  --ink-2:#475569;      /* secondary text */
-  --paper:#ffffff;
-  --paper-2:#F8F9FF;
-  --ring:rgba(123,95,239,.35);
+/* ===== Pricing Page Styles ===== */
+.pricing-root {
+  --violet: var(--primary);
+  --violet-dark: #5A3FD6;
+  --ink: #0B1221;
+  --ink-2: #475569;
+  --paper: #ffffff;
+  --ring: rgba(123, 95, 239, 0.35);
+  --bg-gradient: linear-gradient(135deg, #F9FAFB 0%, #EEF2FF 100%);
 }
 
-.pricing-hero{
-  min-height:100vh;
-  background:
-    radial-gradient(1200px 600px at 10% -10%, rgba(123,95,239,.18), transparent 60%),
-    radial-gradient(900px 500px at 110% 20%, rgba(95,239,195,.20), transparent 60%),
-    linear-gradient(180deg, var(--paper-2), var(--paper));
-  color:var(--ink);
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  padding:56px 16px;
+/* Hero Section */
+.pricing-root .pricing-hero {
+  min-height: 100vh;
+  width: 100%;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 120px 20px 80px; /* space for navbar + footer */
+  box-sizing: border-box;
+  text-align: center;
 }
 
-.container{
-  width:100%;
-  max-width:980px;
+.pricing-root .container {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 0 1.5rem;
 }
 
-.eyebrow{
-  display:inline-block;
-  background:#fff;
-  border:1px solid #E5E7EB;
-  color:var(--violet);
-  padding:6px 12px;
-  border-radius:999px;
-  font-weight:600;
-  font-size:14px;
-  box-shadow:0 6px 20px rgba(16,24,40,.06);
+/* Eyebrow Label */
+.pricing-root .eyebrow {
+  display: inline-block;
+  background: #fff;
+  border: 1px solid #E5E7EB;
+  color: var(--violet);
+  padding: 6px 18px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 14px;
+  box-shadow: 0 4px 12px rgba(16, 24, 40, 0.06);
+  margin-bottom: 22px;
+  transition: transform 0.2s ease;
 }
 
-.title{
-  margin:18px 0 8px;
-  font-size:44px;
-  line-height:1.1;
-  font-weight:800;
-  letter-spacing:-0.02em;
+.pricing-root .eyebrow:hover {
+  transform: scale(1.05);
 }
 
-.subtitle{
-  color:var(--ink-2);
-  font-size:18px;
-  max-width:720px;
+/* Main Title */
+.pricing-root .title {
+  font-size: clamp(28px, 5vw, 44px);
+  font-weight: 700;
+  margin: 16px 0;
+  line-height: 1.25;
+  color: var(--ink);
 }
 
-.card{
-  margin:28px 0 0;
-  background:#fff;
-  border:1px solid #E6E8EE;
-  border-radius:24px;
-  padding:28px;
-  box-shadow:
-    0 6px 30px rgba(20,18,31,.06),
-    0 1px 0 rgba(16,24,40,.04) inset;
+/* Subtitle */
+.pricing-root .subtitle {
+  color: var(--ink-2);
+  font-size: clamp(15px, 2.8vw, 19px);
+  margin: 0 auto 28px;
+  max-width: 540px;
+  line-height: 1.6;
 }
 
-.card-title{
-  font-size:24px;
-  font-weight:700;
-  margin:0 0 6px;
-}
-
-.card-sub{
-  color:var(--ink-2);
-  margin:0 0 16px;
-}
-
-.waitlist{
-  display:flex;
-  gap:10px;
-  flex-wrap:wrap;
-  align-items:center;
-  margin:10px 0 8px;
-}
-
-.input{
-  flex:0 0 220px;
-  height:40px;                 /* a touch slimmer */
-  border:1px solid #E2E8F0;
-  border-radius:12px;
-  padding:0 14px;
-  outline:none;
-  transition:border .2s, box-shadow .2s;
-  font-size:14px;
+/* Waitlist Form */
+.pricing-root .waitlist {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 28px;
 }
 
 
 
-
-.input:focus{
-  border-color:var(--violet);
-  box-shadow:0 0 0 4px var(--ring);
+/* Button */
+.pricing-root .btn {
+  height: 46px;
+  padding: 0 22px;
+  border: none;
+  border-radius: 14px;
+  background: var(--violet);
+  color: #fff;
+  font-weight: 600;
+  font-size: 15px;
+  cursor: pointer;
+  transition: transform 0.08s ease, filter 0.25s ease, box-shadow 0.25s ease;
+  box-shadow: 0 8px 22px rgba(123, 95, 239, 0.25);
+  white-space: nowrap;
 }
 
-.btn{
-  height:40px;                 /* match input */
-  padding:0 18px;
-  border:none;
-  border-radius:12px;
-  color:#fff !important;
-  background:var(--violet) !important;
-  font-weight:700;
-  cursor:pointer;
-  transition:transform .06s ease, filter .2s ease, box-shadow .2s ease;
-  box-shadow:0 10px 24px rgba(123,95,239,.28);
+.pricing-root .btn:hover {
+  filter: brightness(1.03);
+  background: var(--violet-dark);
+  box-shadow: 0 10px 28px rgba(123, 95, 239, 0.35);
 }
 
-.btn:hover{ filter:brightness(.98); }
-.btn:active{ transform:translateY(1px); }
-.btn:focus-visible{ outline:0; box-shadow:0 0 0 4px var(--ring); }
-
-.teasers{
-  margin:14px 0 0;
-  padding-left:18px;
-  color:var(--ink-2);
+.pricing-root .btn:active {
+  transform: translateY(1px) scale(0.98);
 }
 
-.palette-bar{
-  display:grid;
-  grid-template-columns:repeat(4,1fr);
-  gap:10px;
-  margin:22px 0 0;
-}
-
-.palette-bar > span{
-  height:8px;
-  border-radius:999px;
-  box-shadow:inset 0 0 0 1px rgba(0,0,0,.06);
+.pricing-root .btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--ring);
 }
 
 /* Responsive */
-@media (max-width:640px){
-  .title{ font-size:34px; }
-  .card{ padding:22px; }
-}  
+@media (max-width: 768px) {
+  .container {
+    padding: 0 1rem;
+  }
+  .title {
+    font-size: clamp(26px, 6vw, 36px);
+  }
+  .subtitle {
+    font-size: 15px;
+  }
+}
 
+@media (max-width: 640px) {
+  .waitlist {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .btn {
+    width: 100%;
+  }
+}
+/* Input */
+.pricing-root .input {
+  flex: 1 1 auto;
+  min-width: 220px;
+  max-width: 100%;
+  height: 46px;
+  border-radius: 14px;
+  padding: 0 16px;
+  outline: none;
+  font-size: 15px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  transition: border 0.2s, box-shadow 0.2s, transform 0.1s;
+  box-sizing: border-box;
+}
+
+.pricing-root .input::placeholder {
+  color: var(--placeholder);
+  opacity: 1;
+  font-size: 15px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pricing-root .input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--ring);
+  transform: scale(1.01);
+}
+
+/* Medium screens fix */
+@media (max-width: 900px) {
+  .waitlist {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .input {
+    width: 100%;
+    max-width: 100%;
+  }
+  .btn {
+    width: 100%;
+  }
+}

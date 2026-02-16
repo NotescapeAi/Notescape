@@ -1,0 +1,17 @@
+.git
+.gitignore
+.env
+.env.*
+secrets/
+**/serviceAccountKey.json
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+
+node_modules/
+dist/
+.venv/
+venv/
+__pycache__/
+coverage/

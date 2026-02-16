@@ -1,0 +1,11 @@
+services:
+  web:
+    build: ./frontend
+    container_name: notescape-web
+    depends_on:
+      api:
+        condition: service_started
+    ports:
+      - "${WEB_PORT:-5173}:80"
+    restart: unless-stopped
+    stop_grace_period: 30s

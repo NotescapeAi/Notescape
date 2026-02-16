@@ -1,8 +1,11 @@
 // frontend/src/pages/Pricing.tsx
 import React from "react";
+import { motion } from "framer-motion"; 
 import "@fontsource/montserrat/400.css";
 import "@fontsource/montserrat/700.css";
 import "./pricing.css";
+import MarketingLayout from "../components/MarketingLayout";
+
 
 export default function Pricing() {
   const onSubmit: React.FormEventHandler<HTMLFormElement> = (e) => {
@@ -11,18 +14,47 @@ export default function Pricing() {
   };
 
   return (
-    <div className="font-montserrat text-gray-900">
-      <main className="pricing-hero flex flex-col items-center text-center px-4">
-        <div className="container max-w-2xl space-y-6">
-          <header className="eyebrow">New features coming soon</header>
+    <MarketingLayout className="pricing-root">
+      <main className="pricing-hero">
+        <div className="container">
+          {/* Eyebrow */}
+          <motion.header
+            className="eyebrow"
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6 }}
+          >
+            New features coming soon
+          </motion.header>
 
-          <h1 className="title">Pricing Plans</h1>
+          {/* Title */}
+          <motion.h1
+            className="title text-purple-700"
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.2 }}
+          >
+            Pricing Plans
+          </motion.h1>
 
-          <p className="subtitle">
+          {/* Subtitle */}
+          <motion.p
+            className="subtitle"
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8, delay: 0.4 }}
+          >
             Designed for learners, built for clarity — transparent pricing coming soon.
-          </p>
+          </motion.p>
 
-          <form className="waitlist" onSubmit={onSubmit}>
+          {/* Form */}
+          <motion.form
+            className="waitlist"
+            onSubmit={onSubmit}
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 0.7, delay: 0.6 }}
+          >
             <input
               type="email"
               name="email"
@@ -33,9 +65,9 @@ export default function Pricing() {
             <button type="submit" className="btn">
               Notify Me
             </button>
-          </form>
+          </motion.form>
         </div>
       </main>
-    </div>
+    </MarketingLayout>
   );
 }

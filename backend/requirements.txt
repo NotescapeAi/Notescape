@@ -1,5 +1,29 @@
-# backend/requirements.txt
 fastapi==0.115.0
-uvicorn[standard]==0.30.0
+uvicorn[standard]==0.29.0
 pydantic-settings==2.6.1
 httpx==0.27.2
+python-multipart==0.0.9
+psycopg[binary]==3.2.9
+psycopg_pool==3.2.6
+pypdf==4.3.1
+regex==2024.5.15
+groq>=0.31.0
+openai>=1.0.0
+sentence-transformers==2.7.0
+email-validator>=2.0.0
+boto3==1.35.0
+firebase-admin
+pytesseract==0.3.13
+Pillow==10.4.0
+opencv-python-headless==4.10.0.84
+redis==5.0.8
+pytest==7.4.2
+pytest-asyncio==0.22.0
+
+
+# For GPU CUDA 12.1
+# pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu121
+#
+# If no GPU, you can use the CPU wheel:
+# pip install torch==2.2.2+cpu torchvision==0.17.2+cpu torchaudio==2.2.2+cpu \
+#   --index-url https://download.pytorch.org/whl/cpu

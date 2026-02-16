@@ -1,0 +1,116 @@
+/* ===== Classes page — compact, tidy, decluttered ===== */
+.cls-page { --nav-height: 56px; }
+
+/* Content width so it doesn't stretch edge to edge */
+.cls-container {
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+/* Header: smaller padding, title higher, sticks nicely */
+.cls-header {
+  position: sticky;
+  top: calc(var(--nav-height) + 6px);
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  background: #fff;
+  border: 1px solid #EEF2F6;
+  border-radius: 12px;
+  backdrop-filter: saturate(140%) blur(6px);
+  -webkit-backdrop-filter: saturate(140%) blur(6px);
+}
+
+.cls-head-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.cls-title {
+  margin: 0;
+  font-size: 18px;            /* slightly smaller than before */
+  line-height: 1.1;           /* pulls title up a bit */
+  font-weight: 700;
+}
+
+/* Badges smaller */
+.cls-badge {
+  display:inline-flex; align-items:center; gap:6px;
+  padding: 1px 7px; font-size: 11.5px; border-radius: 999px;
+  background:#F2F4F7; color:#344054; border:1px solid #E4E7EC;
+}
+
+/* Files card */
+.files-card {
+  background:#fff;
+  border:1px solid #EEF2F6;
+  border-radius:12px;
+  overflow:hidden;
+}
+
+/* Toolbar (no overlap; upload lives here or can be turned off) */
+.files-toolbar {
+  display:flex; align-items:center; justify-content:space-between;
+  gap:10px; flex-wrap:wrap; padding:10px 12px;
+  border-bottom:1px solid #EEF2F6;
+}
+.files-title { font-weight:700; }
+
+/* Icon buttons */
+.icon-btn{
+  display:inline-flex; align-items:center; justify-content:center;
+  height:30px; width:30px; border-radius:8px;
+  border:1px solid #E4E7EC; background:#fff; cursor:pointer; color:#344054;
+  transition: background .15s ease, opacity .15s ease;
+}
+.icon-btn:hover{ background:#F9FAFB; }
+
+/* File list — two columns: name | ⋯ (kebab) */
+.filelist{ list-style:none; margin:0; padding:0; }
+.fileitem{
+  display:grid; grid-template-columns: 1fr auto;
+  align-items:center; gap:10px;
+  padding:12px 14px; border-bottom:1px solid #F2F4F7;
+}
+.fileitem:last-child{ border-bottom:0; }
+.fileitem:hover{ background:#FBFBFF; }
+
+/* When selecting for generation, add a checkbox column */
+.fileitem.with-check { grid-template-columns: auto 1fr auto; }
+.fileitem-check{ margin:0 6px 0 2px; }
+
+/* Filename look */
+.file-main{
+  display:inline-flex; align-items:center; gap:8px;
+  border:0; background:transparent; padding:0; cursor:pointer; text-align:left;
+}
+.filename{
+  font-weight:600; color:#101828; max-width:56vw;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.badge-ext{ padding:1px 7px; font-size:11.5px; border-radius:999px;
+  background:#F2F4F7; border:1px solid #E4E7EC; color:#344054;
+}
+
+/* Kebab only appears on hover to reduce clutter */
+.fileitem .icon-btn{ opacity:0; }
+.fileitem:hover .icon-btn{ opacity:1; }
+
+/* Row menu */
+.rowmenu{ position:relative; display:inline-flex; }
+.rowmenu .menu{
+  position:absolute; right:0; top:32px; z-index:20;
+  min-width:140px; background:#fff; border:1px solid #E4E7EC;
+  border-radius:10px; box-shadow:0 12px 30px rgba(16,24,40,.12);
+  padding:6px;
+}
+.rowmenu .menu-item{
+  display:block; width:100%; padding:8px 10px; font-size:14px;
+  background:none; border:0; border-radius:8px; text-align:left; cursor:pointer;
+}
+.rowmenu .menu-item:hover{ background:#F2F4F7; }
+.rowmenu .menu-item.danger{ color:#B42318; }
+.rowmenu .menu-item.danger:hover{ background:#FEF3F2; }

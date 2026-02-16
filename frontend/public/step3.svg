@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720">
+    
+<defs>
+  <filter id="cardShadow" x="-50%" y="-50%" width="200%" height="200%">
+    <feOffset dx="0" dy="14" in="SourceAlpha" result="off"/>
+    <feGaussianBlur stdDeviation="22" in="off" result="blur"/>
+    <feColorMatrix in="blur" type="matrix"
+      values="0 0 0 0 0
+              0 0 0 0 0
+              0 0 0 0 0
+              0 0 0 0.18 0" result="shadow"/>
+    <feMerge>
+      <feMergeNode in="shadow"/>
+      <feMergeNode in="SourceGraphic"/>
+    </feMerge>
+  </filter>
+</defs>
+
+    
+  <g filter="url(#cardShadow)">
+    <rect x="120" y="80" width="960" height="560" rx="24" ry="24" fill="#FFFFFF" stroke="#E5E7EB"/>
+    
+      <g>
+        <rect x="160" y="120" width="880" height="56" rx="12" ry="12" fill="#F8FAFC" stroke="#E5E7EB"/>
+        <g transform="translate(174,136)">
+          <circle cx="0" cy="12" r="6" fill="#F472B6"/>
+          <circle cx="20" cy="12" r="6" fill="#22C55E"/>
+          <circle cx="40" cy="12" r="6" fill="#7B5FEF"/>
+        </g>
+      </g>
+    
+    <text x="180" y="200" font-family="Inter, system-ui, -apple-system" font-size="28" fill="#0F172A" font-weight="600" text-anchor="start">Auto‑generated flashcards</text>
+    <text x="180" y="236" font-family="Inter, system-ui, -apple-system" font-size="18" fill="#667085" font-weight="normal" text-anchor="start">Spaced repetition ready • Difficulty: Medium</text>
+    <g>
+      <!-- grid of cards -->
+      <g>
+        <!-- card 1 -->
+        <rect x="180" y="270" width="280" height="170" rx="14" ry="14" fill="#FFFFFF" stroke="#E5E7EB"/>
+        <text x="200" y="306" font-family="Inter, system-ui, -apple-system" font-size="16" fill="#667085" font-weight="700" text-anchor="start">Q</text>
+        <text x="220" y="306" font-family="Inter, system-ui, -apple-system" font-size="18" fill="#0F172A" font-weight="600" text-anchor="start">What is gene expression?</text>
+        
+    <g>
+      <rect x="200" y="332" width="120" height="34" rx="17.0" ry="17.0" fill="#FFFFFF" stroke="#7B5FEF"/>
+      <text x="260.0" y="354.0" text-anchor="middle" font-family="Inter, system-ui, -apple-system" font-size="18" fill="#7B5FEF">Show answer</text>
+    </g>
+    
+      </g>
+      <!-- card 2 -->
+      <g>
+        <rect x="484" y="270" width="280" height="170" rx="14" ry="14" fill="#FFFFFF" stroke="#E5E7EB"/>
+        <text x="504" y="306" font-family="Inter, system-ui, -apple-system" font-size="16" fill="#22C55E" font-weight="700" text-anchor="start">A</text>
+        <text x="524" y="306" font-family="Inter, system-ui, -apple-system" font-size="18" fill="#0F172A" font-weight="normal" text-anchor="start">Conversion of DNA info into</text>
+        <text x="524" y="330" font-family="Inter, system-ui, -apple-system" font-size="18" fill="#0F172A" font-weight="normal" text-anchor="start">functional products (RNA/protein).</text>
+      </g>
+      <!-- card 3 -->
+      <g>
+        <rect x="788" y="270" width="280" height="170" rx="14" ry="14" fill="#FFFFFF" stroke="#E5E7EB"/>
+        <text x="808" y="306" font-family="Inter, system-ui, -apple-system" font-size="16" fill="#667085" font-weight="700" text-anchor="start">Q</text>
+        <text x="828" y="306" font-family="Inter, system-ui, -apple-system" font-size="18" fill="#0F172A" font-weight="600" text-anchor="start">Define mitosis.</text>
+        
+    <g>
+      <rect x="828" y="332" width="160" height="34" rx="17.0" ry="17.0" fill="#FFFFFF" stroke="#7B5FEF"/>
+      <text x="908.0" y="354.0" text-anchor="middle" font-family="Inter, system-ui, -apple-system" font-size="18" fill="#7B5FEF">Reveal</text>
+    </g>
+    
+      </g>
+    </g>
+    <!-- footer CTA -->
+    <g>
+      <rect x="180" y="510" width="840" height="64" rx="12" ry="12" fill="#F8FAFC" stroke="#E5E7EB"/>
+      <text x="200" y="550" font-family="Inter, system-ui, -apple-system" font-size="18" fill="#344054" font-weight="normal" text-anchor="start">12 cards generated from barringer_ent6_chapt_05.pptx</text>
+      <rect x="900" y="510" width="120" height="64" rx="12" ry="12" fill="#7B5FEF"/>
+      <text x="960" y="550" font-family="Inter, system-ui, -apple-system" font-size="18" fill="#FFFFFF" font-weight="600" text-anchor="middle">Study</text>
+    </g>
+  </g>
+
+    </svg>

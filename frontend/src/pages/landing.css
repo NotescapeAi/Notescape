@@ -1,0 +1,506 @@
+/* ===== Design tokens (reused from your theme) ===== */
+.landing-root{
+  --bg:#7c7cef;
+  --panel:#faf7f7;
+  --ink:#0f1724;
+  --muted:#cfd2e6;
+  --brand1:#ffffff; 
+  --brand2:#ffffff;
+  --c2: #8b5cf6;
+  --c3: #ec4899; 
+  --shadow:rgba(15,23,36,.10);
+  --ring: rgba(139,92,246,.45);
+  --radius-lg:22px;
+  --radius-md:16px;
+  --radius-sm:12px;
+  --easing:cubic-bezier(.2,.8,.2,1);
+}
+
+/* Page ambiance */
+.landing-root {
+  background: transparent;
+  color: var(--text);
+}
+
+.landing-root .container {
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+@media (max-width: 768px) {
+  .landing-root .container {
+    max-width: 100%;
+    padding: 0 10px;
+  }
+}
+
+/* ===== Animated Gradient Text ===== */
+.landing-root .agr-hero{
+  --c1:#124c73;    
+  --c2:#4131ba;  
+  --c3:#cb4af6;   
+  --shade: 16%;
+  --c1d: color-mix(in srgb, var(--c1) calc(100% - var(--shade)), black var(--shade));
+  --c2d: color-mix(in srgb, var(--c2) calc(100% - var(--shade)), black var(--shade));
+  --c3d: color-mix(in srgb, var(--c3) calc(100% - var(--shade)), black var(--shade));
+
+  display:inline-block;
+  background: linear-gradient(100deg, #a72a8e 0%, #4032c8 50%, #b33878 70%, #4032c8 85%, #2a3da7 100%);
+  background: linear-gradient(100deg, var(--c1d) 0%, var(--c2d) 50%, var(--c3d) 70%, var(--c2d) 85%, var(--c1d) 100%);
+  background-size: 280% 100%;
+  background-position: 0% 50%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: heroGradient 18s ease-in-out infinite;
+  will-change: background-position;
+}
+
+@keyframes heroGradient{
+  0%   { background-position:   0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position:   0% 50%; }
+}
+
+@media (prefers-reduced-motion: reduce){
+  .landing-root .agr-hero{ animation:none; background-position:50% 50%; }
+}
+
+/* ===== Buttons ===== */
+.landing-root .btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: linear-gradient(90deg, var(--c2), var(--c3));
+  color: #ffffff;
+  padding: 10px 16px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 14px;
+  border: 0;
+  text-decoration: none;
+  box-shadow: 0 10px 28px rgba(139, 92, 246, 0.24);
+  transition: transform .15s var(--easing),
+              box-shadow .18s var(--easing),
+              background-position .5s ease,
+              color .3s ease;
+  background-size: 200% 100%;
+}
+.landing-root .btn-primary:hover {
+  transform: translateY(-2px);
+  background-position: 100% 0;
+  box-shadow: 0 16px 36px rgba(223, 223, 224, 0.28);
+  color: #ffffff;
+  background: rgb(123, 126, 190); 
+}
+
+.landing-root .btn-ghost{
+  display:inline-flex; align-items:center; justify-content:center;
+  padding:10px 16px; border-radius:999px; font-weight:700; font-size:14px;
+  background: #f6f4f4; color:#0f1724; border:1px solid rgba(13,24,50,.18);
+  box-shadow:0 6px 18px rgba(15,23,36,.06); text-decoration:none;
+}
+.landing-root .btn-ghost:hover {
+  transform: translateY(-1px);
+  background: #8b5cf6;
+  color: #fff;
+  border-color: #8b5cf6;
+}
+
+
+.btn-primary.cta-purple,
+.landing-root .btn-primary.cta-purple {
+  background: linear-gradient(90deg, #74038f 0%, #6000a0 50%, #5003b3 100%);
+  color: #ffffff;
+  box-shadow: 0 12px 34px rgba(124, 58, 237, 0.45);
+}
+.btn-primary.cta-purple:hover,
+.landing-root .btn-primary.cta-purple:hover {
+  background: linear-gradient(90deg, #6d28d9 0%, #7c3aed 50%, #8b5cf6 100%);
+  box-shadow: 0 16px 38px rgba(124, 58, 237, 0.55);
+}
+
+/* ===== Hero ===== */
+.landing-root .landing-hero{ padding: 72px 0 40px; }
+.landing-root .hero-grid{ display:grid; grid-template-columns: 1.05fr .95fr; gap: 40px; align-items:center; }
+.landing-root .hero-copy{ max-width: 580px; }
+.landing-root .hero-title{ font-size: clamp(40px, 6vw, 64px); line-height: 1.04; margin: 0 0 14px; font-weight: 700; }
+.landing-root .hero-sub{ font-size: 18px; color:var(--text-muted); margin: 0 0 24px; }
+.landing-root .cta-row{ display:flex; gap: 12px; align-items:center; }
+
+.landing-root .hero-media img{
+  width: 100%;
+  max-width: 560px;
+  display:block;
+  border-radius: 20px;
+  box-shadow: 0 24px 60px rgb(124, 69, 133);
+  margin: 0 auto;
+}
+
+/* ===== Features ===== */
+.landing-root .features{ padding: 76px 20PX 30px; }
+.landing-root .h2{ text-align:center; margin: 0 0 22px; font-size: 28px; font-weight: 800; }
+.landing-root .features-grid{
+  display:grid;
+  grid-template-columns: repeat(3,1fr);
+  gap: 2rem;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+.landing-root .feature-card{
+  background: #ffffff;
+  border-radius: 1rem;
+  padding: 2rem;
+  text-align: center;
+  transition: transform 0.2s ease;
+}
+.landing-root .feature-card:hover{ transform: translateY(-5px); }
+.landing-root .feature-title{ font-weight: 800; margin-bottom: 6px; }
+.landing-root .feature-desc{ color:#4b5563; font-size:14.5px; }
+
+/* ===== How it works ===== */
+.landing-root .how{ padding: 30px 0 10px; }
+.landing-root .how-grid{
+  display:grid; grid-template-columns: 1fr 1fr; gap: 26px; align-items:center;
+  margin: 20px 0 26px;
+}
+.landing-root .how-grid.reverse{ grid-auto-flow:dense; }
+.landing-root .how-grid.reverse .how-copy{ order:2; }
+.landing-root .how-img{
+  width: 100%; max-width: 520px; 
+  margin: 0 auto;
+}
+.landing-root .how-copy h3{ margin: 0 0 8px; font-weight: 800; }
+.landing-root .how-copy p{ margin: 0; color:rgb(61, 54, 92); }
+
+/* ===== CTA Banner Section ===== */
+.landing-root .cta-wrap{ padding: 80px 0 100px; }
+.landing-root .cta-banner{
+  display: flex; align-items: center; justify-content: space-between; gap: 40px;
+  border: 1px solid #b2b3b4; border-radius: 24px; padding: 48px 56px;
+  background: linear-gradient(135deg, #fafaff 0%, #ffffff 100%);
+  box-shadow: 0 20px 40px rgba(15,23,36,.08);
+  max-width: 1200px;
+  margin: 0 auto;
+}
+.landing-root .cta-content h2.cta-title{ margin: 0; font-size: 32px; font-weight: 800; color: var(--text); }
+.landing-root .cta-content p.cta-sub{ margin: 12px 0 0 0; color: var(--text-muted); font-size: 18px; }
+
+/* ===== Responsiveness ===== */
+@media (max-width: 1024px){
+  .landing-root .hero-grid{ grid-template-columns: 1fr; }
+  .landing-root .features-grid{ grid-template-columns: repeat(2,1fr); }
+  .landing-root .how-grid{ grid-template-columns: 1fr; }
+  .landing-root .how-grid.reverse .how-copy{ order:0; }
+  .landing-root .cta-banner{ padding: 40px 32px; gap: 24px; }
+}
+@media (max-width: 640px){
+  .landing-root .hero-title{ font-size: clamp(34px, 9vw, 44px); }
+  .landing-root .cta-banner{ flex-direction: column; align-items: flex-start; text-align: center; padding: 32px 24px; }
+  .landing-root .features-grid{ grid-template-columns: 1fr; }
+}
+
+/* ===== Scroll Animations ===== */
+.landing-root .reveal { opacity: 0; transform: translateY(30px); transition: all 0.8s cubic-bezier(0.25, 0.8, 0.25, 1); }
+.landing-root .reveal.active { opacity: 1; transform: translateY(0); }
+.landing-root .fade-in { opacity: 0; transform: scale(0.98); transition: all 0.8s ease; }
+.landing-root .fade-in.active { opacity: 1; transform: scale(1); }
+.landing-root .slide-left { opacity: 0; transform: translateX(-40px); transition: all 0.8s ease; }
+.landing-root .slide-left.active { opacity: 1; transform: translateX(0); }
+.landing-root .slide-right { opacity: 0; transform: translateX(40px); transition: all 0.8s ease; }
+.landing-root .slide-right.active { opacity: 1; transform: translateX(0); }
+
+/* ===== Buttons Ripple ✨ ===== */
+.landing-root .btn-primary { position: relative; overflow: hidden; }
+.landing-root .btn-primary::after {
+  content: ""; position: absolute; left: 50%; top: 50%;
+  width: 0; height: 0; background: rgba(255,255,255,0.3);
+  border-radius: 50%; transform: translate(-50%, -50%);
+  opacity: 0; transition: width .5s ease, height .5s ease, opacity .5s ease;
+}
+.landing-root .btn-primary:active::after { width: 200%; height: 200%; opacity: 0; transition: 0s; }
+
+/* ===== Feature Cards Hover Glow ✨ ===== */
+.landing-root .feature-card { transition: transform 0.3s ease, box-shadow 0.3s ease; }
+.landing-root .feature-card:hover { transform: translateY(-8px) scale(1.03); box-shadow: 0 12px 30px rgba(139,92,246,0.25); }
+
+/* ===== Hero Media Hover Effect ✨ ===== */
+.landing-root .hero-media img { transition: transform 0.6s ease, box-shadow 0.6s ease; }
+.landing-root .hero-media img:hover { transform: scale(1.04) rotate(-1deg); box-shadow: 0 28px 70px rgba(139,92,246,0.35); }
+
+/* ===== CTA Banner Floating ✨ ===== */
+.landing-root .cta-banner { animation: floaty 6s ease-in-out infinite; }
+@keyframes floaty {
+  0%,100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+
+/* ===== Extra Scroll Animation Variants ✨ ===== */
+.landing-root .zoom-in { opacity: 0; transform: scale(0.8); transition: all 0.8s ease; }
+.landing-root .zoom-in.active { opacity: 1; transform: scale(1); }
+.landing-root .flip-up { opacity: 0; transform: rotateX(90deg); transition: all 0.8s ease; transform-origin: bottom; }
+.landing-root .flip-up.active { opacity: 1; transform: rotateX(0deg); }
+.landing-root .slide-up { opacity: 0; transform: translateY(40px); transition: all 0.9s cubic-bezier(0.25,0.8,0.25,1); }
+.landing-root .slide-up.active { opacity: 1; transform: translateY(0); }
+.landing-root .slide-down { opacity: 0; transform: translateY(-40px); transition: all 0.9s ease; }
+.landing-root .slide-down.active { opacity: 1; transform: translateY(0); }
+.landing-root .rotate-in { opacity: 0; transform: rotate(-8deg) scale(0.95); transition: all 1s ease; }
+.landing-root .rotate-in.active { opacity: 1; transform: rotate(0deg) scale(1); }
+.landing-root .scale-up { opacity: 0; transform: scale(0.85); transition: all 0.8s ease; }
+.landing-root .scale-up.active { opacity: 1; transform: scale(1); }
+
+
+.landing-root .btn-primary.bounce-in,
+.landing-root .btn-primary.bounce-in.active {
+  animation: none !important;
+  transform: none !important; /* prevents the up/down keyframes effect */
+}
+
+
+.landing-root .cta-row .btn-primary,
+.landing-root .cta-row .btn-ghost {
+  opacity: 0;
+  transform: translateY(14px);
+  transition: transform .50s var(--easing), opacity .50s var(--easing);
+}
+
+.landing-root .cta-row.active .btn-primary,
+.landing-root .cta-row.active .btn-ghost {
+  opacity: 1;
+  transform: none;
+}
+
+
+/* ===== Breathing space below navbar ===== */
+:root{
+  /* Adjust if your Navbar is taller/shorter */
+  --nav-height: 64px;   /* typical sticky/fixed navbar height */
+  --nav-gap: 24px;      /* extra breathing space */
+}
+
+/* Override earlier hero padding */
+.landing-root .landing-hero{
+  /* original bottom padding kept (40px) */
+  padding: calc(72px + var(--nav-height) + var(--nav-gap)) 0 40px !important;
+}
+
+/* Nice-to-have: anchor links won't hide under a sticky/fixed navbar */
+html {
+  scroll-padding-top: calc(var(--nav-height) + var(--nav-gap));
+}
+
+
+/* Panel around features for depth */
+.landing-root .features {
+  padding: 88px 0;
+  background: transparent;
+}
+
+.landing-root .features .container {
+  padding: 0 20px;
+}
+
+.landing-root .h2 {
+  margin-bottom: 32px;
+  font-size: 36px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+.landing-root .features-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  column-gap: 32px;
+  row-gap: 40px;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.landing-root .feature-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 2rem;
+  text-align: center;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  box-shadow: var(--shadow);
+}
+
+.landing-root .feature-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 14px 32px rgba(15, 16, 32, 0.15);
+}
+
+.landing-root .feature-title {
+  font-weight: 800;
+  font-size: 18px;
+  margin: 10px 0 8px;
+  color: var(--text);
+}
+
+.landing-root .feature-desc {
+  color: var(--text-muted);
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+@media (max-width: 1024px) {
+  .features-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .features-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ICON CIRCLE + STROKE (no wrapper needed) */
+svg.fi{
+  width: 26px;
+  height: 26px;
+  stroke: #4f46e5 !important;  /* force Lucide stroke color */
+  stroke-width: 2.2;
+  fill: none;
+  display: inline-block;
+  /* circle framing directly on the svg */
+  padding: 18px;
+  border-radius: 9999px;
+  background: radial-gradient(120% 120% at 30% 20%,
+              rgba(79,70,229,.18) 0%,
+              rgba(124,58,237,.10) 60%,
+              rgba(79,70,229,.04) 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.6),
+              0 8px 80px rgba(79,70,229,.12);
+  margin: 0 auto 16px;
+}
+
+/* safety: if something sets stroke elsewhere */
+.landing-root .feature-icon { stroke: currentColor; }
+
+
+/* ===== Global section rhythm ===== */
+:root{
+  --nav-height: 64px;   /* your real navbar height; JS sets this if you followed earlier steps */
+  --section-y: 88px;    /* default vertical padding per section */
+  --section-y-sm: 56px; /* mobile */
+  --stack-md: 32px;     /* medium gaps inside sections */
+  --stack-lg: 40px;     /* larger gaps for headings */
+}
+
+/* Make anchor jumps account for the fixed navbar */
+html { scroll-padding-top: calc(var(--nav-height) + 16px); }
+
+/* HERO: real breathing room below navbar + decent bottom */
+.landing-root .landing-hero{
+  padding-top: calc(var(--nav-height) + 32px) !important;
+  padding-bottom: 56px !important;
+}
+
+/* FEATURES: more top/bottom space and bigger gap below the H2 */
+.landing-root .features{
+  padding: var(--section-y) 0 var(--section-y) !important;
+}
+.landing-root .h2{ margin-bottom: var(--stack-lg) !important; }
+.landing-root .features-grid{
+  row-gap: 40px !important;
+  column-gap: 32px !important;
+}
+
+/* “See How it Works”: add clear separation from Features */
+.landing-root .how{
+  padding: var(--section-y) 0 var(--section-y) !important;
+  /* if it still feels tight, uncomment the next line */
+  /* margin-top: 12px !important; */
+}
+
+/* CTA: give it air as well */
+.landing-root .cta-wrap{
+  padding: var(--section-y) 0 var(--section-y) !important;
+}
+
+
+/* Mobile tune-down */
+@media (max-width: 640px){
+  .landing-root .landing-hero{ padding-top: calc(var(--nav-height) + 20px) !important; padding-bottom: 40px !important; }
+  .landing-root .features, .how, .cta-wrap{ padding: var(--section-y-sm) 0 var(--section-y-sm) !important; }
+  .landing-root .h2{ margin-bottom: 22px !important; }
+  .landing-root .features-grid{ row-gap: 28px !important; column-gap: 20px !important; }
+}
+
+/* ===== Fix Lucide icon visibility (no wrapper needed) ===== */
+svg.fi{
+  width:26px; height:26px; display:inline-block;
+  padding:18px; border-radius:9999px; margin:0 auto 16px;
+
+  /* circle background */
+  background: radial-gradient(120% 120% at 30% 20%,
+              rgba(79,70,229,.18) 0%,
+              rgba(124,58,237,.10) 60%,
+              rgba(79,70,229,.05) 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.6),
+              0 8px 24px rgba(79,70,229,.12);
+}
+
+/* Force the stroke on ALL child elements inside the SVG */
+svg.fi, svg.fi * {
+  stroke: #4f46e5 !important;
+  stroke-width: 2.2 !important;
+  fill: none !important;
+}
+
+
+/* Icon wrapper circle */
+.landing-root .fi{
+  display:inline-grid; place-items:center;
+  width:58px; height:58px;   /* 22px icon + padding = ~58 total */
+  border-radius:9999px; margin:0 auto 16px;
+  background: radial-gradient(120% 120% at 30% 20%,
+              rgba(79,70,229,.18) 0%,
+              rgba(124,58,237,.10) 60%,
+              rgba(79,70,229,.05) 100%);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.6),
+              0 8px 24px rgba(79,70,229,.12);
+}
+/* ================================
+   CTA banner polish (scoped)
+   ================================ */
+
+.landing-root .cta-wrap .container {
+  position: relative;
+}
+
+.landing-root .cta-banner {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: clamp(16px, 2vw, 28px);
+  padding: clamp(18px, 2.2vw, 26px) clamp(20px, 3vw, 36px);
+  border-radius: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.landing-root .cta-title {
+  margin: 0 0 4px 0;
+  font-size: clamp(18px, 2.2vw, 22px);
+  line-height: 1.2;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+
+.landing-root .cta-sub {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: clamp(14px, 1.8vw, 16px);
+}
+
+/* Text */

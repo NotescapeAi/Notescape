@@ -4,6 +4,9 @@
 # Node / Vite
 node_modules/
 dist/
+frontend/node_modules/
+coverage/
+frontend/coverage/
 
 # Python / FastAPI
 .venv/
@@ -16,17 +19,16 @@ __pycache__/
 .env
 .env.*
 
-# Python virtual envs
-.venv/
-venv/
-env/
+# Secrets / keys
+secrets/
+**/serviceAccountKey.json
+**/*serviceAccount*.json
+**/*credentials*.json
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
 
-
-# Python/Node local envs
-.venv/
-venv/
-env/
-frontend/node_modules/
-coverage/
-frontend/coverage/
-
+# artifacts
+*.zip
+sr_tables.sql

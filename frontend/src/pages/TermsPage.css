@@ -1,0 +1,122 @@
+/* ====== Terms Page Styles ====== */
+:root {
+  --primary: #0d0f46;
+  --secondary: #7c4585;
+  --ink: #3d365c;
+  --paper: #f9fafb;
+}
+
+/* Page Layout */
+.terms-page {
+  background: var(--paper);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  font-family: sans-serif;
+  color: var(--ink);
+  animation: fadeIn 0.7s ease-out;
+}
+
+/* Main Container */
+.terms-content {
+  flex: 1;
+  max-width: 850px;
+  margin: 0 auto;
+  padding: 4rem 1.5rem;
+  animation: slideUp 0.7s ease-out;
+}
+
+/* Headings */
+.terms-title {
+    margin-top: 50px;
+  font-size: 2.25rem;
+  font-weight: 700;
+  margin-bottom: 1.5rem;
+  color: var(--primary);
+  text-align: center;
+  position: relative;
+}
+
+
+
+/* Section Headings */
+.terms-section-title {
+  font-size: 1.3rem;
+  font-weight: 600;
+  margin: 2rem 0 1rem;
+  color: var(--secondary);
+  position: relative;
+  padding-left: 10px;
+}
+
+.terms-section-title::before {
+  content: "◆";
+  position: absolute;
+  left: -18px;
+  top: 0;
+  font-size: 0.9rem;
+  color: var(--primary);
+  opacity: 0.8;
+}
+
+/* Paragraphs */
+.terms-text {
+  font-size: 1rem;
+  line-height: 1.7;
+  margin-bottom: 1rem;
+  color: #374151;
+  transition: color 0.3s ease;
+}
+
+.terms-text:hover {
+  color: #111827;
+}
+
+/* Lists */
+.terms-list {
+  list-style: disc;
+  padding-left: 1.5rem;
+  margin-bottom: 1.5rem;
+  color: #374151;
+  line-height: 1.6;
+}
+
+.terms-list li {
+  margin-bottom: 0.5rem;
+  transition: transform 0.2s ease, color 0.3s ease;
+}
+
+.terms-list li:hover {
+  color: var(--primary);
+  transform: translateX(5px);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .terms-content {
+    padding: 2rem 1rem;
+  }
+
+  .terms-title {
+    font-size: 1.8rem;
+  }
+
+  .terms-section-title {
+    font-size: 1.1rem;
+  }
+
+  .terms-text {
+    font-size: 0.95rem;
+  }
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}

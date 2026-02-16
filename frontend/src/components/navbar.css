@@ -1,0 +1,250 @@
+/* ===== Navbar Styles ===== */
+.ns-nav-wrap {
+  position: fixed;
+  inset: 0 auto auto 0; /* top:0; left:0; right:0 */
+  z-index: 50;
+  width: 100%;
+  background: transparent;             /* was #fff */
+  box-shadow: none;                    /* no shadow at top */
+  border-bottom: 1px solid transparent;
+  transition: background .25s var(--easing),
+              box-shadow .25s var(--easing),
+              border-color .25s var(--easing),
+              backdrop-filter .25s var(--easing);
+}
+
+.ns-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 auto;
+  padding: 10px 10px;
+  max-width: 1200px;
+}
+.ns-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+}
+.ns-logo img {
+  height: 32px;
+  width: 40px;
+  border-radius: 8px;
+}
+.ns-logo .ns-brand {
+  font-weight: 610;
+  letter-spacing: -0.3px;
+  font-size: 20px;
+  color: rgb(30, 30, 30);
+}
+.ns-link {
+  position: relative;
+  color: rgb(124, 69, 133);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 14px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  transition: color .15s ease, background .15s ease;
+}
+.ns-link:hover {
+  color: #4f46e5;
+  background: rgba(79,70,229,.08);
+}
+/* Navbar link underline animation */
+.ns-link::after {
+  content: "";
+  position: absolute;
+  bottom: -3px; left: 50%;
+  width: 0; height: 2px;
+  background: #4f46e5;
+  transition: width .3s ease, left .3s ease;
+}
+.ns-link:hover::after {
+  width: 100%;
+  left: 0;
+}
+
+/* Mobile Navbar */
+.menu-toggle {
+  display: none;
+  cursor: pointer;
+  font-size: 24px;
+}
+@media (max-width: 768px) {
+  .ns-nav-links {
+    display: none;
+    flex-direction: column;
+    gap: 16px;
+    background: rgba(255,255,255,0.95);
+    position: absolute;
+    top: 60px;
+    right: 20px;
+    padding: 20px;
+    border-radius: 16px;
+    box-shadow: 0 12px 24px rgba(0,0,0,0.1);
+  }
+  .ns-nav-links.active {
+    display: flex;
+  }
+  .menu-toggle {
+    display: block;
+  }
+}
+/* put this in navbar.css or a global buttons.css file */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: linear-gradient(90deg, var(--c2), var(--c3));
+  color: #ffffff;
+  padding: 10px 16px;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 14px;
+  border: 0;
+  text-decoration: none;
+  box-shadow: 0 10px 28px rgba(139, 92, 246, 0.24);
+  transition: transform .15s var(--easing),
+              box-shadow .18s var(--easing),
+              background-position .5s ease,
+              color .3s ease;
+  background-size: 200% 100%;
+}
+.btn-primary:hover {
+  transform: translateY(-2px);
+  background-position: 100% 0;
+  box-shadow: 0 16px 36px rgba(223, 223, 224, 0.28);
+  color: #ffffff;
+  background: rgb(123, 126, 190); 
+}
+
+
+.subscribe-wrapper {
+  position: relative;
+}
+
+.subscribe-trigger {
+  background: transparent;
+  border: 1px solid rgba(15, 23, 36, 0.15);
+  border-radius: 999px;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 600;
+  color: rgb(15, 23, 36);
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.subscribe-trigger:hover {
+  border-color: rgba(79, 70, 229, 0.8);
+  transform: translateY(-1px);
+  background: rgba(79, 70, 229, 0.08);
+}
+
+.subscribe-popover {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  width: min(360px, 90vw);
+  padding: 1rem;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 25px 40px rgba(15, 23, 42, 0.18);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.subscribe-popover.desktop-only {
+  display: flex;
+}
+
+.subscribe-popover.mobile-only {
+  position: static;
+  width: 100%;
+  box-shadow: none;
+  border: 0;
+  margin-left: -0.25rem;
+  background: transparent;
+  padding: 0;
+}
+
+.subscribe-popover__form {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.subscribe-popover__form input {
+  flex: 1;
+  padding: 0.65rem 0.9rem;
+  border-radius: 10px;
+  border: 1px solid rgba(15, 23, 42, 0.1);
+  font-size: 0.95rem;
+}
+
+.subscribe-popover__form button {
+  border: none;
+  border-radius: 10px;
+  padding: 0.65rem 1rem;
+  background: #0b1221;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.subscribe-popover__message {
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.subscribe-popover__message.success {
+  color: #0f9d58;
+}
+
+.subscribe-popover__message.error {
+  color: #dc2626;
+}
+
+.subscribe-mobile-toggle {
+  padding: 0;
+  text-align: left;
+}
+
+@media (max-width: 768px) {
+  .subscribe-popover.desktop-only {
+    display: none;
+  }
+
+  .subscribe-mobile-toggle {
+    width: 100%;
+    padding-left: 0;
+  }
+
+  .subscribe-popover__form {
+    flex-direction: column;
+  }
+
+  .subscribe-popover__form button {
+    width: 100%;
+  }
+}
+
+@media (min-width: 769px) {
+  .subscribe-popover.mobile-only {
+    display: none;
+  }
+}
+
+
+.ns-nav-wrap.is-scrolled {
+  background: rgba(255,255,255,0.78) !important;
+  backdrop-filter: saturate(160%) blur(12px);
+  -webkit-backdrop-filter: saturate(160%) blur(12px);
+  border-bottom-color: rgba(15,23,36,0.08) !important;
+  box-shadow: 0 6px 18px rgba(15,23,36,0.06) !important;
+}

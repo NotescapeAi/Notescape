@@ -5,12 +5,13 @@
     { "path": "./tsconfig.node.json" }
   ],
   "compilerOptions": {
-    "target": "es2017",
-    "lib": ["dom", "esnext"],
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
     "jsx": "react-jsx",
-    "module": "esnext",
-    "strict": true
+    "types": ["vite/client"]
   }
 }
+
 
 

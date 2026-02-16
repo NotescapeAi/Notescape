@@ -1,0 +1,189 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: notescape-db
+    environment:
+      POSTGRES_USER: "${PGUSER:-notescape}"
+      POSTGRES_PASSWORD: "${PGPASSWORD:-notescape_pass}"
+      POSTGRES_DB: "${PGDATABASE:-notescape}"
+    ports:
+      - "${DB_PORT:-5434}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    restart: unless-stopped
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PGUSER:-notescape} -d ${PGDATABASE:-notescape}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: notescape-redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    stop_grace_period: 30s
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 2s
+      retries: 5
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: notescape-backend
+    container_name: notescape-api
+    environment:
+      DATABASE_URL: "postgresql://${PGUSER:-notescape}:${PGPASSWORD:-notescape_pass}@db:5432/${PGDATABASE:-notescape}"
+      CORS_ORIGINS: "http://localhost:3000,http://localhost:5173"
+      UPLOAD_ROOT: "/app/uploads"
+      STORAGE_BACKEND: "${STORAGE_BACKEND:-s3}"
+      S3_ENDPOINT_URL: "${S3_ENDPOINT_URL}"
+      S3_ACCESS_KEY: "${S3_ACCESS_KEY}"
+      S3_SECRET_KEY: "${S3_SECRET_KEY}"
+      S3_BUCKET: "${S3_BUCKET}"
+      S3_REGION: "${S3_REGION:-us-east-1}"
+      EMBED_PROVIDER: "${EMBED_PROVIDER:-local}"
+      EMBED_MODEL: "${EMBED_MODEL:-sentence-transformers/all-MiniLM-L6-v2}"
+      EMBED_DIM: "${EMBED_DIM:-1536}"
+      LLM_PROVIDER: "groq"
+      GEN_MODEL: "llama-3.3-70b-versatile"
+      GEN_T: "0.2"
+      CHAT_PROVIDER: "groq"
+      CHAT_MODEL: "llama-3.3-70b-versatile"
+      GROQ_API_KEY: "${GROQ_API_KEY:-}"
+      REDIS_URL: "redis://redis:6379/0"
+      QUIZ_MIGRATION_FILE: "/workspace/db/init/10_quizzes.sql"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 30s
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - ./backend:/app
+      - ./db:/workspace/db:ro
+      - ./secrets:/app/secrets:ro
+
+  ocr_worker:
+    image: notescape-backend
+    container_name: notescape-ocr-worker
+    command: python -m app.workers.ocr_worker
+    environment:
+      DATABASE_URL: "postgresql://${PGUSER:-notescape}:${PGPASSWORD:-notescape_pass}@db:5432/${PGDATABASE:-notescape}"
+      CORS_ORIGINS: "http://localhost:3000,http://localhost:5173"
+      UPLOAD_ROOT: "/app/uploads"
+      STORAGE_BACKEND: "${STORAGE_BACKEND:-s3}"
+      S3_ENDPOINT_URL: "${S3_ENDPOINT_URL}"
+      S3_ACCESS_KEY: "${S3_ACCESS_KEY}"
+      S3_SECRET_KEY: "${S3_SECRET_KEY}"
+      S3_BUCKET: "${S3_BUCKET}"
+      S3_REGION: "${S3_REGION:-us-east-1}"
+      REDIS_URL: "redis://redis:6379/0"
+      QUIZ_MIGRATION_FILE: "/workspace/db/init/10_quizzes.sql"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 30s
+    volumes:
+      - ./backend:/app
+      - ./db:/workspace/db:ro
+
+  flashcard_worker:
+    image: notescape-backend
+    container_name: notescape-flashcard-worker
+    command: python -m app.workers.flashcard_worker
+    environment:
+      DATABASE_URL: "postgresql://${PGUSER:-notescape}:${PGPASSWORD:-notescape_pass}@db:5432/${PGDATABASE:-notescape}"
+      CORS_ORIGINS: "http://localhost:3000,http://localhost:5173"
+      UPLOAD_ROOT: "/app/uploads"
+      STORAGE_BACKEND: "${STORAGE_BACKEND:-s3}"
+      S3_ENDPOINT_URL: "${S3_ENDPOINT_URL}"
+      S3_ACCESS_KEY: "${S3_ACCESS_KEY}"
+      S3_SECRET_KEY: "${S3_SECRET_KEY}"
+      S3_BUCKET: "${S3_BUCKET}"
+      S3_REGION: "${S3_REGION:-us-east-1}"
+      EMBED_PROVIDER: "${EMBED_PROVIDER:-local}"
+      EMBED_MODEL: "${EMBED_MODEL:-sentence-transformers/all-MiniLM-L6-v2}"
+      EMBED_DIM: "${EMBED_DIM:-1536}"
+      LLM_PROVIDER: "groq"
+      GEN_MODEL: "llama-3.3-70b-versatile"
+      GEN_T: "0.2"
+      CHAT_PROVIDER: "groq"
+      CHAT_MODEL: "llama-3.3-70b-versatile"
+      GROQ_API_KEY: "${GROQ_API_KEY:-}"
+      REDIS_URL: "redis://redis:6379/0"
+      QUIZ_MIGRATION_FILE: "/workspace/db/init/10_quizzes.sql"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 30s
+    volumes:
+      - ./backend:/app
+      - ./db:/workspace/db:ro
+
+  # ✅ NEW: quiz_worker (added safely under services)
+  quiz_worker:
+    image: notescape-backend
+    container_name: notescape-quiz-worker
+    command: python -m app.workers.quiz_worker
+    environment:
+      DATABASE_URL: "postgresql://${PGUSER:-notescape}:${PGPASSWORD:-notescape_pass}@db:5432/${PGDATABASE:-notescape}"
+      CORS_ORIGINS: "http://localhost:3000,http://localhost:5173"
+      UPLOAD_ROOT: "/app/uploads"
+      STORAGE_BACKEND: "${STORAGE_BACKEND:-s3}"
+      S3_ENDPOINT_URL: "${S3_ENDPOINT_URL}"
+      S3_ACCESS_KEY: "${S3_ACCESS_KEY}"
+      S3_SECRET_KEY: "${S3_SECRET_KEY}"
+      S3_BUCKET: "${S3_BUCKET}"
+      S3_REGION: "${S3_REGION:-us-east-1}"
+      EMBED_PROVIDER: "${EMBED_PROVIDER:-local}"
+      EMBED_MODEL: "${EMBED_MODEL:-sentence-transformers/all-MiniLM-L6-v2}"
+      EMBED_DIM: "${EMBED_DIM:-1536}"
+      LLM_PROVIDER: "groq"
+      GEN_MODEL: "llama-3.3-70b-versatile"
+      GEN_T: "0.2"
+      CHAT_PROVIDER: "groq"
+      CHAT_MODEL: "llama-3.3-70b-versatile"
+      GROQ_API_KEY: "${GROQ_API_KEY:-}"
+      REDIS_URL: "redis://redis:6379/0"
+      QUIZ_MIGRATION_FILE: "/workspace/db/init/10_quizzes.sql"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 30s
+    volumes:
+      - ./backend:/app
+      - ./db:/workspace/db:ro
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: notescape-frontend
+    depends_on:
+      - api
+    ports:
+      - "3000:80"
+    restart: unless-stopped
+    stop_grace_period: 30s
+
+volumes:
+  pgdata:
