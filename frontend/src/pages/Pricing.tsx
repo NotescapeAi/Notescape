@@ -4,8 +4,7 @@ import { motion } from "framer-motion";
 import "@fontsource/montserrat/400.css";
 import "@fontsource/montserrat/700.css";
 import "./pricing.css";
-import Navbar from "../components/Navbar";
-import Footer from "../components/Footer";
+import MarketingLayout from "../components/MarketingLayout";
 
 
 export default function Pricing() {
@@ -15,9 +14,7 @@ export default function Pricing() {
   };
 
   return (
-    <div className="pricing-root">
-      <Navbar />
-
+    <MarketingLayout className="pricing-root">
       <main className="pricing-hero">
         <div className="container">
           {/* Eyebrow */}
@@ -71,8 +68,6 @@ export default function Pricing() {
           </motion.form>
         </div>
       </main>
-
-      <Footer />
-    </div>
+    </MarketingLayout>
   );
 }

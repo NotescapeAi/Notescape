@@ -2,6 +2,7 @@
 import React, { useState, FormEvent, MouseEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { login, signInWithGoogle, signInWithGithub } from "../firebase/firebaseAuth";
+import { auth } from "../firebase/firebase";
 import "./NotescapeStartPage.css"
 
 export default function Login() {
@@ -60,6 +61,12 @@ export default function Login() {
     setSubmitting(true);
     try {
       await login(email, password);
+      const user = auth.currentUser;
+      if (user && !user.emailVerified) {
+        setError("Email not verified. Please verify to continue.");
+        navigate("/verify-email");
+        return;
+      }
       navigate("/dashboard");
     } catch (err: unknown) {
       console.error("Login error:", err);

@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Optional, Dict, Any
+import asyncio
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -10,7 +11,8 @@ from app.core.settings import settings
 from app.dependencies import get_request_user_uid
 
 router = APIRouter(prefix="/api", tags=["profile"])
-_schema_checked = False
+_schema_ready = False
+_schema_lock = asyncio.Lock()
 
 
 class ProfileUpdate(BaseModel):
@@ -33,42 +35,45 @@ def _map_provider(provider_id: str) -> str:
 
 
 async def _ensure_user_schema():
-    global _schema_checked
-    if _schema_checked:
+    global _schema_ready
+    if _schema_ready:
         return
-    async with db_conn() as (conn, cur):
-        await cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS users (
-              id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-              email TEXT UNIQUE NOT NULL,
-              full_name TEXT,
-              avatar_url TEXT,
-              firebase_uid TEXT NOT NULL,
-              provider TEXT NOT NULL,
-              provider_id TEXT NOT NULL,
-              display_name TEXT,
-              dark_mode BOOLEAN NOT NULL DEFAULT FALSE,
-              created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-              updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    async with _schema_lock:
+        if _schema_ready:
+            return
+        async with db_conn() as (conn, cur):
+            await cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS users (
+                  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                  email TEXT UNIQUE NOT NULL,
+                  full_name TEXT,
+                  avatar_url TEXT,
+                  firebase_uid TEXT NOT NULL,
+                  provider TEXT NOT NULL,
+                  provider_id TEXT NOT NULL,
+                  display_name TEXT,
+                  dark_mode BOOLEAN NOT NULL DEFAULT FALSE,
+                  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+                  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+                """
             )
-            """
-        )
-        await cur.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS users_provider_idx ON users (provider, provider_id)"
-        )
-        await cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS full_name TEXT")
-        await cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT")
-        await cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name TEXT")
-        await cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS firebase_uid TEXT NOT NULL DEFAULT ''")
-        await cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS provider TEXT NOT NULL DEFAULT 'google'")
-        await cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS provider_id TEXT NOT NULL DEFAULT ''")
-        await cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_firebase_uid_idx ON users (firebase_uid)")
-        await cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS dark_mode BOOLEAN NOT NULL DEFAULT FALSE")
-        await cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS theme_preference TEXT NOT NULL DEFAULT 'system'")
-        await cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now()")
-        await conn.commit()
-    _schema_checked = True
+            await cur.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS users_provider_idx ON users (provider, provider_id)"
+            )
+            await cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS full_name TEXT")
+            await cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT")
+            await cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS display_name TEXT")
+            await cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS firebase_uid TEXT NOT NULL DEFAULT ''")
+            await cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS provider TEXT NOT NULL DEFAULT 'google'")
+            await cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS provider_id TEXT NOT NULL DEFAULT ''")
+            await cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_firebase_uid_idx ON users (firebase_uid)")
+            await cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS dark_mode BOOLEAN NOT NULL DEFAULT FALSE")
+            await cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS theme_preference TEXT NOT NULL DEFAULT 'system'")
+            await cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT now()")
+            await conn.commit()
+        _schema_ready = True
 
 
 async def _upsert_user_from_firebase(user_id: str) -> Dict[str, Any]:

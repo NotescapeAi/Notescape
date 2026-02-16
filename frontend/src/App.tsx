@@ -44,25 +44,12 @@ const Pricing            = lazy(() => import("./pages/Pricing"));
 const TermsPage          = lazy(() => import("./pages/TermsPage"));
 const PrivacyPolicy      = lazy(() => import("./pages/PrivacyPolicy"));
 const ContactPage        = lazy(() => import("./pages/ContactPage"));
+const VerifyEmail        = lazy(() => import("./pages/VerifyEmail"));
 
 
-//  these two routes must exist for the menu navigation to show a new UI
-const FlashcardsViewMode  = lazy(() => import("./pages/FlashcardsViewMode"));
-const FlashcardsStudyMode = lazy(() => import("./pages/FlashcardsStudyMode"));
-const FlashcardsBookmarks = lazy(() => import("./pages/FlashcardsBookmarks"));
 
 const QuizzesPage = lazy(() => import("./pages/quizzes/QuizzesPage"));
 const QuizAttemptPage = lazy(() => import("./pages/quizzes/QuizAttemptPage"));
-
-import { onAuthStateChanged, User } from "firebase/auth";
-import { auth } from "./firebase/firebase";
-import { useState } from "react";
-import { UserProvider } from "./hooks/useUser";
-import { ThemeProvider } from "./hooks/useTheme";
-
-/* =========================
-   Helpers
-========================= */
 
 
 function GetStartedGate() {
@@ -77,8 +64,14 @@ function GetStartedGate() {
     return () => unsub();
   }, []);
 
-  if (!ready) return <div style={{ padding: 24 }}>Loading…</div>;
-  return <Navigate to={user ? "/classes" : "/signup"} replace />;
+  if (!ready) return <div style={{ padding: 24 }}>Loading</div>;
+  if (user) {
+    if (!user.emailVerified) {
+      return <Navigate to="/verify-email" replace />;
+    }
+    return <Navigate to="/classes" replace />;
+  }
+  return <Navigate to="/signup" replace />;
 }
 
 function NotFound() {
@@ -112,6 +105,13 @@ function AppRoutes() {
       <Route path="/get-started" element={<GetStartedGate />} />
       <Route path="/signup" element={<Signup />} />
       <Route path="/login" element={<Login />} />
+      {/* marketing / auth */}
+      <Route path="/"                element={<LandingPage />} />
+      <Route path="/start"           element={<NotescapeStartPage />} />
+      <Route path="/get-started"     element={<GetStartedGate />} />
+      <Route path="/signup"          element={<Signup />} />
+      <Route path="/login"           element={<Login />} />
+      <Route path="/verify-email"  element={<RequireAuth requireEmailVerified={false}><VerifyEmail /></RequireAuth>} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/logout" element={<LogoutPage />} />
 

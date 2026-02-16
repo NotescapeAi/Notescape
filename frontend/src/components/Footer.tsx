@@ -1,15 +1,23 @@
 import { Link } from "react-router-dom";
 import { FormEvent, useState } from "react";
+<<<<<<< HEAD
 import emailjs from "@emailjs/browser";
 import "./footer.css";
+=======
+import "./footer.css";
+import { sendNewsletterSubscription } from "../lib/newsletter";
+>>>>>>> 79368a9 (WIP: local changes)
 
 const Footer: React.FC = () => {
   const [subscribed, setSubscribed] = useState(false);
   const [email, setEmail] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState("");
 
   const handleSubscribe = async (e: FormEvent) => {
     e.preventDefault();
 
+<<<<<<< HEAD
     try {
       await emailjs.send(
         import.meta.env.VITE_EMAILJS_SERVICE_ID,
@@ -25,6 +33,19 @@ const Footer: React.FC = () => {
     } catch (error) {
       console.error("Subscription failed", error);
       alert("Subscription failed. Try again.");
+=======
+    setError("");
+    setIsSubmitting(true);
+    try {
+      await sendNewsletterSubscription(email, "Footer");
+      setSubscribed(true);
+      setEmail("");
+    } catch (err) {
+      console.error("Subscription failed", err);
+      setError("Unable to subscribe right now. Please try again later.");
+    } finally {
+      setIsSubmitting(false);
+>>>>>>> 79368a9 (WIP: local changes)
     }
   };
 
@@ -71,9 +92,12 @@ const Footer: React.FC = () => {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
-              <button type="submit">Subscribe</button>
+              <button type="submit" disabled={!email.trim() || isSubmitting}>
+                {!isSubmitting ? "Subscribe" : "Subscribing…"}
+              </button>
             </form>
           )}
+          {error && <p className="subscribe-feedback error">{error}</p>}
         </div>
       </div>
 

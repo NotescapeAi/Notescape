@@ -124,6 +124,12 @@
   transform: translateY(-2px);
 }
 
+.subscribe-feedback {
+  margin-top: 0.65rem;
+  font-size: 0.85rem;
+  color: #f87171;
+}
+
 .foot-bottom {
   text-align: center;
   margin-top: 2rem;

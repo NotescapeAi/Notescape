@@ -1,12 +1,18 @@
-import { useState, useEffect } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { Link, NavLink } from "react-router-dom";
 import { Menu, X } from "lucide-react";
 import "./navbar.css";
+import { sendNewsletterSubscription } from "../lib/newsletter";
 
 
 const Navbar: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const [subscribeOpen, setSubscribeOpen] = useState(false);
+  const [subscribeEmail, setSubscribeEmail] = useState("");
+  const [subscribeStatus, setSubscribeStatus] = useState<"idle" | "pending" | "success" | "error">("idle");
+  const [subscribeMessage, setSubscribeMessage] = useState("");
+  const [subscribeSubmitting, setSubscribeSubmitting] = useState(false);
 
   useEffect(() => {
     const hero = document.querySelector<HTMLElement>("#hero");
@@ -33,7 +39,7 @@ const Navbar: React.FC = () => {
     compute(); // run once on mount
 
     return () => {
-      document.removeEventListener("scroll", compute, { capture: true } as any);
+      document.removeEventListener("scroll", compute, { capture: true });
       window.removeEventListener("resize", compute);
     };
   }, []);
@@ -51,6 +57,77 @@ const Navbar: React.FC = () => {
         borderBottom: "1px solid transparent",
         boxShadow: "none",
       };
+
+  useEffect(() => {
+    if (!isOpen) {
+      setSubscribeOpen(false);
+    }
+  }, [isOpen]);
+
+  const resetSubscribeState = () => {
+    setSubscribeStatus("idle");
+    setSubscribeMessage("");
+  };
+
+  const toggleSubscribe = () => {
+    setSubscribeOpen((prev) => {
+      const next = !prev;
+      if (!next) {
+        resetSubscribeState();
+      }
+      return next;
+    });
+  };
+
+  const handleNewsletterSubscribe = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!subscribeEmail.trim()) {
+      setSubscribeStatus("error");
+      setSubscribeMessage("Please provide an email.");
+      return;
+    }
+    setSubscribeSubmitting(true);
+    setSubscribeStatus("pending");
+    setSubscribeMessage("");
+    try {
+      await sendNewsletterSubscription(subscribeEmail, "Navbar");
+      setSubscribeStatus("success");
+      setSubscribeMessage("Thanks! You'll receive the latest updates soon.");
+      setSubscribeEmail("");
+    } catch (err) {
+      console.error("Newsletter subscription failed:", err);
+      setSubscribeStatus("error");
+      setSubscribeMessage("Unable to sign you up right now. Please try again later.");
+    } finally {
+      setSubscribeSubmitting(false);
+    }
+  };
+
+  const renderSubscribePopover = (variant: "desktop" | "mobile") => (
+    <div
+      className={`subscribe-popover ${variant === "desktop" ? "desktop-only" : "mobile-only"}`}
+      aria-live="polite"
+    >
+      <form className="subscribe-popover__form" onSubmit={handleNewsletterSubscribe}>
+        <input
+          type="email"
+          aria-label="Email address"
+          placeholder="Enter your email"
+          value={subscribeEmail}
+          onChange={(event) => setSubscribeEmail(event.target.value)}
+          required
+        />
+        <button type="submit" disabled={subscribeSubmitting || !subscribeEmail.trim()}>
+          {subscribeSubmitting ? "Sending..." : "Subscribe"}
+        </button>
+      </form>
+      {subscribeMessage && (
+        <p className={`subscribe-popover__message ${subscribeStatus === "error" ? "error" : "success"}`}>
+          {subscribeMessage}
+        </p>
+      )}
+    </div>
+  );
 
   return (
     <header
@@ -73,7 +150,20 @@ const Navbar: React.FC = () => {
 
         {/* Desktop Actions */}
         <div className="hidden md:flex ns-actions">
-          <Link to="/get-started" className="btn-primary cta-purple">Sign Up</Link>
+          <div className="subscribe-wrapper">
+            <button
+              type="button"
+              className="subscribe-trigger"
+              onClick={toggleSubscribe}
+              aria-expanded={subscribeOpen}
+            >
+              {subscribeStatus === "success" ? "Subscribed" : "Subscribe"}
+            </button>
+            {subscribeOpen && renderSubscribePopover("desktop")}
+          </div>
+          <Link to="/get-started" className="btn-primary cta-purple">
+            Sign Up
+          </Link>
         </div>
 
         {/* Mobile Toggle */}
@@ -90,6 +180,15 @@ const Navbar: React.FC = () => {
           <Link to="/#features" className="ns-link hover:text-blue-600" onClick={() => setIsOpen(false)}>Features</Link>
           <NavLink to="/pricing" className="ns-link hover:text-blue-600" onClick={() => setIsOpen(false)}>Pricing</NavLink>
           <NavLink to="/support" className="ns-link hover:text-blue-600" onClick={() => setIsOpen(false)}>Support</NavLink>
+          <button
+            type="button"
+            className="ns-link subscribe-mobile-toggle"
+            onClick={toggleSubscribe}
+            aria-expanded={subscribeOpen}
+          >
+            Subscribe
+          </button>
+          {subscribeOpen && renderSubscribePopover("mobile")}
           <Link to="/get-started" className="btn-primary cta-purple mt-2" onClick={() => setIsOpen(false)}>Sign Up</Link>
         </div>
       )}

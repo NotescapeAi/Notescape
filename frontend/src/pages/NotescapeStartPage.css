@@ -273,6 +273,12 @@ body {
   font-size: 0.95rem;
 }
 
+.muted-text {
+  color: var(--muted);
+  font-size: 0.95rem;
+  margin: 0;
+}
+
 .links2 {
   justify-content: space-between;
   width: 100%;

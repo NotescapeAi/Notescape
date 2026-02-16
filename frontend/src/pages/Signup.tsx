@@ -7,7 +7,7 @@ import {
   signInWithGithub,
 } from "../firebase/firebaseAuth";
 import { auth } from "../firebase/firebase";
-import { fetchSignInMethodsForEmail } from "firebase/auth";
+import { fetchSignInMethodsForEmail, sendEmailVerification } from "firebase/auth";
 import { FirebaseError } from "firebase/app";
 import "./NotescapeStartPage.css";
 
@@ -110,7 +110,11 @@ export default function Signup() {
     setSubmitting(true);
     try {
       await signup(cleanEmail, password);
-      navigate("/dashboard");
+      const user = auth.currentUser;
+      if (user) {
+        await sendEmailVerification(user);
+      }
+      navigate("/verify-email");
     } catch (err: unknown) {
       console.error("Signup error:", err);
 

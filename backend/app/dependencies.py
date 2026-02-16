@@ -6,6 +6,7 @@ from firebase_admin import auth
 from firebase_admin import credentials
 import logging
 import os
+from typing import Any, Dict
 
 SERVICE_ACCOUNT_PATH = os.environ.get("FIREBASE_SERVICE_ACCOUNT_KEY", "/app/secrets/serviceAccountKey.json")
 log = logging.getLogger("uvicorn.error")
@@ -21,10 +22,19 @@ if not firebase_admin._apps:
 # This reads the "Authorization: Bearer <token>" header
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")  # tokenUrl is unused here, only required for OAuth2
 
+def _decode_verified_token(token: str) -> Dict[str, Any]:
+    decoded_token = auth.verify_id_token(token)
+    if not decoded_token.get("email_verified"):
+        raise HTTPException(status_code=403, detail="Email not verified")
+    return decoded_token
+
+
 async def get_current_user_uid(token: str = Depends(oauth2_scheme)):
     try:
-        decoded_token = auth.verify_id_token(token)
-        return decoded_token['uid']  # Real Firebase UID
+        decoded_token = _decode_verified_token(token)
+        return decoded_token["uid"]  # Real Firebase UID
+    except HTTPException:
+        raise
     except Exception:
         raise HTTPException(status_code=401, detail="Invalid token")
 
@@ -36,8 +46,10 @@ async def get_request_user_uid(
     if authorization and authorization.lower().startswith("bearer "):
         token = authorization.split(" ", 1)[1]
         try:
-            decoded_token = auth.verify_id_token(token)
+            decoded_token = _decode_verified_token(token)
             return decoded_token["uid"]
+        except HTTPException:
+            raise
         except Exception:
             raise HTTPException(status_code=401, detail="Invalid token")
     if x_user_id:

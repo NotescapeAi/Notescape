@@ -9,8 +9,7 @@ import {
 
 import { Link } from "react-router-dom";
 import { useEffect } from "react";
-import Navbar from "../components/Navbar";
-import Footer from "../components/Footer";
+import MarketingLayout from "../components/MarketingLayout";
 import "./landing.css";
 
 const featureCards = [
@@ -77,11 +76,9 @@ export default function LandingPage() {
   }, []);
 
   return (
-    <>
-      <Navbar />
-      <div className="landing-root">
-        {/* Hero Section */}
-        <section id="hero" className="landing-hero fade-in">
+    <MarketingLayout className="landing-root">
+      {/* Hero Section */}
+      <section id="hero" className="landing-hero fade-in">
           <div className="container hero-grid">
             <div className="hero-copy slide-left">
               <h1 className="hero-title agr-hero">
@@ -181,8 +178,6 @@ export default function LandingPage() {
           </div>
         </section>
 
-        <Footer />
-      </div>
-    </>
+    </MarketingLayout>
   );
 }
