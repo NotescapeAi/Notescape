@@ -403,6 +403,7 @@ export async function chatAsk(payload: {
   question: string;
   top_k?: number;
   file_ids?: string[];
+  messages?: { role: string; content: string }[];
 }): Promise<ChatAskRes> {
   const headers = await userHeader();
   const { data } = await http.post<ChatAskRes>("/chat/ask", payload, { headers });
@@ -449,10 +450,11 @@ export async function createChatSession(payload: {
   return data;
 }
 
-export async function listChatSessions(classId: number, documentId?: string | null): Promise<ChatSession[]> {
+export async function listChatSessions(classId: number, documentId?: string | null, includeAll?: boolean): Promise<ChatSession[]> {
   const headers = await userHeader();
   const doc = documentId ? `&document_id=${documentId}` : "";
-  const { data } = await http.get<ChatSession[]>(`/chat/sessions?class_id=${classId}${doc}`, { headers });
+  const all = includeAll ? "&include_all=true" : "";
+  const { data } = await http.get<ChatSession[]>(`/chat/sessions?class_id=${classId}${doc}${all}`, { headers });
   return Array.isArray(data) ? data : [];
 }
 
@@ -492,7 +494,7 @@ export async function addChatMessages(payload: {
     width?: number | null;
     height?: number | null;
   } | null;
-}): Promise<{ ok: boolean; messages?: ChatMessage[] }> {
+}): Promise<{ ok: boolean; messages?: ChatMessage[]; session_title?: string }> {
   const headers = await userHeader();
   const { data } = await http.post(`/chat/sessions/${payload.session_id}/messages`, {
     user_content: payload.user_content,
@@ -590,7 +592,10 @@ http.interceptors.request.use((config) => {
   const token = localStorage.getItem("auth_token");
   if (token) {
     config.headers = config.headers ?? {};
-    (config.headers as any).Authorization = `Bearer ${token}`;
+    // Only set if not already set by userHeader()
+    if (!(config.headers as any).Authorization) {
+      (config.headers as any).Authorization = `Bearer ${token}`;
+    }
   }
   return config;
 });

@@ -1,7 +1,10 @@
 // src/pages/Classes.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { ErrorBoundary } from "../components/ErrorBoundary";
+import { useLocation, useSearchParams } from "react-router-dom";
 import { Download, MessageCircle, Upload, X } from "lucide-react";
+import { ToastContainer, toast } from "react-toastify";
+import "react-toastify/dist/ReactToastify.css";
 
 import ClassSidebar from "../components/ClassSidebar";
 import ClassHeaderButtons from "../components/ClassHeaderButtons";
@@ -22,7 +25,6 @@ import {
   createChunks,
   type FileRow,
   type ClassRow,
-  type ChunkPreview,
   buildEmbeddings,
   generateFlashcardsAsync,
   getFlashcardJobStatus,
@@ -30,18 +32,13 @@ import {
   type Flashcard,
   getWeakCards,
   type WeakCard,
-  chatAsk,
-  createChatSession,
-  listChatSessions,
-  listChatSessionMessages,
-  addChatMessages,
-  deleteChatSession,
-  clearChatSessionMessages,
   type ChatSession,
   type ChatMessage,
   ocrImageSnippet,
   getDocumentViewUrl,
 } from "../lib/api";
+import { useChatSession, type Msg } from "../hooks/useChatSession";
+import { ChatInterface } from "../components/chat/ChatInterface";
 
 const ALLOWED_MIME = new Set<string>([
   "application/pdf",
@@ -67,6 +64,8 @@ function isPdfFile(file?: FileRow | null) {
   return file.filename.toLowerCase().endsWith(".pdf");
 }
 
+import { DateDisplay } from "../components/DateDisplay";
+
 function prettyBytes(bytes?: number) {
   if (!Number.isFinite(bytes ?? NaN)) return "-";
   const u = ["B", "KB", "MB", "GB", "TB"];
@@ -79,14 +78,6 @@ function prettyBytes(bytes?: number) {
   return `${n.toFixed(n < 10 && i > 0 ? 2 : 0)} ${u[i]}`;
 }
 
-function timeLocal(s?: string | null) {
-  if (!s) return "-";
-  try {
-    return new Date(s).toLocaleString();
-  } catch {
-    return s;
-  }
-}
 
 function StatusPill({ status }: { status?: string | null }) {
   const s = (status || "UPLOADED").toUpperCase();
@@ -135,16 +126,16 @@ function Tabs({
   );
 }
 
-type Msg = ChatMessage & { citations?: any };
-
-function ClassesContent() {
+export function ClassesContent() {
   const [classes, setClasses] = useState<ClassRow[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  console.log("ClassesContent render selectedId:", selectedId, "classes:", classes.length);
   const [activeTab, setActiveTab] = useState<"documents" | "flashcards" | "chat">("documents");
 
   const [files, setFiles] = useState<FileRow[] | undefined>([]);
   const [sel, setSel] = useState<Record<string, boolean>>({});
   const [flashcardSourceIds, setFlashcardSourceIds] = useState<string[]>([]);
+
   const selectedIds = useMemo(
     () => (files ?? []).filter((f) => sel[f.id]).map((f) => f.id),
     [files, sel]
@@ -155,27 +146,36 @@ function ClassesContent() {
   const [dropping, setDropping] = useState(false);
   const [invalidDropCount, setInvalidDropCount] = useState(0);
 
-  const [preview, setPreview] = useState<ChunkPreview[] | null>(null);
-  const [, setCards] = useState<Flashcard[]>([]);
   const [weakCards, setWeakCards] = useState<WeakCard[]>([]);
+  const [cards, setCards] = useState<Flashcard[]>([]);
   const [weakCardsLoading, setWeakCardsLoading] = useState(false);
+
   const [activeFile, setActiveFile] = useState<FileRow | null>(null);
   const [activeFileViewUrl, setActiveFileViewUrl] = useState<string | null>(null);
   const [activeFileViewError, setActiveFileViewError] = useState<string | null>(null);
   const [activeFileViewLoading, setActiveFileViewLoading] = useState(false);
-  const [chatDockState, setChatDockState] = useState<"collapsed" | "docked" | "fullscreen">("docked");
+
+  const [chatDockState, setChatDockState] =
+    useState<"collapsed" | "docked" | "fullscreen">("docked");
+
   const [chatDrawerOpen, setChatDrawerOpen] = useState(false);
   const [pdfFocusMode, setPdfFocusMode] = useState(false);
   const [focusChatVisible, setFocusChatVisible] = useState(true);
-  const [confirmDialog, setConfirmDialog] = useState<{ type: "delete" | "clear"; session: ChatSession } | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+
+  const [confirmDialog, setConfirmDialog] = useState<{
+    type: "delete" | "clear";
+    session: ChatSession;
+  } | null>(null);
+
   const [selectedQuote, setSelectedQuote] = useState<{
     text: string;
     fileId?: string | null;
     pageNumber?: number | null;
     boundingBox?: { x: number; y: number; width: number; height: number } | null;
   } | null>(null);
+
   const [pendingSnip, setPendingSnip] = useState<PdfSnip | null>(null);
+
   const [selectionMenu, setSelectionMenu] = useState<{
     text: string;
     x: number;
@@ -184,33 +184,68 @@ function ClassesContent() {
     page?: number | null;
     boundingBox?: { x: number; y: number; width: number; height: number } | null;
   } | null>(null);
-  const chatScrollRef = useRef<HTMLDivElement | null>(null);
-  const [isChatAtBottom, setIsChatAtBottom] = useState(true);
+
+
 
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const documentListRef = useRef<HTMLDivElement | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [newClassName, setNewClassName] = useState("");
   const [manualDocumentClose, setManualDocumentClose] = useState(false);
 
-  const [sessions, setSessions] = useState<ChatSession[]>([]);
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<Msg[]>([]);
+  const {
+    sessions,
+    activeSessionId,
+    setActiveSessionId,
+    messages,
+    busySessions,
+    busyAsk: chatBusy,
+    historyError: chatHistoryError,
+    startNewSession,
+    onAsk: hookOnAsk,
+    handleDeleteSession,
+    handleClearMessages,
+    handleRenameSession,
+    scopeFileIds,
+    toggleFileScope,
+    setFileScope,
+    convoRef: chatScrollRef,
+    isAtBottom: isChatAtBottom,
+    setIsAtBottom: setIsChatAtBottom,
+  } = useChatSession({ classId: selectedId, fileId: activeFile?.id, includeAll: true });
+
   const [chatInput, setChatInput] = useState("");
-  const [chatBusy, setChatBusy] = useState(false);
-  const [chatHistoryError, setChatHistoryError] = useState<string | null>(null);
   const [showCitations, setShowCitations] = useState(false);
-  const [scopeFileIds, setScopeFileIds] = useState<string[]>([]);
+  // scopeFileIds managed by hook
   const { sidebar, setSidebar } = useLayout();
   const prevSidebarRef = useRef(sidebar);
   const [classesPanelCollapsed, setClassesPanelCollapsed] = useState(
     window.localStorage.getItem("notescape.ui.classesPanel") === "collapsed"
   );
 
+  const showToastMessage = (msg: string) => {
+    toast.info(msg);
+  };
+
   useEffect(() => {
-    (async () => setClasses(await listClasses()))();
+    (async () => {
+      try {
+        setClasses(await listClasses());
+      } catch (err) {
+        console.error("Failed to load classes", err);
+        toast.error("Could not load classes. Please refresh.");
+      }
+    })();
   }, []);
+
+  useEffect(() => {
+    const tab = searchParams.get("tab");
+    if (tab === "chat" || tab === "documents" || tab === "flashcards") {
+      setActiveTab(tab);
+    }
+  }, [searchParams]);
 
   useEffect(() => {
     const st = (location as any)?.state;
@@ -235,10 +270,8 @@ function ClassesContent() {
       setFlashcardSourceIds([]);
       setCards([]);
       setActiveTab("documents");
-      setSessions([]);
       setActiveSessionId(null);
-      setMessages([]);
-      setScopeFileIds([]);
+      setFileScope([]);
       setActiveFile(null);
       setSelectedQuote(null);
       setSelectionMenu(null);
@@ -301,21 +334,6 @@ function ClassesContent() {
     }, 5000);
     return () => clearInterval(id);
   }, [selectedId, files]);
-
-  useEffect(() => {
-    if (!selectedId || !activeFile) {
-      setSessions([]);
-      setActiveSessionId(null);
-      return;
-    }
-    (async () => {
-      const sess = await listChatSessions(selectedId, activeFile.id);
-      setSessions(sess);
-      const stored = localStorage.getItem(`chat_last_session_${selectedId}_${activeFile.id}`);
-      const preferred = stored ? sess.find((s) => s.id === stored)?.id : null;
-      setActiveSessionId(preferred ?? sess[0]?.id ?? null);
-    })();
-  }, [selectedId, activeFile?.id]);
 
   useEffect(() => {
     if (!selectedId || activeTab !== "flashcards") {
@@ -383,47 +401,6 @@ function ClassesContent() {
   }, [selectedId, activeFile?.id]);
 
   useEffect(() => {
-    if (!activeSessionId) {
-      setMessages([]);
-      return;
-    }
-    setMessages([]);
-    setPendingSnip(null);
-    (async () => {
-      try {
-        setChatHistoryError(null);
-        const msgs = await listChatSessionMessages(activeSessionId);
-        const normalized = (msgs || []).map((m) => ({
-          ...m,
-          citations: m.citations ?? undefined,
-          selected_text: m.selected_text ?? null,
-          page_number: m.page_number ?? null,
-          bounding_box: m.bounding_box ?? null,
-          file_id: m.file_id ?? null,
-          file_scope: m.file_scope ?? null,
-          image_attachment: m.image_attachment ?? null,
-        }));
-        setMessages(normalized);
-        if (selectedId && activeFile) {
-          localStorage.setItem(`chat_last_session_${selectedId}_${activeFile.id}`, activeSessionId);
-        }
-      } catch (err) {
-        if (import.meta.env.DEV) {
-          console.warn("[classes] chat history load failed", err);
-        }
-        setChatHistoryError("Couldn't load chat history. Try refreshing.");
-      }
-    })();
-  }, [activeSessionId]);
-
-  useEffect(() => {
-    if (!isChatAtBottom) return;
-    const el = chatScrollRef.current;
-    if (!el) return;
-    el.scrollTop = el.scrollHeight;
-  }, [messages.length, chatBusy, isChatAtBottom]);
-
-  useEffect(() => {
     if (!selectionMenu) return;
     const clear = () => setSelectionMenu(null);
     window.addEventListener("scroll", clear, true);
@@ -433,6 +410,13 @@ function ClassesContent() {
       window.removeEventListener("mousedown", clear);
     };
   }, [selectionMenu]);
+
+  useEffect(() => {
+    // When switching active file, clear any pending selections/snips from previous file
+    setSelectionMenu(null);
+    setSelectedQuote(null);
+    setPendingSnip(null);
+  }, [activeFile?.id]);
 
   function toggleFocusMode() {
     if (pdfFocusMode) {
@@ -490,10 +474,17 @@ function ClassesContent() {
   }
 
   async function handleCreate(name: string) {
-    const row = await createClass({ name, subject: "General" });
-    setClasses((xs) => [...xs, row]);
-    setShowCreate(false);
-    setNewClassName("");
+    try {
+      const row = await createClass({ name, subject: "General" });
+      setClasses((xs) => [...xs, row]);
+      setShowCreate(false);
+      setNewClassName("");
+      toast.success("Class created successfully!");
+    } catch (err: any) {
+      console.error("Failed to create class:", err);
+      setToast(`Error: ${err.response?.data?.detail || err.message || "Failed to create class"}`);
+      setTimeout(() => setToast(null), 5000);
+    }
   }
   async function handleRename(id: number, name: string) {
     const row = await updateClass(id, { name });
@@ -507,9 +498,7 @@ function ClassesContent() {
       setFiles([]);
       setSel({});
       setCards([]);
-      setSessions([]);
       setActiveSessionId(null);
-      setMessages([]);
     }
   }
 
@@ -531,7 +520,28 @@ function ClassesContent() {
   }
 
   function acceptFile(f: File) {
+    // 100MB limit
+    if (f.size > 100 * 1024 * 1024) return false;
     return isAllowed(f);
+  }
+
+  async function uploadWithRetry(classId: number, file: File, retries = 3): Promise<FileRow> {
+    let lastError;
+    for (let i = 0; i < retries; i++) {
+      try {
+        return await uploadFile(classId, file);
+      } catch (err) {
+        lastError = err;
+        // 4xx errors should not be retried
+        if (err && (err as any).response && (err as any).response.status >= 400 && (err as any).response.status < 500) {
+          throw err;
+        }
+        if (i < retries - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 500 * Math.pow(2, i)));
+        }
+      }
+    }
+    throw lastError;
   }
 
   async function uploadMany(fileList: FileList | File[]) {
@@ -544,20 +554,33 @@ function ClassesContent() {
     const rejected = arr.filter((f) => !acceptFile(f));
     setInvalidDropCount(rejected.length);
 
+    if (rejected.length > 0) {
+      showToastMessage(`Skipped ${rejected.length} invalid or large (>100MB) files.`);
+    }
+
     if (accepted.length === 0) return;
 
     setBusyUpload(true);
+    let failCount = 0;
 
     try {
       for (const f of accepted) {
-        const row = await uploadFile(selectedId, f);
-        setFiles((xs) => [row, ...(xs ?? [])]);
+        try {
+            const row = await uploadWithRetry(selectedId, f);
+            setFiles((xs) => [row, ...(xs ?? [])]);
+        } catch (e) {
+            failCount++;
+            console.error(`Upload failed for ${f.name}`, e);
+        }
       }
-    } catch (err: unknown) {
-      showToastMessage("Upload failed. Please try again.");
     } finally {
       setBusyUpload(false);
       setDropping(false);
+      if (failCount > 0) {
+        toast.error(`Upload complete. Failed: ${failCount}/${accepted.length}.`);
+      } else {
+        toast.success("All files uploaded successfully.");
+      }
     }
   }
 
@@ -633,11 +656,11 @@ function ClassesContent() {
     } catch (err: any) {
       const status = err?.response?.status;
       if (status === 401 || status === 403) {
-        showToastMessage("You're not signed in. Please log in again.");
+        toast.error("You're not signed in. Please log in again.");
       } else if (status === 404) {
-        showToastMessage("File not found or deleted.");
+        toast.error("File not found or deleted.");
       } else {
-        showToastMessage("Could not open this file. Try again.");
+        toast.error("Could not open this file. Try again.");
       }
       return null;
     }
@@ -668,7 +691,7 @@ function ClassesContent() {
     if (!selectedId) return alert("Select a class first");
     if ((files?.length ?? 0) === 0) return alert("Upload at least one file first");
     if (flashcardSourceIds.length === 0) {
-      showToastMessage("Select study sources first.");
+      toast.warn("Select study sources first.");
       return;
     }
 
@@ -680,14 +703,13 @@ function ClassesContent() {
 
     setBusyFlow(true);
     try {
-      const res: ChunkPreview[] = await createChunks({
+      await createChunks({
         file_ids: ids,
         by: "page",
         size: 1,
         overlap: 0,
         preview_limit_per_file: 2,
       });
-      setPreview(res);
 
       await buildEmbeddings(selectedId, 1000);
 
@@ -699,7 +721,7 @@ function ClassesContent() {
         style: opts.style,
         difficulty: opts.difficulty,
       });
-      showToastMessage("Flashcard job queued. Generating in background...");
+      toast.info("Flashcard job queued. Generating in background...");
 
       const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
       let completed = false;
@@ -715,7 +737,7 @@ function ClassesContent() {
         }
       }
       if (!completed) {
-        showToastMessage("Flashcard job still running. Check back in a moment.");
+        toast.warn("Flashcard job still running. Check back in a moment.");
         return;
       }
 
@@ -728,152 +750,6 @@ function ClassesContent() {
     } finally {
       setBusyFlow(false);
     }
-  }
-
-  async function startNewSession() {
-    if (!selectedId || !activeFile) return;
-    const s = await createChatSession({
-      class_id: selectedId,
-      document_id: activeFile.id,
-      title: "New chat",
-    });
-    setSessions((prev) => [s, ...prev]);
-    setActiveSessionId(s.id);
-  }
-
-  async function onAsk(opts?: {
-    content?: string;
-    attachment?: PdfSnip | null;
-    selection?: {
-      text: string;
-      fileId?: string | null;
-      pageNumber?: number | null;
-      boundingBox?: { x: number; y: number; width: number; height: number } | null;
-    };
-  }) {
-    if (!selectedId || !activeFile) return;
-    const content = (opts?.content ?? chatInput).trim();
-    if (!content) return;
-
-    let sessionId = activeSessionId;
-    if (!sessionId) {
-      const s = await createChatSession({
-        class_id: selectedId,
-        document_id: activeFile.id,
-        title: "New chat",
-      });
-      setSessions((prev) => [s, ...prev]);
-      sessionId = s.id;
-      setActiveSessionId(s.id);
-    }
-
-    const pendingAttachment = opts?.attachment ?? null;
-    const selection = opts?.selection ?? null;
-    const userMsg: Msg = {
-      id: crypto.randomUUID?.() ?? String(Date.now()),
-      role: "user",
-      content,
-      selected_text: selection?.text ?? selectedQuote?.text ?? null,
-      page_number: selection?.pageNumber ?? selectedQuote?.pageNumber ?? pendingAttachment?.page ?? null,
-      bounding_box: selection?.boundingBox ?? selectedQuote?.boundingBox ?? null,
-      file_id: selection?.fileId ?? selectedQuote?.fileId ?? activeFile.id,
-      image_attachment: pendingAttachment ?? null,
-    };
-    setMessages((prev) => [...prev, userMsg]);
-    setChatInput("");
-    setChatBusy(true);
-    setSelectedQuote(null);
-    setPendingSnip(null);
-
-    let selectedText = selection?.text ?? selectedQuote?.text ?? null;
-    let assistantText = "Sorry, I couldn't finish that response. Please try again.";
-    let citations: any = null;
-    try {
-      let question = selectedText ? `Selected text:\n"${selectedText}"\n\n${userMsg.content}` : userMsg.content;
-      if (pendingAttachment?.data_url && !selectedText) {
-        try {
-          const ocr = await ocrImageSnippet(pendingAttachment.data_url);
-          if (ocr?.text) {
-            selectedText = ocr.text;
-            question = `Snippet text:\n"${ocr.text}"\n\n${userMsg.content}`;
-          }
-        } catch {
-          /* ignore OCR failures */
-        }
-      }
-      const effectiveFileIds = userMsg.file_id
-        ? [userMsg.file_id]
-        : scopeFileIds.length
-          ? scopeFileIds
-          : undefined;
-      const res = await chatAsk({
-        class_id: selectedId,
-        question,
-        top_k: 8,
-        file_ids: effectiveFileIds,
-      });
-      assistantText = (res.answer || "").trim() || "Not found in the uploaded material.";
-      citations = res.citations ?? null;
-    } catch (err) {
-      if (import.meta.env.DEV) {
-        console.warn("[classes] chat ask failed", err);
-      }
-      showToastMessage("Couldn't save that message. Try again.");
-    }
-
-    const botMsg: Msg = {
-      id: crypto.randomUUID?.() ?? String(Date.now() + 1),
-      role: "assistant",
-      content: assistantText,
-      citations: citations ?? undefined,
-    };
-    setMessages((prev) => [...prev, botMsg]);
-    try {
-      const saved = await addChatMessages({
-        session_id: sessionId!,
-        user_content: userMsg.content,
-        assistant_content: botMsg.content,
-        citations,
-        selected_text: selectedText ?? null,
-        page_number: userMsg.page_number ?? null,
-        bounding_box: userMsg.bounding_box ?? null,
-        file_id: userMsg.file_id ?? pendingAttachment?.file_id ?? null,
-        file_scope: scopeFileIds.length ? scopeFileIds : null,
-        image_attachment: pendingAttachment ?? null,
-      });
-      if (Array.isArray(saved?.messages)) {
-        const normalized = saved.messages.map((m) => ({
-          ...m,
-          citations: m.citations ?? undefined,
-          selected_text: m.selected_text ?? null,
-          page_number: m.page_number ?? null,
-          bounding_box: m.bounding_box ?? null,
-          file_id: m.file_id ?? null,
-          file_scope: m.file_scope ?? null,
-          image_attachment: m.image_attachment ?? null,
-        }));
-        setMessages(normalized);
-      }
-      setSessions((prev) =>
-        prev.map((s) => (s.id === sessionId ? { ...s, updated_at: new Date().toISOString() } : s))
-      );
-    } catch (err) {
-      if (import.meta.env.DEV) {
-        console.warn("[classes] chat save failed", err);
-      }
-      showToastMessage("Couldn't save that message. Try again.");
-    } finally {
-      setChatBusy(false);
-    }
-  }
-
-  function toggleFileScope(fileId: string) {
-    setScopeFileIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(fileId)) next.delete(fileId);
-      else next.add(fileId);
-      return Array.from(next);
-    });
   }
 
   function handlePdfContextSelect(sel: PdfSelection) {
@@ -919,21 +795,30 @@ function ClassesContent() {
     setChatDockState("docked");
     setChatDrawerOpen(true);
     setSelectionMenu(null);
-    onAsk({
-      content: prompt,
-      selection: { text, fileId: fileId ?? null, pageNumber: pageNumber ?? null, boundingBox: boundingBox ?? null },
+    hookOnAsk(prompt, {
+      selectedText: text,
+      fileId: fileId ?? null,
+      pageNumber: pageNumber ?? null,
+      boundingBox: boundingBox ?? null,
     });
-  }
-
-  function showToastMessage(message: string) {
-    setToast(message);
-    window.setTimeout(() => setToast(null), 2500);
   }
 
   function handleSendSnip() {
     if (!pendingSnip) return;
     const prompt = chatInput.trim() ? chatInput.trim() : "Explain this snippet.";
-    onAsk({ content: prompt, attachment: pendingSnip });
+    hookOnAsk(prompt, {
+      imageAttachment: pendingSnip.data_url,
+      fileId: pendingSnip.file_id,
+      pageNumber: pendingSnip.page,
+      boundingBox: pendingSnip.rect,
+    });
+  }
+
+  async function handleAsk() {
+    if (!chatInput.trim()) return;
+    const text = chatInput;
+    setChatInput("");
+    await hookOnAsk(text);
   }
 
   async function handleConfirmAction() {
@@ -941,27 +826,10 @@ function ClassesContent() {
     const { session, type } = confirmDialog;
     try {
       if (type === "delete") {
-        await deleteChatSession(session.id, selectedId ?? undefined);
-        setSessions((prev) => {
-          const next = prev.filter((s) => s.id !== session.id);
-          if (activeSessionId === session.id) {
-            setActiveSessionId(next[0]?.id ?? null);
-            setMessages([]);
-            setChatInput("");
-            setSelectedQuote(null);
-          }
-          return next;
-        });
+        await handleDeleteSession(session.id);
       } else {
-        await clearChatSessionMessages(session.id);
-        if (activeSessionId === session.id) {
-          setMessages([]);
-        }
+        await handleClearMessages(session.id);
       }
-    } catch {
-      showToastMessage(
-        type === "delete" ? "Couldn't delete chat. Try again." : "Couldn't clear messages. Try again."
-      );
     } finally {
       setConfirmDialog(null);
     }
@@ -1060,10 +928,10 @@ function ClassesContent() {
           style={{
             gridTemplateColumns: classesPanelCollapsed ? "84px minmax(0,1fr)" : "300px minmax(0,1fr)",
             transition: "grid-template-columns 0.25s ease",
-          }}
-        >
-          <ClassSidebar
-            items={classes}
+        }}
+      >
+        <ClassSidebar
+          items={classes}
             selectedId={selectedId}
             onSelect={(id) => setSelectedId(id)}
             onNew={() => setShowCreate(true)}
@@ -1142,6 +1010,13 @@ function ClassesContent() {
                                 </div>
                               </div>
                               <div className="flex items-center gap-2">
+                                <button
+                                  className="lg:hidden inline-flex h-9 items-center gap-1 rounded-lg border border-[var(--border)] px-3 text-xs font-semibold text-[var(--text-muted)] transition hover:border-[var(--primary)] hover:text-[var(--primary)]"
+                                  onClick={() => setChatDrawerOpen(true)}
+                                >
+                                  <MessageCircle className="h-3.5 w-3.5" />
+                                  Chat
+                                </button>
                                 <a
                                   href={activeFileViewUrl ?? "#"}
                                   download
@@ -1161,7 +1036,7 @@ function ClassesContent() {
                                 </button>
                               </div>
                             </div>
-                            <div className="min-h-[84vh] surface-2">
+                            <div className="min-h-[calc(100vh-140px)] surface-2">
                               {activeFileViewLoading ? (
                                 <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted">
                                   Preparing document...
@@ -1199,9 +1074,9 @@ function ClassesContent() {
                       )}
 
                       {showChatDock && (
-                        <aside className="hidden h-[84vh] min-h-0 flex-col rounded-2xl border border-token surface shadow-token lg:flex">
+                        <aside className="hidden h-[calc(100vh-140px)] sticky top-24 min-h-0 flex-col rounded-2xl border border-token surface shadow-token lg:flex">
                           <div
-                            className="flex items-center justify-between border-b border-token px-4 py-3"
+                            className="flex-none flex items-center justify-between border-b border-token px-4 py-3"
                             onDoubleClick={() =>
                               pdfFocusMode
                                 ? toggleFocusChat()
@@ -1230,21 +1105,28 @@ function ClassesContent() {
                               </button>
                             </div>
                           </div>
-                          <div className="border-b border-token px-4 py-3">
+                          <div className="flex-none border-b border-token px-4 py-3">
                             <div className="flex items-center gap-2">
                               <select
                                 className="h-9 flex-1 rounded-lg border border-token px-2 text-xs"
                                 value={activeSessionId ?? ""}
                                 onChange={(e) => setActiveSessionId(e.target.value)}
+                                disabled={busySessions}
                               >
-                                <option value="" disabled>
-                                  Select a session
-                                </option>
-                                {sessions.map((s) => (
-                                  <option key={s.id} value={s.id}>
-                                    {s.title}
-                                  </option>
-                                ))}
+                                {busySessions ? (
+                                  <option>Loading...</option>
+                                ) : (
+                                  <>
+                                    <option value="" disabled>
+                                      Select a session
+                                    </option>
+                                    {sessions.map((s) => (
+                                      <option key={s.id} value={s.id}>
+                                        {s.title}
+                                      </option>
+                                    ))}
+                                  </>
+                                )}
                               </select>
                               <button
                                 onClick={startNewSession}
@@ -1257,9 +1139,9 @@ function ClassesContent() {
                               {sessions.length === 0 ? "No sessions yet." : "Pick a session to keep history."}
                             </div>
                           </div>
-                          <div className="border-b border-token px-4 py-3">
+                          <div className="flex-none border-b border-token px-4 py-3">
                             <div className="text-xs font-semibold text-muted">Scope</div>
-                            <div className="mt-2 flex flex-wrap gap-2">
+                            <div className="mt-2 flex flex-wrap gap-2 max-h-24 overflow-y-auto">
                               {(files ?? []).length === 0 ? (
                                 <span className="text-[11px] text-muted">Upload files to enable scope.</span>
                               ) : (
@@ -1269,13 +1151,14 @@ function ClassesContent() {
                                     <button
                                       key={f.id}
                                       onClick={() => toggleFileScope(f.id)}
-                                      className={`rounded-full border px-3 py-1 text-[11px] ${
+                                      className={`max-w-full truncate rounded-full border px-3 py-1 text-[11px] transition-colors ${
                                         checked
                                           ? "border-strong bg-inverse text-inverse"
-                                          : "border-token text-muted"
+                                          : "border-token text-muted hover:bg-surface-2"
                                       }`}
+                                      title={f.filename}
                                     >
-                                      {f.filename}
+                                      <span className="block max-w-[120px] truncate">{f.filename}</span>
                                     </button>
                                   );
                                 })
@@ -1293,7 +1176,7 @@ function ClassesContent() {
                               messages.map(renderMessage)
                             )}
                           </div>
-                          <div className="border-t border-token p-3">
+                          <div className="flex-none border-t border-token p-3 bg-surface">
                             {pendingSnip && (
                               <div className="mb-3 rounded-xl border border-token surface-2 px-3 py-2 text-xs text-muted">
                                 <div className="flex items-center justify-between gap-2">
@@ -1333,7 +1216,7 @@ function ClassesContent() {
                                 className="h-10 flex-1 rounded-lg border border-token surface px-3 text-sm text-main placeholder:text-muted caret-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
                               />
                               <button
-                                onClick={() => onAsk()}
+                                onClick={handleAsk}
                                 className="h-10 rounded-lg border border-token px-3 text-xs font-semibold text-muted"
                                 disabled={chatBusy}
                               >
@@ -1345,7 +1228,7 @@ function ClassesContent() {
                       )}
 
                       {showChatFullscreen && (
-                        <aside className="flex h-[84vh] min-h-0 flex-col rounded-2xl border border-token surface shadow-token">
+                        <aside className="flex h-[calc(100vh-140px)] min-h-0 flex-col rounded-2xl border border-token surface shadow-token">
                           <div
                             className="flex items-center justify-between border-b border-token px-4 py-3"
                             onDoubleClick={() => setChatDockState("docked")}
@@ -1380,7 +1263,7 @@ function ClassesContent() {
                               messages.map(renderMessage)
                             )}
                           </div>
-                          <div className="border-t border-token p-3">
+                          <div className="flex-none border-t border-token p-3 bg-surface">
                             <div className="flex items-center gap-2">
                               <input
                                 value={chatInput}
@@ -1389,7 +1272,7 @@ function ClassesContent() {
                                 className="h-10 flex-1 rounded-lg border border-token surface px-3 text-sm text-main placeholder:text-muted caret-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
                               />
                               <button
-                                onClick={() => onAsk()}
+                                onClick={handleAsk}
                                 className="h-10 rounded-lg border border-token px-3 text-xs font-semibold text-muted"
                                 disabled={chatBusy}
                               >
@@ -1401,7 +1284,7 @@ function ClassesContent() {
                       )}
 
                       {showChatRail && (
-                        <aside className="hidden min-h-[84vh] items-center justify-center rounded-2xl border border-token surface shadow-token lg:flex">
+                        <aside className="hidden min-h-[calc(100vh-140px)] items-center justify-center rounded-2xl border border-token surface shadow-token lg:flex">
                           <button
                             className="h-10 w-10 rounded-full border border-token text-sm text-muted"
                             onClick={() => setChatDockState("docked")}
@@ -1498,7 +1381,7 @@ function ClassesContent() {
                               messages.map(renderMessage)
                             )}
                           </div>
-                          <div className="border-t border-token p-3">
+                          <div className="flex-none border-t border-token p-3 bg-surface">
                             <div className="flex items-center gap-2">
                               <input
                                 value={chatInput}
@@ -1507,7 +1390,7 @@ function ClassesContent() {
                                 className="h-10 flex-1 rounded-lg border border-token surface px-3 text-sm text-main placeholder:text-muted caret-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
                               />
                               <button
-                                onClick={() => onAsk()}
+                                onClick={handleAsk}
                                 className="h-10 rounded-lg border border-token px-3 text-xs font-semibold text-muted"
                                 disabled={chatBusy}
                               >
@@ -1625,7 +1508,13 @@ function ClassesContent() {
                                 </div>
                               </td>
                               <td className="px-4 py-3 text-muted">{prettyBytes(f.size_bytes)}</td>
-                              <td className="px-4 py-3 text-muted">{timeLocal(f.uploaded_at)}</td>
+                              <td className="px-4 py-3 text-muted">
+                                <DateDisplay 
+                                  date={f.uploaded_at} 
+                                  className="text-muted text-xs lg:text-sm"
+                                  showTime={true}
+                                />
+                              </td>
                               <td className="px-4 py-3">
                                 <StatusPill status={f.status ?? "UPLOADED"} />
                               </td>
@@ -1771,227 +1660,53 @@ function ClassesContent() {
               )}
 
               {activeTab === "chat" && (
-                <div className="mt-6 grid grid-cols-1 xl:grid-cols-[240px_minmax(0,1fr)_280px] gap-4">
-                  <aside className="rounded-2xl border border-token surface p-4 shadow-sm">
-                    <div className="flex items-center justify-between">
-                      <div className="text-sm font-semibold">Sessions</div>
-                      <button
-                        onClick={startNewSession}
-                        className="rounded-lg border border-token px-2 py-1 text-xs"
-                      >
-                        New
-                      </button>
-                    </div>
-                    <div className="mt-3 space-y-2 max-h-[65vh] overflow-auto">
-                      {sessions.length === 0 ? (
-                        <div className="text-xs text-muted">No sessions yet.</div>
-                      ) : (
-                        sessions.map((s) => (
-                          <div
-                            key={s.id}
-                            className={`flex items-start justify-between gap-2 rounded-xl border px-3 py-2 text-left text-xs ${
-                              s.id === activeSessionId
-                                ? "border-strong surface-2"
-                                : "border-token hover:border-token"
-                            }`}
-                          >
-                            <button
-                              onClick={() => setActiveSessionId(s.id)}
-                              className="flex-1 text-left"
-                            >
-                              <div className={`truncate ${s.id === activeSessionId ? "font-semibold" : ""}`}>{s.title}</div>
-                              <div className="text-[10px] text-muted truncate">
-                                {new Date(s.updated_at || s.created_at || "").toLocaleString()}
-                              </div>
-                            </button>
-                            <KebabMenu
-                              items={[
-                                { label: "Clear messages", onClick: () => setConfirmDialog({ type: "clear", session: s }) },
-                                { label: "Delete chat", onClick: () => setConfirmDialog({ type: "delete", session: s }) },
-                              ]}
-                            />
-                          </div>
-                        ))
-                      )}
-                    </div>
-                  </aside>
-
-                  <section className="rounded-2xl border border-token surface shadow-sm flex flex-col h-[60vh] min-h-0">
-                    <div className="border-b border-token px-4 py-3 flex items-center justify-between">
-                      <div className="text-sm font-semibold">Conversation</div>
-                      <label className="flex items-center gap-2 text-xs text-muted">
-                        <input type="checkbox" checked={showCitations} onChange={() => setShowCitations((v) => !v)} />
-                        Show citations
-                      </label>
-                    </div>
-                          <div
-                            ref={chatScrollRef}
-                            className="flex-1 min-h-0 overflow-auto p-4 space-y-4"
-                            onScroll={() => {
-                              const el = chatScrollRef.current;
-                              if (!el) return;
-                              const threshold = 80;
-                              const atBottom =
-                                el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
-                              setIsChatAtBottom(atBottom);
-                            }}
-                          >
-                      {chatHistoryError ? (
-                        <div className="text-sm text-amber-700">{chatHistoryError}</div>
-                      ) : messages.length === 0 ? (
-                        <div className="text-sm text-muted">No messages yet. Ask about your class materials.</div>
-                      ) : (
-                        messages.map(renderMessage)
-                      )}
-                      {chatBusy && <div className="text-xs text-muted">Thinking...</div>}
-                          </div>
-                    <div className="border-t border-token p-4">
-                      {selectedQuote && (
-                        <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="font-semibold">Quote attached</span>
-                            <button
-                              className="rounded-lg border border-amber-200 surface px-2 py-0.5 text-[11px] font-semibold text-amber-700"
-                              onClick={() => setSelectedQuote(null)}
-                            >
-                              Clear quote
-                            </button>
-                          </div>
-                          <div className="mt-2 whitespace-pre-wrap text-[11px] text-amber-900">{selectedQuote.text}</div>
-                        </div>
-                      )}
-                      {pendingSnip && (
-                        <div className="mb-3 rounded-xl border border-token surface-2 px-3 py-2 text-xs text-muted">
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="font-semibold">Snippet ready</span>
-                            <div className="flex items-center gap-2">
-                              <button
-                                className="rounded-lg border border-token surface px-2 py-0.5 text-[11px] font-semibold text-muted"
-                                onClick={handleSendSnip}
-                              >
-                                Send to chat
-                              </button>
-                              <button
-                                className="rounded-lg border border-token surface px-2 py-0.5 text-[11px] font-semibold text-muted"
-                                onClick={() => setPendingSnip(null)}
-                              >
-                                Discard
-                              </button>
-                            </div>
-                          </div>
-                          <img
-                            src={pendingSnip.data_url}
-                            alt="Snippet preview"
-                            className="mt-2 max-h-32 rounded-lg border border-token object-contain"
-                          />
-                        </div>
-                      )}
-                      <div className="flex gap-3">
-                        <textarea
-                          value={chatInput}
-                          onChange={(e) => setChatInput(e.target.value)}
-                          className="min-h-[52px] flex-1 resize-none rounded-xl border border-token surface px-3 py-2 text-sm text-main placeholder:text-muted caret-[var(--text)] focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
-                          placeholder="Ask about your notes..."
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" && !e.shiftKey) {
-                              e.preventDefault();
-                              onAsk();
-                            }
-                          }}
-                        />
-                        <button
-                          onClick={onAsk}
-                          disabled={chatBusy || !chatInput.trim()}
-                          className="h-12 rounded-xl bg-inverse px-4 text-sm font-semibold text-inverse disabled:opacity-50"
-                        >
-                          Send
-                        </button>
-                      </div>
-                      <div className="mt-2 text-xs text-muted">Enter to send, Shift+Enter for newline.</div>
-                    </div>
-                  </section>
-
-                  <aside className="rounded-2xl border border-token surface p-4 shadow-sm">
-                    <div className="text-sm font-semibold">File scope</div>
-                    <div className="mt-2 text-xs text-muted">Select files to narrow answers.</div>
-                    <div className="mt-3 space-y-2 max-h-[60vh] overflow-auto">
-                      {(files ?? []).length === 0 ? (
-                        <div className="text-xs text-muted">Upload documents to enable scope.</div>
-                      ) : (
-                        (files ?? []).map((f) => {
-                          const checked = scopeFileIds.includes(f.id);
-                          return (
-                            <button
-                              key={f.id}
-                              onClick={() => toggleFileScope(f.id)}
-                              className={`w-full rounded-xl border px-3 py-2 text-left text-xs ${
-                                checked ? "border-strong surface-2" : "border-token hover:border-token"
-                              }`}
-                            >
-                              <div className="flex items-center justify-between">
-                                <span className="truncate font-medium text-main">{f.filename}</span>
-                                <span className="text-[10px] text-muted">
-                                  {(f.filename.split(".").pop() || "").toUpperCase()}
-                                </span>
-                              </div>
-                              <div className="text-[10px] text-muted">{f.status ?? "UPLOADED"}</div>
-                            </button>
-                          );
-                        })
-                      )}
-                    </div>
-                  </aside>
+                <div className="mt-6 h-[calc(100vh-180px)] min-h-[600px]">
+                  <ChatInterface
+                    sessions={sessions}
+                    activeSessionId={activeSessionId}
+                    onSelectSession={setActiveSessionId}
+                    onNewSession={startNewSession}
+                    onRenameSession={(s) => {
+                      const newName = window.prompt("Rename chat:", s.title);
+                      if (newName && newName.trim()) {
+                        handleRenameSession(s.id, newName.trim());
+                      }
+                    }}
+                    onClearMessages={(s) => setConfirmDialog({ type: "clear", session: s })}
+                    onDeleteSession={(s) => setConfirmDialog({ type: "delete", session: s })}
+                    messages={messages}
+                    isLoading={chatBusy}
+                    error={chatHistoryError}
+                    input={chatInput}
+                    setInput={setChatInput}
+                    onSend={handleAsk}
+                    showCitations={showCitations}
+                    onToggleCitations={() => setShowCitations((v) => !v)}
+                    selectedQuote={selectedQuote}
+                    onClearQuote={() => setSelectedQuote(null)}
+                    pendingSnip={pendingSnip}
+                    onSendSnip={handleSendSnip}
+                    onDiscardSnip={() => setPendingSnip(null)}
+                    scrollRef={chatScrollRef}
+                    onScroll={() => {
+                      const el = chatScrollRef.current;
+                      if (!el) return;
+                      const threshold = 80;
+                      const atBottom =
+                        el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
+                      setIsChatAtBottom(atBottom);
+                    }}
+                    files={files ?? []}
+                    selectedFileIds={scopeFileIds}
+                    onToggleFile={toggleFileScope}
+                    onSetFileScope={setFileScope}
+                    activeFileId={activeFile?.id}
+                    onFileClick={(f) => setActiveFile((prev) => (prev?.id === f.id ? null : f))}
+                  />
                 </div>
               )}
 
-              {preview && (
-                <div
-                  role="dialog"
-                  aria-modal="true"
-                  className="fixed inset-0 z-50 flex items-end bg-overlay"
-                  onClick={() => setPreview(null)}
-                >
-                  <div
-                    className="mx-auto mb-6 max-h-[80vh] w-[min(920px,96vw)] overflow-hidden rounded-2xl surface shadow-2xl"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <div className="flex items-center justify-between border-b border-token px-4 py-3">
-                      <strong>Chunk previews</strong>
-                      <button className="rounded-lg border border-token px-2 py-1 text-xs" onClick={() => setPreview(null)}>
-                        Close
-                      </button>
-                    </div>
-                    <div className="max-h-[calc(80vh-56px)] overflow-auto p-4">
-                      {preview.map((p) => (
-                        <div key={p.file_id} className="mb-6">
-                          <div className="mb-2 text-sm font-semibold">
-                            File {p.file_id} - {p.total_chunks} chunk(s)
-                          </div>
-                          {p.total_chunks === 0 ? (
-                            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                              No text extracted.
-                            </div>
-                          ) : (
-                            <div className="grid gap-3">
-                              {p.previews.map((pr) => (
-                                <div key={pr.idx} className="rounded-xl border border-token p-3">
-                                  <div className="mb-1 text-xs font-semibold text-muted">
-                                    Chunk #{pr.idx} {pr.page_start ? `(pages ${pr.page_start}-${pr.page_end})` : ""}
-                                    <span className="ml-2 font-normal text-muted">{pr.char_len} chars</span>
-                                  </div>
-                                  <pre className="m-0 whitespace-pre-wrap text-xs leading-5 text-muted">
-                                    {pr.sample}
-                                  </pre>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
+              {/* Chunk preview modal removed */}
 
             </>
           )}
@@ -2132,12 +1847,12 @@ function ClassesContent() {
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !e.shiftKey) {
                       e.preventDefault();
-                      onAsk();
+                      handleAsk();
                     }
                   }}
                 />
                 <button
-                  onClick={onAsk}
+                  onClick={handleAsk}
                   disabled={chatBusy || !chatInput.trim()}
                   className="h-12 rounded-xl bg-inverse px-4 text-sm font-semibold text-inverse disabled:opacity-50"
                 >
@@ -2182,11 +1897,17 @@ function ClassesContent() {
         </div>
       )}
 
-      {toast && (
-        <div className="fixed bottom-6 right-6 z-50 rounded-xl bg-inverse px-4 py-2 text-sm text-inverse shadow-lg">
-          {toast}
-        </div>
-      )}
+      <ToastContainer
+        position="bottom-right"
+        autoClose={3000}
+        hideProgressBar={false}
+        newestOnTop={false}
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+      />
 
       {showCreate && (
         <div
@@ -2229,7 +1950,9 @@ function ClassesContent() {
 export default function Classes() {
   return (
     <AppShell title="Classes">
-      <ClassesContent />
+      <ErrorBoundary name="Classes">
+        <ClassesContent />
+      </ErrorBoundary>
     </AppShell>
   );
 }

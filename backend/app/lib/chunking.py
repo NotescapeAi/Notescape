@@ -1,8 +1,9 @@
-# backend/app/lib/chunking.py
-from typing import List, Dict
+from typing import List, Dict, Any
 from pathlib import Path
 import logging
 import regex as re
+import zipfile
+import xml.etree.ElementTree as ET
 
 from pypdf import PdfReader
 
@@ -26,6 +27,56 @@ def _normalize(s: str) -> str:
     s = re.sub(r"[ \t]+", " ", s)
     s = re.sub(r"\n{3,}", "\n\n", s)
     return s.strip()
+
+
+def _extract_docx_text(path: Path) -> str:
+    """
+    Extract text from a .docx file using standard libraries (zipfile + xml).
+    """
+    try:
+        with zipfile.ZipFile(path) as z:
+            if "word/document.xml" not in z.namelist():
+                return ""
+            xml_content = z.read("word/document.xml")
+        
+        root = ET.fromstring(xml_content)
+        # The namespace for w:t is usually standard
+        ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+        
+        paragraphs = []
+        # Fallback if namespace parsing fails or varies: iterate all elements
+        # But let's try the standard namespace first
+        try:
+            for p in root.findall('.//w:p', ns):
+                texts = [node.text for node in p.findall('.//w:t', ns) if node.text]
+                if texts:
+                    paragraphs.append("".join(texts))
+        except SyntaxError:
+            # Fallback for some lxml/etree quirks or if ns is issue
+            pass
+            
+        if not paragraphs:
+            # Brute force scan for any text in 't' tags if namespace failed
+            # This is a bit loose but works for many simple docx
+            for elem in root.iter():
+                if elem.tag.endswith("}t") and elem.text:
+                    paragraphs.append(elem.text)
+                    
+        return _normalize("\n\n".join(paragraphs))
+    except Exception as e:
+        log.error(f"[chunking] docx extraction failed for {path}: {e}")
+        return ""
+
+
+def _extract_plain_text(path: Path) -> str:
+    """
+    Extract text from a plain text file.
+    """
+    try:
+        return _normalize(path.read_text(encoding="utf-8", errors="ignore"))
+    except Exception as e:
+        log.error(f"[chunking] text extraction failed for {path}: {e}")
+        return ""
 
 
 def _extract_with_pdfminer(pdf_path: Path) -> List[str]:
@@ -172,3 +223,33 @@ def chunk_by_chars(text: str, size_chars: int = 1200, overlap_chars: int = 200) 
             })
             idx += 1
     return chunks
+
+
+def extract_file_content(path: str) -> Dict[str, Any]:
+    """
+    Unified extractor for PDF, DOCX, TXT.
+    Returns dict with keys:
+      - page_texts: List[str] (for PDF pages) or None
+      - raw_text: str (full text)
+    """
+    p = Path(path)
+    if not p.exists():
+        return {"page_texts": None, "raw_text": ""}
+
+    ext = p.suffix.lower()
+    
+    if ext == ".pdf":
+        pages = extract_page_texts(str(p))
+        full = "\n\n".join(pages)
+        return {"page_texts": pages, "raw_text": full}
+        
+    elif ext == ".docx":
+        # We treat DOCX as raw text (no page boundaries easily)
+        text = _extract_docx_text(p)
+        return {"page_texts": None, "raw_text": text}
+        
+    elif ext in [".txt", ".md", ".json", ".xml", ".csv"]:
+        text = _extract_plain_text(p)
+        return {"page_texts": None, "raw_text": text}
+
+    return {"page_texts": None, "raw_text": ""}

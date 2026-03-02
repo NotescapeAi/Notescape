@@ -11,11 +11,19 @@ import {
   clearEmbeddings,
 } from "../lib/api";
 import { useTheme } from "../hooks/useTheme";
+import { getClickEffectsEnabled, setClickEffectsEnabled } from "../lib/ui-settings";
 
 export default function Settings() {
   const navigate = useNavigate();
   const { theme, setTheme } = useTheme();
   const [busy, setBusy] = useState<null | "logout" | "delete" | "reset" | "clear-chat" | "clear-embed">(null);
+  const [clickEffects, setClickEffects] = useState(getClickEffectsEnabled());
+
+  function toggleClickEffects() {
+    const next = !clickEffects;
+    setClickEffects(next);
+    setClickEffectsEnabled(next);
+  }
 
   async function onLogout() {
     if (busy) return;
@@ -120,6 +128,24 @@ export default function Settings() {
                 </button>
               ))}
             </div>
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-token px-4 py-3">
+            <div>
+              <div className="text-sm font-semibold text-main">Click Effects</div>
+              <div className="text-xs text-muted">Show visual ripple on click.</div>
+            </div>
+            <button
+              type="button"
+              onClick={toggleClickEffects}
+              className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+                clickEffects
+                  ? "border-[var(--primary)] bg-[var(--primary)] text-inverse"
+                  : "border-token surface text-muted"
+              }`}
+            >
+              {clickEffects ? "On" : "Off"}
+            </button>
           </div>
         </section>
 

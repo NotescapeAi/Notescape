@@ -3,6 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import AppShell from "../layouts/AppShell";
 import Button from "../components/Button";
 import KebabMenu from "../components/KebabMenu";
+import { DateDisplay, formatDate } from "../components/DateDisplay";
 import {
   listClasses,
   listFiles,
@@ -60,17 +61,13 @@ function clearSessionMessagesCache(sessionId: string | null) {
 }
 
 function generateSessionTitle() {
-  try {
-    const formatter = new Intl.DateTimeFormat(undefined, {
-      month: "short",
-      day: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-    });
-    return `Chat ${formatter.format(new Date())}`;
-  } catch {
-    return `Chat ${new Date().toLocaleString()}`;
-  }
+  const f = formatDate(new Date(), undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  return `Chat ${f}`;
 }
 
 export default function Chatbot() {
@@ -434,9 +431,12 @@ export default function Chatbot() {
                   >
                     <button onClick={() => setActiveSessionId(s.id)} className="flex-1 text-left">
                       <div className="truncate">{s.title || "Chat session"}</div>
-                      <div className="text-xs text-muted truncate">
-                        {new Date(s.updated_at || s.created_at || "").toLocaleString()}
-                      </div>
+                      <DateDisplay 
+                        date={s.updated_at || s.created_at} 
+                        className="text-xs text-muted truncate" 
+                        showTime={true}
+                        formatOptions={{ month: 'numeric', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' }}
+                      />
                     </button>
                     <KebabMenu
                       items={[
@@ -689,4 +689,3 @@ export default function Chatbot() {
     </AppShell>
   );
 }
-

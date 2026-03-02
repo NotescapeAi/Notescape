@@ -1,3 +1,4 @@
+import { DateDisplay } from "../components/DateDisplay";
 import { useMemo, useState } from "react";
 import AppShell from "../layouts/AppShell";
 import Button from "../components/Button";
@@ -72,7 +73,11 @@ export default function Profile() {
                 <div>
                   <div className="text-xs font-semibold text-muted">Account created</div>
                   <div className="mt-1 text-main">
-                    {profile?.created_at ? new Date(profile.created_at).toLocaleDateString() : "--"}
+                    <DateDisplay 
+                      date={profile?.created_at} 
+                      className="text-main"
+                      placeholder="--" 
+                    />
                   </div>
                 </div>
               </div>

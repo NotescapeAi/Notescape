@@ -28,30 +28,44 @@ export default function AppSidebar({ collapsed, onToggle }: Props) {
   const navigate = useNavigate();
   const isFlashcardsActive =
     location.pathname.includes("/flashcards") ||
-    (location.pathname.startsWith("/classes") && (location.state as any)?.tab === "flashcards");
+    (location.pathname.startsWith("/classes") &&
+      ((location.state as any)?.tab === "flashcards" || location.search.includes("tab=flashcards")));
   const [resolvedClassId, setResolvedClassId] = useState<number | null>(null);
 
+  const studyLink = "/classes?tab=chat";
+  const isChatActive = location.pathname === "/classes" && location.search.includes("tab=chat");
+  const [classCount, setClassCount] = useState(0);
+
   useEffect(() => {
+    let ignore = false;
     const lastClassIdRaw =
       localStorage.getItem("last_class_id") ||
       localStorage.getItem("chat_last_class_id") ||
       "";
     const lastClassId = Number(lastClassIdRaw);
+    let hasInitialId = false;
+
     if (Number.isFinite(lastClassId) && lastClassId > 0) {
       setResolvedClassId(lastClassId);
-      return;
+      hasInitialId = true;
     }
-    let ignore = false;
+
     (async () => {
       try {
         const classes = await listClasses();
-        const firstId = classes[0]?.id;
-        if (!ignore && Number.isFinite(firstId)) {
-          setResolvedClassId(firstId);
-          localStorage.setItem("last_class_id", String(firstId));
+        if (ignore) return;
+
+        setClassCount(classes.length);
+
+        if (!hasInitialId) {
+          const firstId = classes[0]?.id;
+          if (Number.isFinite(firstId)) {
+            setResolvedClassId(firstId);
+            localStorage.setItem("last_class_id", String(firstId));
+          }
         }
       } catch {
-        if (!ignore) setResolvedClassId(null);
+        if (!ignore && !hasInitialId) setResolvedClassId(null);
       }
     })();
     return () => {
@@ -126,8 +140,8 @@ export default function AppSidebar({ collapsed, onToggle }: Props) {
           <NavLink
             to="/classes"
             className={({ isActive }) =>
-              `${item} ${isActive ? active : ""} ${collapsed ? "justify-center" : ""} ${
-                isActive ? "text-[var(--text-main)]" : `${textNeutral} ${hoverText}`
+              `${item} ${isActive && !isChatActive && !isFlashcardsActive ? active : ""} ${collapsed ? "justify-center" : ""} ${
+                isActive && !isChatActive && !isFlashcardsActive ? "text-[var(--text-main)]" : `${textNeutral} ${hoverText}`
               }`
             }
             title={collapsed ? "Classes" : undefined}
@@ -135,9 +149,14 @@ export default function AppSidebar({ collapsed, onToggle }: Props) {
             {({ isActive }) => (
               <>
                 <FolderOpen
-                  className={`h-5 w-5 ${isActive ? "text-[var(--primary)]" : `${iconNeutral}`}`}
+                  className={`h-5 w-5 ${isActive && !isChatActive && !isFlashcardsActive ? "text-[var(--primary)]" : `${iconNeutral}`}`}
                 />
                 {!collapsed && <span>Classes</span>}
+                {!collapsed && classCount > 0 && (
+                  <span className="ml-auto flex h-5 min-w-[20px] items-center justify-center rounded-full bg-[var(--surface-active)] px-1.5 text-[11px] font-semibold text-[var(--text-main)] shadow-sm">
+                    {classCount}
+                  </span>
+                )}
               </>
             )}
           </NavLink>
@@ -177,18 +196,18 @@ export default function AppSidebar({ collapsed, onToggle }: Props) {
           </NavLink>
 
           <NavLink
-            to="/chatbot"
-            className={({ isActive }) =>
-              `${item} ${isActive ? active : ""} ${collapsed ? "justify-center" : ""} ${
-                isActive ? "text-[var(--text-main)]" : `${textNeutral} ${hoverText}`
+            to={studyLink}
+            className={() =>
+              `${item} ${isChatActive ? active : ""} ${collapsed ? "justify-center" : ""} ${
+                isChatActive ? "text-[var(--text-main)]" : `${textNeutral} ${hoverText}`
               }`
             }
             title={collapsed ? "Study Assistant" : undefined}
           >
-            {({ isActive }) => (
+            {() => (
               <>
                 <MessageCircle
-                  className={`h-5 w-5 ${isActive ? "text-[var(--primary)]" : iconNeutral}`}
+                  className={`h-5 w-5 ${isChatActive ? "text-[var(--primary)]" : iconNeutral}`}
                 />
                 {!collapsed && <span>Study Assistant</span>}
               </>

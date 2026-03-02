@@ -10,9 +10,12 @@ from app.core.storage import get_object_bytes, put_bytes
 from app.core.cache import cache_set
 from app.lib.chunking import extract_page_texts
 from app.lib.indexing import index_file
+import logging
 import io
 POLL_SECONDS = 2
 
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
+log = logging.getLogger(__name__)
 
 def now():
     return datetime.now(timezone.utc)
@@ -105,6 +108,7 @@ async def run():
             continue
 
         job_id = job["id"]
+        log.info(f"Processing OCR job {job_id} for file {job['file_id']}")
 
         try:
             # 2) get file info
@@ -113,9 +117,11 @@ async def run():
                 raise RuntimeError("File not found")
 
             storage_key, mime = info
+            log.info(f"Downloading file {storage_key}")
 
             # 3) download file
             data = get_object_bytes(storage_key)
+            log.info(f"File downloaded, size: {len(data)} bytes")
 
             # 4) try digital PDF extraction first
             try:
@@ -211,6 +217,7 @@ async def run():
             await update_file_status(job["file_id"], "INDEXED" if total > 0 else "FAILED", indexed=total > 0)
 
         except Exception as e:
+            log.error(f"OCR Job {job_id} failed: {e}", exc_info=True)
             async with db_conn() as (conn, cur):
                 await cur.execute(
                     """

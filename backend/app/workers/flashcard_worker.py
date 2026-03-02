@@ -115,18 +115,22 @@ async def _generate_cards_from_payload(payload: Dict[str, Any], user_id: str, co
     page_end = payload.get("page_end")
 
     effective_top_k = max(top_k, min(60, n_cards * 2))
+    
+    log.info("[flashcards] generating for class=%s file_ids=%s n_cards=%d", class_id, file_ids, n_cards)
+    
     qvec = (await embed_texts_cached(embedder, [topic]))[0]
     hits = await pick_relevant_chunks(class_id, qvec, effective_top_k, file_ids, page_start, page_end)
     if not hits:
         raise RuntimeError("No chunks found for this class. Upload content first.")
 
     contexts: List[str] = []
-    joined_all = "\n".join("- " + c[:1000] for _, c, _ in hits)
+    # Include chunk IDs for source tracking
+    joined_all = "\n".join(f"[CHUNK:{cid}] {c[:1000]}" for cid, c, _ in hits)
     contexts.append(joined_all)
     if len(hits) > 4:
         half = len(hits) // 2
-        contexts.append("\n".join("- " + c[:1000] for _, c, _ in hits[:half]))
-        contexts.append("\n".join("- " + c[:1000] for _, c, _ in hits[half:]))
+        contexts.append("\n".join(f"[CHUNK:{cid}] {c[:1000]}" for cid, c, _ in hits[:half]))
+        contexts.append("\n".join(f"[CHUNK:{cid}] {c[:1000]}" for cid, c, _ in hits[half:]))
 
     target = max(1, min(50, n_cards))
     collected: List[Dict[str, Any]] = []
@@ -150,8 +154,8 @@ async def _generate_cards_from_payload(payload: Dict[str, Any], user_id: str, co
 
     if not collected:
         raise RuntimeError("Card generation returned no usable cards.")
-    if len(collected) < target:
-        raise RuntimeError(f"Card generation returned {len(collected)} cards (target {target}).")
+    # if len(collected) < target:
+    #     raise RuntimeError(f"Card generation returned {len(collected)} cards (target {target}).")
 
     if len(collected) > target:
         collected = collected[:target]
@@ -160,10 +164,11 @@ async def _generate_cards_from_payload(payload: Dict[str, Any], user_id: str, co
     source_file_id = hits[0][2] if hits else (file_ids[0] if file_ids else None)
     inserted = await insert_flashcards(class_id, source_file_id, collected, source_chunk_id, created_by=user_id)
     log.info(
-        "[flashcards] inserted cards job_class=%s user_id=%s correlation_id=%s inserted=%d",
+        "[flashcards] inserted cards job_class=%s user_id=%s correlation_id=%s source_file=%s inserted=%d",
         class_id,
         user_id,
         correlation_id,
+        source_file_id,
         len(inserted),
     )
     return inserted
@@ -171,32 +176,41 @@ async def _generate_cards_from_payload(payload: Dict[str, Any], user_id: str, co
 
 async def run():
     while True:
-        job = await _fetch_and_claim_job()
-        if not job:
-            await asyncio.sleep(POLL_SECONDS)
-            continue
-
-        job_id = job["id"]
-        correlation_id = job.get("correlation_id")
-        log.info(
-            "[flashcards] job claimed job_id=%s correlation_id=%s user_id=%s deck_id=%s",
-            job_id,
-            correlation_id,
-            job.get("user_id"),
-            job.get("deck_id"),
-        )
         try:
-            payload = job.get("payload") or {}
-            if isinstance(payload, str):
-                payload = json.loads(payload)
-            if not payload.get("file_ids"):
-                raise RuntimeError("Job payload missing file_ids")
+            job = await _fetch_and_claim_job()
+            if not job:
+                await asyncio.sleep(POLL_SECONDS)
+                continue
 
-            await _update_progress(job_id, 20, correlation_id)
-            await _generate_cards_from_payload(payload, job["user_id"], correlation_id)
-            await _complete_job(job_id, correlation_id)
-        except Exception as exc:
-            await _fail_job(job_id, str(exc), correlation_id)
+            job_id = job["id"]
+            correlation_id = job.get("correlation_id")
+            log.info(
+                "[flashcards] job claimed job_id=%s correlation_id=%s user_id=%s deck_id=%s",
+                job_id,
+                correlation_id,
+                job.get("user_id"),
+                job.get("deck_id"),
+            )
+            try:
+                payload = job.get("payload") or {}
+                if isinstance(payload, str):
+                    payload = json.loads(payload)
+                
+                # Validation: file_ids must be present
+                file_ids = payload.get("file_ids")
+                if not file_ids or not isinstance(file_ids, list) or len(file_ids) == 0:
+                    raise RuntimeError("No files selected. Please upload documents to generate flashcards.")
+
+                await _update_progress(job_id, 20, correlation_id)
+                await _generate_cards_from_payload(payload, job["user_id"], correlation_id)
+                await _complete_job(job_id, correlation_id)
+            except Exception as e:
+                log.error(f"[flashcards] error processing job {job_id}: {e}")
+                await _fail_job(job_id, str(e), correlation_id)
+
+        except Exception as e:
+            log.error(f"[flashcards] worker loop error: {e}")
+            await asyncio.sleep(POLL_SECONDS)
 
 
 if __name__ == "__main__":

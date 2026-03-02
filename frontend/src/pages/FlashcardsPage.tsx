@@ -1,4 +1,5 @@
 // src/pages/FlashcardsPage.tsx
+import { DateDisplay } from "../components/DateDisplay";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
@@ -20,16 +21,16 @@ import KebabMenu from "../components/KebabMenu";
 
 type Diff = "all" | "hard" | "medium" | "easy";
 
-function formatNextReview(dueAt?: string | null) {
-  if (!dueAt) return "Due now";
+function getReviewStatus(dueAt?: string | null) {
+  if (!dueAt) return { type: 'text', value: "Due now" };
   const due = new Date(dueAt);
   const now = new Date();
   const diffMs = due.getTime() - now.getTime();
-  if (diffMs <= 0) return "Due now";
+  if (diffMs <= 0) return { type: 'text', value: "Due now" };
   const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-  if (diffDays <= 1) return "Tomorrow";
-  if (diffDays <= 7) return `In ${diffDays} days`;
-  return due.toLocaleDateString();
+  if (diffDays <= 1) return { type: 'text', value: "Tomorrow" };
+  if (diffDays <= 7) return { type: 'text', value: `In ${diffDays} days` };
+  return { type: 'date', value: due };
 }
 
 function dueStatus(card: Flashcard) {
@@ -431,7 +432,7 @@ export default function FlashcardsPage() {
                 ? c.tags.map((t) => String(t).trim()).filter(Boolean)
                 : [];
               const status = dueStatus(c);
-              const nextReview = formatNextReview(c.due_at);
+              const reviewStatus = getReviewStatus(c.due_at);
               const startIndex = filtered.findIndex((fc) => String(fc.id) === String(c.id));
 
               return (
@@ -456,7 +457,14 @@ export default function FlashcardsPage() {
                   </div>
 
                   <div className="mt-3 text-base font-semibold text-main">{sanitizeText(c.question)}</div>
-                  <div className="mt-2 text-xs text-muted">Next review: {nextReview}</div>
+                  <div className="mt-2 text-xs text-muted">
+                    Next review:{" "}
+                    {reviewStatus.type === 'date' && reviewStatus.value instanceof Date ? (
+                      <DateDisplay date={reviewStatus.value} className="inline" />
+                    ) : (
+                      <span className="inline">{String(reviewStatus.value)}</span>
+                    )}
+                  </div>
                   <details className="mt-3">
                     <summary className="cursor-pointer text-sm font-semibold text-muted">Show answer</summary>
                     <div className="mt-2 text-sm text-muted whitespace-pre-wrap">

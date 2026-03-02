@@ -163,6 +163,7 @@ class CardGenerator:
             "hint": hint,
             "difficulty": diff,
             "tags": tags,
+            "source_chunk_id": c.get("source_chunk_id"),
         }
 
     def _parse_cards(self, raw: str) -> List[Dict[str, Any]]:
@@ -314,10 +315,134 @@ def get_card_generator() -> "CardGenerator":
 
         return CardGenerator(_chat)
 
-    async def _fake(system: str, user: str) -> str:
-        return '{"cards":[{"question":"Demo?","answer":"Demo","difficulty":"easy","tags":["demo"]}]}'
+    if LLM_PROVIDER == "fake":
+        async def _heuristic_generator(system: str, user: str) -> str:
+            # Extract target count
+            match_count = re.search(r"Make exactly (\d+) high-yield flashcards", user)
+            target_count = int(match_count.group(1)) if match_count else 5
 
-    return CardGenerator(_fake)
+            # Extract context
+            # The user prompt is "Context:\n{joined_context}\n\nMake exactly..."
+            match_ctx = re.search(r"Context:\n(.*?)\n\nMake exactly", user, re.S)
+            text = match_ctx.group(1) if match_ctx else ""
+
+            if not text.strip():
+                return json.dumps({"cards": []})
+
+            # Heuristic extraction
+            import random
+            cards = []
+            
+            # Split context by newline and parse chunks
+            raw_lines = text.split("\n")
+            current_chunk_id = None
+            lines_with_source = []
+
+            for line in raw_lines:
+                line = line.strip()
+                if not line: continue
+                
+                # Check for chunk marker [CHUNK:123]
+                m_chunk = re.match(r"^\[CHUNK:(\d+)\]\s*(.*)", line)
+                if m_chunk:
+                    try:
+                        current_chunk_id = int(m_chunk.group(1))
+                    except ValueError:
+                        pass
+                    content = m_chunk.group(2).strip()
+                else:
+                    content = line
+                
+                # Strip leading dashes/bullets
+                content = content.lstrip("- ").strip()
+                
+                if len(content) > 20:
+                    lines_with_source.append((content, current_chunk_id))
+            
+            # 1. Look for definitions "X is Y"
+            for line, chunk_id in lines_with_source:
+                # Regex for "Term is/refers to Definition"
+                # We limit Term to be somewhat short (up to 40 chars)
+                m = re.match(r"^([A-Z][\w\s\']{1,40}) (is|is a|is an|refers to|means|is defined as|stands for|states that|states) (.+)", line)
+                if m:
+                    term = m.group(1).strip()
+                    verb = m.group(2).strip()
+                    defn = m.group(3).strip()
+                    
+                    # Refine question phrasing
+                    if verb in ("stands for",):
+                        question = f"What does '{term}' stand for?"
+                    elif verb in ("states that", "states"):
+                        question = f"What does '{term}' state?"
+                    elif verb in ("means", "is defined as", "refers to"):
+                        question = f"What does '{term}' mean?"
+                    else:
+                        # is, is a, is an
+                        question = f"What is '{term}'?"
+
+                    cards.append({
+                        "question": question,
+                        "answer": defn,
+                        "difficulty": "easy",
+                        "tags": ["definition", "generated"],
+                        "source_chunk_id": chunk_id
+                    })
+
+                # Regex for "Term: Definition"
+                m2 = re.match(r"^([A-Z][\w\s\']{1,40}): (.+)", line)
+                if m2:
+                    term = m2.group(1).strip()
+                    defn = m2.group(2).strip()
+                    cards.append({
+                        "question": f"Define '{term}'",
+                        "answer": defn,
+                        "difficulty": "easy",
+                        "tags": ["definition", "generated"],
+                        "source_chunk_id": chunk_id
+                    })
+
+            # 2. Look for conceptual sentences (longer, contain key terms)
+            # Shuffle lines to get random sampling
+            random.shuffle(lines_with_source)
+            for line, chunk_id in lines_with_source:
+                if len(cards) >= target_count * 2: break
+                if len(line) < 30: continue
+                
+                # Deduplicate if we already have this as an answer
+                is_duplicate = False
+                for c in cards:
+                    if c["answer"] == line:
+                        is_duplicate = True
+                        break
+                if is_duplicate:
+                    continue
+
+                # Turn sentence into a question
+                # "The mitochondria is the powerhouse of the cell." -> Q: Explain the function of mitochondria.
+                # This is hard to do heuristically.
+                # Fallback: "Fill in the blank" or "Explain this statement"
+                
+                cards.append({
+                    "question": f"Explain the following concept: {line[:50]}...",
+                    "answer": line,
+                    "difficulty": "medium",
+                    "tags": ["concept", "generated"],
+                    "source_chunk_id": chunk_id
+                })
+
+            # Deduplicate by question
+            unique_cards = {}
+            for c in cards:
+                if c["question"] not in unique_cards:
+                    unique_cards[c["question"]] = c
+            
+            final_cards = list(unique_cards.values())
+            # Limit to target
+            final_cards = final_cards[:target_count]
+            
+            return json.dumps({"cards": final_cards})
+
+        return CardGenerator(_heuristic_generator)
 
 # -----------------------
 # Quiz generator (quizzes)
@@ -332,6 +457,198 @@ def get_quiz_generator() -> Callable[[str], Any]:
       So we temporarily override GEN_MODEL / GEN_T to QUIZ_MODEL / QUIZ_T,
       create a CardGenerator, then restore GEN_MODEL / GEN_T.
     """
+
+    # Fast path for local development without external LLMs: synthesize a valid quiz
+    if LLM_PROVIDER == "fake":
+        async def _fake_quiz(prompt: str) -> Dict[str, Any]:
+            # Try to infer counts from the prompt
+            import re as _re
+            import random
+            
+            n_questions = 8
+            mcq_count = 4
+            m_total = _re.search(r"TOTAL:\s*EXACTLY\s*(\d+)\s*questions", prompt, _re.I)
+            if m_total:
+                try:
+                    n_questions = int(m_total.group(1))
+                except Exception:
+                    pass
+            m_mcq = _re.search(r"EXACTLY\s*(\d+)\s*questions with type=\"mcq\"", prompt, _re.I)
+            if m_mcq:
+                try:
+                    mcq_count = int(m_mcq.group(1))
+                except Exception:
+                    pass
+            subjective_count = max(0, n_questions - mcq_count)
+
+            # Extract context
+            context_match = prompt.split("CONTEXT:\n")
+            text = context_match[-1] if len(context_match) > 1 else ""
+            
+            # Parse chunks and lines
+            raw_lines = text.split("\n")
+            current_chunk_id = None
+            sentences_with_source = []
+            definitions = []
+
+            for line in raw_lines:
+                line = line.strip()
+                if not line: continue
+                
+                # Check for chunk marker [CHUNK:123]
+                m_chunk = _re.match(r"^\[CHUNK:(\d+)\]\s*(.*)", line)
+                if m_chunk:
+                    try:
+                        current_chunk_id = int(m_chunk.group(1))
+                    except ValueError:
+                        pass
+                    content = m_chunk.group(2).strip()
+                else:
+                    content = line
+                
+                content = content.lstrip("- ").strip()
+                if len(content) > 20:
+                    sentences_with_source.append((content, current_chunk_id))
+                    
+                    # Try to extract definitions for MCQs
+                    # "Term is Definition"
+                    m_def = _re.match(r"^([A-Z][\w\s\']{1,40}) (is|refers to|means|is defined as) (.+)", content)
+                    if m_def:
+                        term = m_def.group(1).strip()
+                        defn = m_def.group(3).strip()
+                        if len(defn) > 10:
+                            definitions.append({
+                                "term": term,
+                                "definition": defn,
+                                "chunk_id": current_chunk_id
+                            })
+
+            items: List[Dict[str, Any]] = []
+            used_indices = set()
+            
+            # --- Generate MCQs ---
+            # If we have definitions, use them
+            random.shuffle(definitions)
+            
+            for i in range(mcq_count):
+                if i < len(definitions):
+                    # Use a real definition
+                    d = definitions[i]
+                    term = d["term"]
+                    correct_def = d["definition"]
+                    
+                    # Create distractors from other definitions
+                    distractors = [x["definition"] for x in definitions if x["term"] != term]
+                    # If not enough, pad with generic
+                    while len(distractors) < 3:
+                        distractors.append(f"Generic distractor {len(distractors)+1}")
+                    
+                    random.shuffle(distractors)
+                    opts = distractors[:3] + [correct_def]
+                    random.shuffle(opts)
+                    correct_idx = opts.index(correct_def)
+                    
+                    items.append({
+                        "type": "mcq",
+                        "question": f"What is the definition of '{term}'?",
+                        "options": opts,
+                        "correct_index": correct_idx,
+                        "answer_key": correct_def,
+                        "explanation": f"'{term}' is defined as: {correct_def}",
+                        "difficulty": "easy",
+                        "source": {"chunk_id": d["chunk_id"], "page_start": 1, "page_end": 1},
+                    })
+                else:
+                    # Fallback if ran out of definitions: use sentences
+                    if not sentences_with_source:
+                        # Absolute fallback
+                        items.append({
+                            "type": "mcq",
+                            "question": f"Demo MCQ {i+1}: What is 2 + 2?",
+                            "options": ["1", "2", "3", "4"],
+                            "correct_index": 3,
+                            "answer_key": "4",
+                            "explanation": "Basic arithmetic fallback",
+                            "difficulty": "easy",
+                            "source": {"chunk_id": 1, "page_start": 1, "page_end": 1},
+                        })
+                        continue
+                        
+                    # Pick a random sentence
+                    idx = random.randint(0, len(sentences_with_source) - 1)
+                    sent, chunk_id = sentences_with_source[idx]
+                    
+                    # Cloze deletion (blank out a word)
+                    words = sent.split()
+                    if len(words) > 5:
+                        blank_idx = random.randint(0, len(words)-1)
+                        correct_word = words[blank_idx]
+                        words[blank_idx] = "______"
+                        q_text = " ".join(words)
+                        
+                        # Fake distractors
+                        opts = ["incorrect", "wrong", "false", correct_word]
+                        random.shuffle(opts)
+                        
+                        items.append({
+                            "type": "mcq",
+                            "question": f"Fill in the blank: {q_text}",
+                            "options": opts,
+                            "correct_index": opts.index(correct_word),
+                            "answer_key": correct_word,
+                            "explanation": f"The complete sentence is: {sent}",
+                            "difficulty": "medium",
+                            "source": {"chunk_id": chunk_id, "page_start": 1, "page_end": 1},
+                        })
+                    else:
+                        # Fallback
+                        items.append({
+                            "type": "mcq",
+                            "question": f"True or False: {sent}",
+                            "options": ["True", "False", "Maybe", "Unknown"],
+                            "correct_index": 0,
+                            "answer_key": "True",
+                            "explanation": "This statement is directly from the text.",
+                            "difficulty": "easy",
+                            "source": {"chunk_id": chunk_id, "page_start": 1, "page_end": 1},
+                        })
+
+            # --- Generate Subjective ---
+            random.shuffle(sentences_with_source)
+            subjective_generated = 0
+            
+            for sent, chunk_id in sentences_with_source:
+                if subjective_generated >= subjective_count:
+                    break
+                    
+                # Skip if very short
+                if len(sent) < 30: continue
+                
+                items.append({
+                    "type": "conceptual",
+                    "question": f"Explain the significance of the following statement: '{sent[:60]}...'",
+                    "answer_key": f"The statement '{sent}' is a key concept from the text.",
+                    "explanation": f"This concept is discussed in the material.",
+                    "difficulty": "medium",
+                    "source": {"chunk_id": chunk_id, "page_start": 1, "page_end": 1},
+                })
+                subjective_generated += 1
+            
+            # Fill remaining subjective if needed
+            while subjective_generated < subjective_count:
+                items.append({
+                    "type": "conceptual",
+                    "question": f"Discuss key concept #{subjective_generated+1} from the material.",
+                    "answer_key": "This is a demo conceptual answer key.",
+                    "explanation": "Demo explanation",
+                    "difficulty": "medium",
+                    "source": {"chunk_id": 1, "page_start": 1, "page_end": 1},
+                })
+                subjective_generated += 1
+
+            return {"title": "Generated Quiz", "items": items[:n_questions]}
+
+        return _fake_quiz
 
     global GEN_MODEL, GEN_T
 

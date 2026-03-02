@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from app.core.settings import settings
 import re
 from pathlib import Path
+import shutil
 
 @dataclass
 class StoredObject:
@@ -83,6 +84,25 @@ def ensure_bucket(s3, bucket: str) -> None:
             raise
 
 def put_object(fileobj, key: str, content_type: str | None):
+    # If S3 is not configured, write locally
+    if not settings.s3_endpoint_url:
+        print(f"Writing object to local storage: {key}")
+        full_path = Path(settings.upload_root) / key
+        full_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(full_path, "wb") as f:
+            if hasattr(fileobj, "read"):
+                # it's a file-like object
+                shutil.copyfileobj(fileobj, f)
+            else:
+                f.write(fileobj)
+        
+        return StoredObject(
+            bucket="local", 
+            key=key, 
+            public_url=f"/api/uploads/{key}", # Hypothetical
+            s3_url=f"file://{full_path}"
+        )
+
     s3 = get_s3_client()
     bucket = settings.s3_bucket
     ensure_bucket(s3, bucket)
@@ -100,10 +120,25 @@ def put_object(fileobj, key: str, content_type: str | None):
     return StoredObject(bucket=bucket, key=key, public_url=public_url, s3_url=f"s3://{bucket}/{key}")
 
 def delete_object(key: str):
+    # Local fallback
+    if not settings.s3_endpoint_url:
+        full_path = Path(settings.upload_root) / key
+        if full_path.exists():
+            full_path.unlink()
+        return
+
     s3 = get_s3_client()
     s3.delete_object(Bucket=settings.s3_bucket, Key=key)
 
 def delete_prefix(prefix: str):
+    # Local fallback
+    if not settings.s3_endpoint_url:
+        full_path = Path(settings.upload_root) / prefix
+        # Check if it's a directory or matches files
+        if full_path.exists() and full_path.is_dir():
+            shutil.rmtree(full_path, ignore_errors=True)
+        return
+
     s3 = get_s3_client()
     bucket = settings.s3_bucket
     paginator = s3.get_paginator("list_objects_v2")
@@ -115,6 +150,10 @@ def delete_prefix(prefix: str):
         s3.delete_objects(Bucket=bucket, Delete={"Objects": objects})
 
 def presign_get_url(key: str, expires_seconds: int = 3600) -> str:
+    # Local fallback
+    if not settings.s3_endpoint_url:
+        return f"/api/uploads/{key}" 
+
     s3 = get_s3_client()
     return s3.generate_presigned_url(
         ClientMethod="get_object",
@@ -123,11 +162,35 @@ def presign_get_url(key: str, expires_seconds: int = 3600) -> str:
     )
 
 def get_object_bytes(key: str) -> bytes:
+    # Check if key is local path?
+    if not key.startswith("notescape/") or not settings.s3_endpoint_url:
+        # assume local path
+        p = Path(key)
+        if p.exists():
+            return p.read_bytes()
+        # If not absolute, try relative to upload root
+        p2 = Path(settings.upload_root) / key
+        print(f"Checking local path: {p2} (exists: {p2.exists()})")
+        if p2.exists():
+            return p2.read_bytes()
+
+    if not settings.s3_endpoint_url:
+         raise ValueError(f"File not found locally and S3 not configured: {key}")
+
+    print(f"Falling back to S3 for key: {key}")
+    # Fallback to S3
     s3 = get_s3_client()
     resp = s3.get_object(Bucket=settings.s3_bucket, Key=key)
     return resp["Body"].read()
 
 def put_bytes(key: str, data: bytes, content_type: str = "application/octet-stream"):
+    # Local fallback
+    if not settings.s3_endpoint_url:
+        full_path = Path(settings.upload_root) / key
+        full_path.parent.mkdir(parents=True, exist_ok=True)
+        full_path.write_bytes(data)
+        return
+
     s3 = get_s3_client()
     ensure_bucket(s3, settings.s3_bucket)
     s3.put_object(

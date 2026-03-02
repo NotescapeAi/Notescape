@@ -44,13 +44,20 @@ async def get_request_user_uid(
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
 ) -> str:
     if authorization and authorization.lower().startswith("bearer "):
+        # If Firebase is not initialized (no service account), we cannot verify the token.
+        # Fallback to dev-user to allow local development without backend credentials.
+        if not firebase_admin._apps:
+            log.warning("Received Bearer token but Firebase Admin is not initialized. Using 'dev-user'.")
+            return "dev-user"
+
         token = authorization.split(" ", 1)[1]
         try:
             decoded_token = _decode_verified_token(token)
             return decoded_token["uid"]
         except HTTPException:
             raise
-        except Exception:
+        except Exception as e:
+            log.error(f"Token verification failed: {e}")
             raise HTTPException(status_code=401, detail="Invalid token")
     if x_user_id:
         return x_user_id

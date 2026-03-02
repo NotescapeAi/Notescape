@@ -7,12 +7,16 @@ import {
   signInWithGithub,
 } from "../firebase/firebaseAuth";
 import { auth } from "../firebase/firebase";
-import { fetchSignInMethodsForEmail, sendEmailVerification } from "firebase/auth";
+import { sendEmailVerification } from "firebase/auth";
 import { FirebaseError } from "firebase/app";
 import "./NotescapeStartPage.css";
 
 export default function Signup() {
   const navigate = useNavigate();
+
+  React.useEffect(() => {
+    console.log("Signup component mounted");
+  }, []);
 
   const [showEmailForm, setShowEmailForm] = useState(false);
   const [email, setEmail] = useState("");
@@ -50,32 +54,9 @@ export default function Signup() {
           const conflictEmail =
             (err.customData?.email as string | undefined) || "";
           if (conflictEmail) {
-            try {
-              const methods = await fetchSignInMethodsForEmail(
-                auth,
-                normalizeEmail(conflictEmail)
-              );
-              if (methods.includes("password")) {
-                setError(
-                  "An account with this email already exists with a password. Please log in with email & password."
-                );
-              } else if (methods.includes("google.com")) {
-                setError(
-                  "This email is already linked with Google. Please continue with Google."
-                );
-              } else if (methods.includes("github.com")) {
-                setError(
-                  "This email is already linked with Github. Please continue with Github."
-                );
-              } else {
-                setError(
-                  "An account with this email already exists with a different sign-in method."
-                );
-              }
-            } catch (fetchErr) {
-              console.error("fetchSignInMethodsForEmail error:", fetchErr);
-              setError(`${provider} login failed. Please try another method.`);
-            }
+            setError(
+              "An account with this email already exists. Please try logging in with a different method."
+            );
           } else {
             setError(`${provider} login failed. Please try another method.`);
           }
@@ -120,27 +101,7 @@ export default function Signup() {
 
       if (err instanceof FirebaseError) {
         if (err.code === "auth/email-already-in-use") {
-          try {
-            const methods = await fetchSignInMethodsForEmail(auth, cleanEmail);
-            if (methods.includes("password")) {
-              setError("You already have an account. Please log in instead.");
-            } else if (methods.includes("google.com")) {
-              setError(
-                "This email is already linked with Google. Please continue with Google sign-in."
-              );
-            } else if (methods.includes("github.com")) {
-              setError(
-                "This email is already linked with Github. Please continue with Github sign-in."
-              );
-            } else {
-              setError(
-                "This email is already in use. Try logging in or use a different email."
-              );
-            }
-          } catch (fetchErr) {
-            console.error("fetchSignInMethodsForEmail error:", fetchErr);
-            setError("This email is already in use. Please log in instead.");
-          }
+          setError("This email is already in use. Please log in instead.");
         } else {
           setError("Signup failed. Please try again.");
         }

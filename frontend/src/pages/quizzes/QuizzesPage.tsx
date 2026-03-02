@@ -1,3 +1,4 @@
+import { DateDisplay } from "../../components/DateDisplay";
 import { useEffect, useMemo, useState } from "react";
 import AppShell from "../../layouts/AppShell";
 import QuizPanel from "../../components/QuizPanel";
@@ -129,12 +130,6 @@ export default function QuizzesPage() {
     return map;
   }, [files]);
 
-  function formatDate(ts?: string) {
-    if (!ts) return "";
-    const d = new Date(ts);
-    if (Number.isNaN(d.getTime())) return ts;
-    return d.toLocaleString();
-  }
 
   return (
     <AppShell title="Quizzes" headerMaxWidthClassName="max-w-[1200px]">
@@ -227,7 +222,6 @@ export default function QuizzesPage() {
                   {quizzes.map((q) => {
                     const fname = fileNameById.get(String(q.file_id)) ?? `File ${q.file_id}`;
                     const title = q.title?.trim() ? q.title : `Quiz #${q.id}`;
-                    const created = formatDate(q.created_at);
                     const isDeleting = deletingQuizId === String(q.id);
 
                     return (
@@ -239,9 +233,18 @@ export default function QuizzesPage() {
                           <div className="font-semibold text-[var(--text-main)] truncate">
                             {title}
                           </div>
-                          <div className="text-xs text-[var(--text-muted)] truncate">
-                            {fname}
-                            {created ? ` • ${created}` : ""}
+                          <div className="text-xs text-[var(--text-muted)] truncate flex items-center gap-1">
+                            <span>{fname}</span>
+                            {q.created_at && (
+                              <>
+                                <span>•</span>
+                                <DateDisplay 
+                                  date={q.created_at} 
+                                  showTime={true} 
+                                  className="text-xs text-[var(--text-muted)]" 
+                                />
+                              </>
+                            )}
                           </div>
                         </div>
 

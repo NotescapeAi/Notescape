@@ -36,7 +36,6 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    image: notescape-backend
     container_name: notescape-api
     environment:
       DATABASE_URL: "postgresql://${PGUSER:-notescape}:${PGPASSWORD:-notescape_pass}@db:5432/${PGDATABASE:-notescape}"
@@ -51,7 +50,7 @@ services:
       EMBED_PROVIDER: "${EMBED_PROVIDER:-local}"
       EMBED_MODEL: "${EMBED_MODEL:-sentence-transformers/all-MiniLM-L6-v2}"
       EMBED_DIM: "${EMBED_DIM:-1536}"
-      LLM_PROVIDER: "groq"
+      LLM_PROVIDER: "${LLM_PROVIDER:-fake}"
       GEN_MODEL: "llama-3.3-70b-versatile"
       GEN_T: "0.2"
       CHAT_PROVIDER: "groq"
@@ -75,11 +74,14 @@ services:
       - ./secrets:/app/secrets:ro
 
   ocr_worker:
-    image: notescape-backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
     container_name: notescape-ocr-worker
     command: python -m app.workers.ocr_worker
     environment:
       DATABASE_URL: "postgresql://${PGUSER:-notescape}:${PGPASSWORD:-notescape_pass}@db:5432/${PGDATABASE:-notescape}"
+      REDIS_URL: "redis://redis:6379/0"
       CORS_ORIGINS: "http://localhost:3000,http://localhost:5173"
       UPLOAD_ROOT: "/app/uploads"
       STORAGE_BACKEND: "${STORAGE_BACKEND:-s3}"
@@ -88,10 +90,11 @@ services:
       S3_SECRET_KEY: "${S3_SECRET_KEY}"
       S3_BUCKET: "${S3_BUCKET}"
       S3_REGION: "${S3_REGION:-us-east-1}"
-      REDIS_URL: "redis://redis:6379/0"
       QUIZ_MIGRATION_FILE: "/workspace/db/init/10_quizzes.sql"
       LEARNING_ANALYTICS_MIGRATION_FILE: "/workspace/db/init/11_learning_analytics_tags.sql"
     depends_on:
+      api:
+        condition: service_started
       db:
         condition: service_healthy
       redis:
@@ -103,11 +106,14 @@ services:
       - ./db:/workspace/db:ro
 
   flashcard_worker:
-    image: notescape-backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
     container_name: notescape-flashcard-worker
     command: python -m app.workers.flashcard_worker
     environment:
       DATABASE_URL: "postgresql://${PGUSER:-notescape}:${PGPASSWORD:-notescape_pass}@db:5432/${PGDATABASE:-notescape}"
+      REDIS_URL: "redis://redis:6379/0"
       CORS_ORIGINS: "http://localhost:3000,http://localhost:5173"
       UPLOAD_ROOT: "/app/uploads"
       STORAGE_BACKEND: "${STORAGE_BACKEND:-s3}"
@@ -119,15 +125,17 @@ services:
       EMBED_PROVIDER: "${EMBED_PROVIDER:-local}"
       EMBED_MODEL: "${EMBED_MODEL:-sentence-transformers/all-MiniLM-L6-v2}"
       EMBED_DIM: "${EMBED_DIM:-1536}"
-      LLM_PROVIDER: "groq"
+      LLM_PROVIDER: "${LLM_PROVIDER:-fake}"
       GEN_MODEL: "llama-3.3-70b-versatile"
       GEN_T: "0.2"
       CHAT_PROVIDER: "groq"
       CHAT_MODEL: "llama-3.3-70b-versatile"
       GROQ_API_KEY: "${GROQ_API_KEY:-}"
-      REDIS_URL: "redis://redis:6379/0"
       QUIZ_MIGRATION_FILE: "/workspace/db/init/10_quizzes.sql"
+      LEARNING_ANALYTICS_MIGRATION_FILE: "/workspace/db/init/11_learning_analytics_tags.sql"
     depends_on:
+      api:
+        condition: service_started
       db:
         condition: service_healthy
       redis:
@@ -138,13 +146,15 @@ services:
       - ./backend:/app
       - ./db:/workspace/db:ro
 
-  # ✅ NEW: quiz_worker (added safely under services)
   quiz_worker:
-    image: notescape-backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
     container_name: notescape-quiz-worker
     command: python -m app.workers.quiz_worker
     environment:
       DATABASE_URL: "postgresql://${PGUSER:-notescape}:${PGPASSWORD:-notescape_pass}@db:5432/${PGDATABASE:-notescape}"
+      REDIS_URL: "redis://redis:6379/0"
       CORS_ORIGINS: "http://localhost:3000,http://localhost:5173"
       UPLOAD_ROOT: "/app/uploads"
       STORAGE_BACKEND: "${STORAGE_BACKEND:-s3}"
@@ -156,15 +166,17 @@ services:
       EMBED_PROVIDER: "${EMBED_PROVIDER:-local}"
       EMBED_MODEL: "${EMBED_MODEL:-sentence-transformers/all-MiniLM-L6-v2}"
       EMBED_DIM: "${EMBED_DIM:-1536}"
-      LLM_PROVIDER: "groq"
+      LLM_PROVIDER: "${LLM_PROVIDER:-fake}"
       GEN_MODEL: "llama-3.3-70b-versatile"
       GEN_T: "0.2"
       CHAT_PROVIDER: "groq"
       CHAT_MODEL: "llama-3.3-70b-versatile"
       GROQ_API_KEY: "${GROQ_API_KEY:-}"
-      REDIS_URL: "redis://redis:6379/0"
       QUIZ_MIGRATION_FILE: "/workspace/db/init/10_quizzes.sql"
+      LEARNING_ANALYTICS_MIGRATION_FILE: "/workspace/db/init/11_learning_analytics_tags.sql"
     depends_on:
+      api:
+        condition: service_started
       db:
         condition: service_healthy
       redis:

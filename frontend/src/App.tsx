@@ -14,6 +14,7 @@ import { auth } from "./firebase/firebase";
 
 import RequireAuth from "./components/RequireAuth";
 import ScrollToTop from "./components/ScrollToTop";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { UserProvider } from "./hooks/useUser";
 import { ThemeProvider } from "./hooks/useTheme";
 
@@ -82,9 +83,12 @@ function NotFound() {
   );
 }
 
+import ClickEffects from "./components/ClickEffects";
+
 function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="app-shell">
+      <ClickEffects />
       <div id="app-scroll-container" className="app-content">
         {children}
       </div>
@@ -230,9 +234,11 @@ export default function App() {
         <BrowserRouter>
           <ScrollToTop />
           <AppLayout>
-            <Suspense fallback={<div style={{ padding: 24 }}>Loading…</div>}>
-              <AppRoutes />
-            </Suspense>
+            <ErrorBoundary>
+              <Suspense fallback={<div style={{ padding: 24 }}>Loading…</div>}>
+                <AppRoutes />
+              </Suspense>
+            </ErrorBoundary>
           </AppLayout>
         </BrowserRouter>
       </UserProvider>

@@ -7,7 +7,6 @@ import {
   signInWithGithub,
 } from "../firebase/firebaseAuth";
 import { auth } from "../firebase/firebase";
-import { fetchSignInMethodsForEmail } from "firebase/auth";
 import { FirebaseError } from "firebase/app";
 import "./NotescapeStartPage.css";
 
@@ -50,32 +49,9 @@ export default function NotescapeStartPage() {
           const conflictEmail =
             (err.customData?.email as string | undefined) || "";
           if (conflictEmail) {
-            try {
-              const methods = await fetchSignInMethodsForEmail(
-                auth,
-                normalizeEmail(conflictEmail)
-              );
-              if (methods.includes("password")) {
-                setError(
-                  "An account with this email already exists with a password. Please log in with email & password."
-                );
-              } else if (methods.includes("google.com")) {
-                setError(
-                  "This email is already linked with Google. Please continue with Google."
-                );
-              } else if (methods.includes("apple.com")) {
-                setError(
-                  "This email is already linked with Apple. Please continue with Apple."
-                );
-              } else {
-                setError(
-                  "An account with this email already exists with a different sign-in method."
-                );
-              }
-            } catch (fetchErr) {
-              console.error("fetchSignInMethodsForEmail error:", fetchErr);
-              setError(`${provider} login failed. Please try another method.`);
-            }
+            setError(
+              "An account with this email already exists. Please try logging in with a different method."
+            );
           } else {
             setError(`${provider} login failed. Please try another method.`);
           }

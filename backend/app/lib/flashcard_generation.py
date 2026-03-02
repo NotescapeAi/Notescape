@@ -51,13 +51,19 @@ async def insert_flashcards(
             hint = c.get("hint")
             diff = c.get("difficulty") or "medium"
             tags = normalize_tag_names(c.get("tags") or [])
+            
+            # Allow per-card source_chunk_id override
+            chunk_id = c.get("source_chunk_id")
+            if chunk_id is None:
+                chunk_id = source_chunk_id
+
             await cur.execute(
                 """
                 INSERT INTO flashcards (class_id, file_id, source_chunk_id, question, answer, hint, difficulty, tags, created_by, updated_at)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, now())
                 RETURNING id::text
                 """,
-                (class_id, file_id, source_chunk_id, q, a, hint, diff, tags, created_by),
+                (class_id, file_id, chunk_id, q, a, hint, diff, tags, created_by),
             )
             row = await cur.fetchone()
             card_id = row[0]

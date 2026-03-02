@@ -4,7 +4,7 @@ import logging
 import json
 import asyncio
 from uuid import UUID
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, UploadFile, File, HTTPException, status
 from pydantic import BaseModel
 from app.core.db import db_conn
 from pathlib import Path, PurePosixPath
@@ -21,8 +21,19 @@ from app.core.storage import (
 )
 from app.core.cache import cache_set
 from app.lib.pdf_text import detect_digital_pdf
-from app.lib.chunking import extract_page_texts
+from app.lib.chunking import extract_page_texts, extract_file_content
 from app.lib.indexing import index_file
+
+MAX_FILE_SIZE = 100 * 1024 * 1024  # 100 MB
+ALLOWED_MIME_TYPES = {
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "text/plain",
+    "text/markdown",
+    "text/csv",
+}
+ALLOWED_EXTENSIONS = {".pdf", ".docx", ".pptx", ".txt", ".md", ".csv"}
 
 UPLOAD_ROOT = Path(settings.upload_root)
 UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
@@ -89,7 +100,7 @@ async def _queue_ocr_job(file_id: str, output_prefix: str, engine: str = "tesser
         "output_text_key": output_text_key,
     }
 
-async def _process_pdf_async(
+async def _process_file_async(
     file_id: str,
     safe_name: str,
     local_path: Path,
@@ -100,22 +111,57 @@ async def _process_pdf_async(
 ):
     status = "UPLOADED"
     ocr_job_id = None
+    ext = Path(safe_name).suffix.lower()
+
     try:
-        is_digital, _ = detect_digital_pdf(str(local_path), max_pages=3, min_chars=200)
-        if is_digital:
-            page_texts = extract_page_texts(str(local_path))
-            full_text = "\n".join(page_texts)
-            cache_key = f"filetext:{file_id}:{storage_key or local_path.stat().st_size}"
-            cache_set(cache_key, full_text.encode("utf-8"), ttl_seconds=86400)
-            total = await index_file(file_id, page_texts=page_texts)
-            status = "INDEXED" if total > 0 else "FAILED"
-            await _update_file_status(file_id, status, error=None, indexed=total > 0)
+        # 1. Determine extraction method
+        should_extract_text = False
+        should_queue_ocr = False
+        
+        if ext == ".pdf":
+            # Check if digital or scanned
+            is_digital, _ = detect_digital_pdf(str(local_path), max_pages=3, min_chars=200)
+            if is_digital:
+                should_extract_text = True
+            else:
+                should_queue_ocr = True
+        elif ext in [".docx", ".txt", ".md", ".csv"]:
+            # These are always "digital" text
+            should_extract_text = True
         else:
+            # Fallback (e.g. pptx) - maybe just upload without indexing for now
+            pass
+
+        # 2. Execute extraction or OCR
+        if should_extract_text:
+            content = extract_file_content(str(local_path))
+            page_texts = content.get("page_texts")
+            raw_text = content.get("raw_text")
+            
+            # Cache full text
+            if raw_text:
+                cache_key = f"filetext:{file_id}:{storage_key or local_path.stat().st_size}"
+                cache_set(cache_key, raw_text.encode("utf-8"), ttl_seconds=86400)
+            
+            # Index
+            total = await index_file(file_id, page_texts=page_texts, raw_text=raw_text)
+            status = "INDEXED" if total > 0 else "FAILED"
+            # If failed to index but no error, maybe it was empty?
+            if total == 0 and not raw_text:
+                status = "FAILED"
+                error = "Empty file or no text extracted"
+            else:
+                error = None
+                
+            await _update_file_status(file_id, status, error=error, indexed=total > 0)
+
+        elif should_queue_ocr:
             output_prefix = build_s3_document_prefix("public", owner_uid, class_id, file_id)
             queued = await _queue_ocr_job(file_id, output_prefix)
             ocr_job_id = queued["job_id"]
             status = "OCR_QUEUED"
             await _update_file_status(file_id, status, ocr_job_id=ocr_job_id)
+            
     except Exception as e:
         log.error(f"[files] processing failed for {file_id}: {e}")
         await _update_file_status(file_id, "FAILED", error=str(e))
@@ -130,6 +176,31 @@ async def _process_pdf_async(
 
 @router.post("/{class_id:int}")
 async def upload_file(class_id: int, file: UploadFile = File(...)):
+    # 0) Validation
+    if file.content_type not in ALLOWED_MIME_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid file type: {file.content_type}. Allowed: {', '.join(ALLOWED_MIME_TYPES)}"
+        )
+    
+    ext = Path(file.filename).suffix.lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid file extension: {ext}. Allowed: {', '.join(ALLOWED_EXTENSIONS)}"
+        )
+
+    # Check size
+    file.file.seek(0, 2)
+    size_bytes = file.file.tell()
+    file.file.seek(0)
+    
+    if size_bytes > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"File too large. Max size is {MAX_FILE_SIZE / 1024 / 1024} MB"
+        )
+
     # 1) ensure class exists
     async with db_conn() as (conn, cur):
         await cur.execute("SELECT owner_uid FROM classes WHERE id=%s", (class_id,))
@@ -143,27 +214,29 @@ async def upload_file(class_id: int, file: UploadFile = File(...)):
     file_id = str(uuid.uuid4())
     upload_id = str(uuid.uuid4())
 
-    # 2) local disk path + S3 key
-    rel_path = PurePosixPath(f"class_{class_id}/{file_id}/{safe_name}")
-    local_path = (UPLOAD_ROOT / Path(rel_path.as_posix())).resolve()
-    local_path.parent.mkdir(parents=True, exist_ok=True)
+    # 2) Storage Logic with Fallback
+    storage_backend = settings.storage_backend.lower()
+    
+    # Auto-fallback if S3 is not configured
+    if storage_backend == "s3":
+        if not (settings.s3_access_key and settings.s3_secret_key and settings.s3_bucket):
+            log.warning("S3 backend configured but credentials missing. Falling back to local.")
+            storage_backend = "local"
 
+    storage_key = None
+    storage_url = f"/api/classes/{class_id}/documents/{file_id}/download"
+
+    # Save to a local temp path first (needed for PDF processing or S3 upload)
+    temp_dir = UPLOAD_ROOT / "temp"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    local_path = temp_dir / f"{file_id}_{safe_name}"
+    
     try:
         file.file.seek(0)
         with open(local_path, "wb") as out:
             shutil.copyfileobj(file.file, out)
-        size_bytes = local_path.stat().st_size
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to save upload: {e}")
-    finally:
-        try:
-            file.file.seek(0)
-        except Exception:
-            pass
-
-    storage_url = f"/api/classes/{class_id}/documents/{file_id}/download"
-    storage_key = None
-    storage_backend = settings.storage_backend.lower()
+        raise HTTPException(status_code=500, detail=f"Failed to save temporary file: {e}")
 
     if storage_backend == "s3":
         key = build_s3_key_original(
@@ -175,7 +248,8 @@ async def upload_file(class_id: int, file: UploadFile = File(...)):
             safe_name,
         )
         try:
-            stored = put_object(file.file, key=key, content_type=file.content_type)
+            with open(local_path, "rb") as f:
+                stored = put_object(f, key=key, content_type=file.content_type)
             storage_key = stored.key
             metadata_key = f"{build_s3_document_prefix('public', owner_uid, class_id, file_id)}/metadata.json"
             metadata_payload = {
@@ -190,10 +264,25 @@ async def upload_file(class_id: int, file: UploadFile = File(...)):
             }
             put_bytes(metadata_key, json.dumps(metadata_payload).encode("utf-8"), "application/json")
         except Exception as e:
+            if local_path.exists():
+                local_path.unlink()
             raise HTTPException(status_code=502, detail=f"Storage upload failed: {e}")
+            
     elif storage_backend == "local":
-        storage_key = rel_path.as_posix()
+        rel_path = PurePosixPath(f"class_{class_id}/{file_id}/{safe_name}")
+        final_path = (UPLOAD_ROOT / Path(rel_path.as_posix())).resolve()
+        final_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            shutil.move(str(local_path), str(final_path))
+            local_path = final_path # Update to final path
+            storage_key = rel_path.as_posix()
+        except Exception as e:
+            if local_path.exists():
+                local_path.unlink()
+            raise HTTPException(status_code=500, detail=f"Failed to save upload: {e}")
     else:
+        if local_path.exists():
+            local_path.unlink()
         raise HTTPException(status_code=500, detail="Unsupported storage backend")
 
     # 3) insert DB row
@@ -207,14 +296,19 @@ async def upload_file(class_id: int, file: UploadFile = File(...)):
         )
         await conn.commit()
 
-    # 4) conditional OCR + indexing (PDF only) - run async to keep uploads fast
+    # 4) conditional OCR + indexing - run async to keep uploads fast
     status = "UPLOADED"
     ocr_job_id = None
-    if safe_name.lower().endswith(".pdf"):
+    
+    # Check if we should process this file (extract text or OCR)
+    process_exts = {".pdf", ".docx", ".txt", ".md", ".csv"}
+    ext = Path(safe_name).suffix.lower()
+    
+    if ext in process_exts:
         status = "PROCESSING"
         await _update_file_status(file_id, status)
         asyncio.create_task(
-            _process_pdf_async(
+            _process_file_async(
                 file_id=file_id,
                 safe_name=safe_name,
                 local_path=local_path,
@@ -226,6 +320,12 @@ async def upload_file(class_id: int, file: UploadFile = File(...)):
         )
     else:
         await _update_file_status(file_id, status)
+        # Clean up temp file if S3 (since it wasn't passed to _process_file_async which handles cleanup)
+        if storage_backend == "s3" and local_path.exists():
+            try:
+                local_path.unlink()
+            except Exception:
+                pass
 
     return {
         "id": file_id,

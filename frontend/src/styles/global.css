@@ -44,6 +44,17 @@
   --soft-lime: #d3ef5f;
   --mint: #5fefc3;
   --overlay: rgba(15, 16, 32, 0.4);
+
+  /* Spacing System (8px Grid) */
+  --space-1: 4px;   /* 0.25rem - Tight spacing */
+  --space-2: 8px;   /* 0.5rem  - Base unit */
+  --space-3: 12px;  /* 0.75rem - 1.5x Base */
+  --space-4: 16px;  /* 1rem    - 2x Base */
+  --space-5: 20px;  /* 1.25rem - 2.5x Base */
+  --space-6: 24px;  /* 1.5rem  - 3x Base */
+  --space-8: 32px;  /* 2rem    - 4x Base */
+  --space-10: 40px; /* 2.5rem  - 5x Base */
+  --space-12: 48px; /* 3rem    - 6x Base */
 }
 
 .dark {

@@ -171,6 +171,18 @@ export default function QuizAttemptPage() {
     setAnswers((prev) => ({ ...prev, [qid]: text }));
   }
 
+  function handleRetake() {
+    if (!confirm("Are you sure you want to retake this quiz? Your previous score will be saved.")) return;
+    
+    setAttemptResult(null);
+    setAnswers({});
+    setAttemptId(null);
+    setTagBreakdown(null);
+    setSubmitting(false);
+    setStartTime(Date.now());
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   // Early return if no quizId
   if (!quizId) {
     return (
@@ -420,8 +432,17 @@ export default function QuizAttemptPage() {
                     {submitting ? "Submitting..." : "Submit Attempt"}
                   </button>
                 ) : (
-                  <div className="rounded-[16px] border border-green-300 bg-green-50 dark:bg-green-900/20 px-6 py-3 text-sm text-green-700 dark:text-green-300">
-                    ✓ Attempt submitted successfully. You can go back to quizzes.
+                  <div className="flex flex-col items-end gap-3">
+                    <div className="rounded-[16px] border border-green-300 bg-green-50 dark:bg-green-900/20 px-6 py-3 text-sm text-green-700 dark:text-green-300">
+                      ✓ Attempt submitted successfully.
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleRetake}
+                      className="flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface)] px-6 py-2.5 text-sm font-semibold text-[var(--text-main)] shadow-sm hover:bg-[var(--surface-hover)] transition-all"
+                    >
+                      Retake Quiz
+                    </button>
                   </div>
                 )}
               </div>

@@ -32,14 +32,32 @@ export default function QuizPanel({ classId, files, onQuizCreated }: QuizPanelPr
     const detail = err?.response?.data?.detail;
     const raw = typeof detail === "string" ? detail : err?.message || "Failed to generate quiz";
     const lower = String(raw).toLowerCase();
+
+    // Specific user-friendly mapping
+    if (lower.includes("no chunks found")) {
+      return "The document is still processing. Please wait a few seconds and try again.";
+    }
+    if (lower.includes("file not found")) {
+      return "The selected file is no longer available. Please refresh the page.";
+    }
+    if (lower.includes("network error") || lower.includes("connection refused")) {
+      return "Could not connect to the server. Please check your internet connection.";
+    }
+    if (lower.includes("timeout")) {
+      return "Quiz generation took too long. Please try a smaller number of questions.";
+    }
+
+    // Mask internal technical errors
     if (
       lower.includes("relation") ||
       lower.includes("sql") ||
       lower.includes("syntax") ||
-      lower.includes("traceback")
+      lower.includes("traceback") ||
+      lower.includes("internal server error")
     ) {
-      return "Something went wrong while generating quiz. Please try again.";
+      return "Something went wrong while generating the quiz. Please try again later.";
     }
+    
     return String(raw);
   }
 

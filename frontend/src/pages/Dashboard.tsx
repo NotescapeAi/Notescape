@@ -1,3 +1,4 @@
+import { DateDisplay } from "../components/DateDisplay";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowUpRight, FileText, Sparkles } from "lucide-react";
@@ -409,7 +410,12 @@ export default function Dashboard() {
                         {session.class_name || (session.class_id ? `Class #${session.class_id}` : "Study session")}
                       </div>
                       <div className="text-xs text-[var(--text-secondary)]">
-                        {session.started_at ? new Date(session.started_at).toLocaleString() : "Session"}
+                        <DateDisplay 
+                          date={session.started_at} 
+                          showTime={true} 
+                          className="text-xs text-[var(--text-secondary)]" 
+                          placeholder="Session" 
+                        />
                       </div>
                     </div>
                     <div className="text-xs text-[var(--text-secondary)]">
