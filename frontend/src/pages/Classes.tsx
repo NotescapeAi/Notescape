@@ -31,8 +31,18 @@ import {
   type Flashcard,
   getWeakCards,
   type WeakCard,
+  chatAsk,
+  createChatSession,
+  listChatSessions,
+  listChatSessionMessages,
+  addChatMessages,
+  type ChatSession,
+  type ChatMessage,
+  ocrImageSnippet,
   getDocumentViewUrl,
 } from "../lib/api";
+
+type StudyMsg = ChatMessage & { citations?: any };
 
 const ALLOWED_MIME = new Set<string>([
   "application/pdf",
@@ -163,7 +173,17 @@ function ClassesContent() {
     boundingBox: any;
   } | null>(null);
   const [pendingSnip, setPendingSnip] = useState<PdfSnip | null>(null);
-  
+
+  // Study Assistant (docked panel next to PDF viewer)
+  const [studyAssistantOpen, setStudyAssistantOpen] = useState(false);
+  const [studySessions, setStudySessions] = useState<ChatSession[]>([]);
+  const [studySessionId, setStudySessionId] = useState<string | null>(null);
+  const [studyMessages, setStudyMessages] = useState<StudyMsg[]>([]);
+  const [studyInput, setStudyInput] = useState('');
+  const [studyBusy, setStudyBusy] = useState(false);
+  const [studySelectedQuote, setStudySelectedQuote] = useState<{ text: string; fileId?: string | null; pageNumber?: number | null } | null>(null);
+  const studyChatScrollRef = useRef<HTMLDivElement | null>(null);
+
   const location = useLocation();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const documentListRef = useRef<HTMLDivElement | null>(null);
@@ -250,6 +270,55 @@ function ClassesContent() {
     if (!selectedId || !activeFile) return;
     localStorage.setItem(`chat_last_file_${selectedId}`, activeFile.id);
   }, [selectedId, activeFile?.id]);
+
+  // Load study sessions when active file changes
+  useEffect(() => {
+    if (!selectedId || !activeFile) {
+      setStudySessions([]);
+      setStudySessionId(null);
+      setStudyMessages([]);
+      return;
+    }
+    (async () => {
+      try {
+        const sess = await listChatSessions(selectedId, activeFile.id);
+        setStudySessions(sess);
+        const stored = localStorage.getItem(`study_session_${selectedId}_${activeFile.id}`);
+        const preferred = stored ? sess.find((s) => s.id === stored)?.id : null;
+        setStudySessionId(preferred ?? sess[0]?.id ?? null);
+      } catch { /* ignore */ }
+    })();
+  }, [selectedId, activeFile?.id]);
+
+  // Load messages when study session changes
+  useEffect(() => {
+    if (!studySessionId) { setStudyMessages([]); return; }
+    (async () => {
+      try {
+        const msgs = await listChatSessionMessages(studySessionId);
+        setStudyMessages((msgs || []).map((m) => ({ ...m, citations: m.citations ?? undefined })));
+      } catch { /* ignore */ }
+    })();
+  }, [studySessionId]);
+
+  // Auto-scroll study chat
+  useEffect(() => {
+    const el = studyChatScrollRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [studyMessages.length, studyBusy]);
+
+  // Clear selection menu on scroll/click outside
+  useEffect(() => {
+    if (!selectionMenu) return;
+    const clear = () => setSelectionMenu(null);
+    window.addEventListener("scroll", clear, true);
+    window.addEventListener("mousedown", clear);
+    return () => {
+      window.removeEventListener("scroll", clear, true);
+      window.removeEventListener("mousedown", clear);
+    };
+  }, [selectionMenu]);
 
   useEffect(() => {
     if (!selectedId) return;
@@ -621,8 +690,10 @@ function ClassesContent() {
   }
 
   function handlePdfSnip(snip: PdfSnip) {
-    // In future: could pass this to chat
-    showToastMessage("Snippet captured. Go to Chat tab to ask about it.");
+    const withFile = { ...snip, file_id: activeFile?.id ?? null };
+    setPendingSnip(withFile);
+    setStudyAssistantOpen(true);
+    showToastMessage("Snippet captured — add a prompt and send.");
   }
 
   function showToastMessage(message: string) {
@@ -630,15 +701,103 @@ function ClassesContent() {
     window.setTimeout(() => setToast(null), 2500);
   }
 
+  async function startNewStudySession() {
+    if (!selectedId || !activeFile) return;
+    const s = await createChatSession({ class_id: selectedId, document_id: activeFile.id, title: "New chat" });
+    setStudySessions((prev) => [s, ...prev]);
+    setStudySessionId(s.id);
+    setStudyMessages([]);
+    localStorage.setItem(`study_session_${selectedId}_${activeFile.id}`, s.id);
+  }
+
+  async function onStudyAsk(overrideContent?: string) {
+    if (!selectedId || !activeFile) return;
+    const content = (overrideContent ?? studyInput).trim();
+    if (!content && !pendingSnip) return;
+    const finalContent = content || "Explain this snippet.";
+
+    let sessionId = studySessionId;
+    if (!sessionId) {
+      const s = await createChatSession({ class_id: selectedId, document_id: activeFile.id, title: "New chat" });
+      setStudySessions((prev) => [s, ...prev]);
+      sessionId = s.id;
+      setStudySessionId(s.id);
+      localStorage.setItem(`study_session_${selectedId}_${activeFile.id}`, s.id);
+    }
+
+    const snip = pendingSnip;
+    const quote = studySelectedQuote;
+    const userMsg: StudyMsg = {
+      id: crypto.randomUUID?.() ?? String(Date.now()),
+      role: "user",
+      content: finalContent,
+      selected_text: quote?.text ?? null,
+      page_number: snip?.page ?? null,
+      bounding_box: null,
+      file_id: activeFile.id,
+      image_attachment: snip ?? null,
+    };
+    setStudyMessages((prev) => [...prev, userMsg]);
+    setStudyInput("");
+    setPendingSnip(null);
+    setStudySelectedQuote(null);
+    setStudyBusy(true);
+
+    let assistantText = "Sorry, I couldn't finish that response. Please try again.";
+    let citations: any = null;
+    try {
+      let question = quote?.text ? `Selected text:
+"${quote.text}"
+
+${finalContent}` : finalContent;
+      if (snip?.data_url && !quote?.text) {
+        try {
+          const ocr = await ocrImageSnippet(snip.data_url);
+          if (ocr?.text) question = `Snippet text:
+"${ocr.text}"
+
+${finalContent}`;
+        } catch { /* ignore */ }
+      }
+      const res = await chatAsk({ class_id: selectedId, question, top_k: 8, file_ids: [activeFile.id] });
+      assistantText = (res.answer || "").trim() || "Not found in the uploaded material.";
+      citations = res.citations ?? null;
+    } catch { /* ignore */ }
+
+    const botMsg: StudyMsg = {
+      id: crypto.randomUUID?.() ?? String(Date.now() + 1),
+      role: "assistant",
+      content: assistantText,
+      citations: citations ?? undefined,
+    };
+    setStudyMessages((prev) => [...prev, botMsg]);
+
+    try {
+      await addChatMessages({
+        session_id: sessionId!,
+        user_content: userMsg.content,
+        assistant_content: botMsg.content,
+        citations,
+        selected_text: quote?.text ?? null,
+        page_number: userMsg.page_number ?? null,
+        bounding_box: null,
+        file_id: activeFile.id,
+        file_scope: [activeFile.id],
+        image_attachment: snip ?? null,
+      });
+    } catch { /* ignore */ }
+    setStudyBusy(false);
+  }
+
   const currentClass = selectedId
     ? classes.find((c) => c.id === selectedId)?.name
     : null;
-  const isChatFullscreen = false; // Removed dock
-  const showPdf = !isChatFullscreen;
   const isWorkspaceWide = activeTab === "documents" && !!activeFile;
   const layoutClass = pdfFocusMode
-    ? "grid-cols-1" // Focused mode
-    : "grid-cols-1"; // Simple grid without chat dock
+    ? "grid-cols-1"
+    : studyAssistantOpen && activeFile
+      ? "grid-cols-1 lg:grid-cols-[minmax(0,1fr)_380px]"
+      : "grid-cols-1";
 
   const hasAnyFiles = (files?.length ?? 0) > 0;
   const selectedFlashcardFiles = (files ?? []).filter((f) => flashcardSourceIds.includes(f.id));
@@ -721,13 +880,17 @@ function ClassesContent() {
                   <div className="flex items-center gap-3">
                     {busyUpload && <span className="text-xs text-muted">Uploading...</span>}
                     {busyFlow && <span className="text-xs text-muted">Processing...</span>}
-                    <Button
-                      onClick={() => setActiveTab("chat")}
-                      className="rounded-full"
+                    <button
+                      onClick={() => setStudyAssistantOpen((v) => !v)}
+                      className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition-all ${
+                        studyAssistantOpen
+                          ? "border-violet-500 bg-violet-600 text-white shadow-md"
+                          : "border-[var(--border)] bg-[var(--surface)] text-[var(--text-main)] hover:border-violet-500 hover:text-violet-500"
+                      }`}
                     >
-                      <MessageCircle className="mr-1 h-4 w-4" />
+                      <MessageCircle className="h-4 w-4" />
                       Study Assistant
-                    </Button>
+                    </button>
                     </div>
                 </div>
                 {activeTab === "documents" && (
@@ -739,8 +902,8 @@ function ClassesContent() {
                     ) : (
                       <div className="relative">
                         <div className={`grid gap-4 ${layoutClass}`}>
-                      {showPdf && (
-                        <div className="space-y-4">
+                      {/* PDF Viewer */}
+                      <div className="space-y-4">
                           <div className="panel panel-elevated space-y-0 overflow-hidden">
                             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-5 py-4">
                               <div>
@@ -793,8 +956,8 @@ function ClassesContent() {
                                   onSnipError={showToastMessage}
                                   onToggleFocus={toggleFocusMode}
                                   isFocusMode={pdfFocusMode}
-                                  isChatVisible={false}
-                                  onToggleChatVisibility={() => setActiveTab("chat")}
+                                  isChatVisible={studyAssistantOpen}
+                                  onToggleChatVisibility={() => setStudyAssistantOpen((v) => !v)}
                                 />
                               ) : (
                                 <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted">
@@ -804,6 +967,177 @@ function ClassesContent() {
                             </div>
                           </div>
                         </div>
+
+                      {/* Study Assistant — docked inline beside PDF, same card style */}
+                      {studyAssistantOpen && (
+                        <aside className="panel panel-elevated hidden lg:flex min-h-0 flex-col overflow-hidden space-y-0" style={{height:"calc(84vh + 72px)"}}>
+
+                          {/* Header — mirrors PDF viewer header exactly */}
+                          <div className="flex items-center justify-between border-b border-[var(--border)] px-5 py-4 flex-shrink-0">
+                            <div className="flex items-center gap-2">
+                              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-600">
+                                <MessageCircle className="h-4 w-4 text-white" />
+                              </div>
+                              <div>
+                                <div className="text-sm font-semibold text-main">Study Assistant</div>
+                                <div className="text-xs text-[var(--text-muted-soft)]">
+                                  {studySessions.length > 0 ? `${studySessions.length} session${studySessions.length > 1 ? "s" : ""}` : "New session"}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {studySessions.length > 1 && (
+                                <select
+                                  className="h-8 max-w-[130px] rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2 text-xs text-[var(--text-main)] focus:outline-none focus:ring-1 focus:ring-violet-500/40"
+                                  value={studySessionId ?? ""}
+                                  onChange={(e) => setStudySessionId(e.target.value)}
+                                >
+                                  {studySessions.map((s) => (
+                                    <option key={s.id} value={s.id}>{s.title.replace(/^\[Study\]\s*/,"")}</option>
+                                  ))}
+                                </select>
+                              )}
+                              <button
+                                onClick={startNewStudySession}
+                                className="inline-flex h-8 items-center gap-1 rounded-lg border border-[var(--border)] px-2.5 text-xs font-semibold text-[var(--text-muted)] transition hover:border-violet-500 hover:text-violet-500"
+                              >+ New</button>
+                              <button
+                                onClick={() => setStudyAssistantOpen(false)}
+                                className="inline-flex h-8 items-center gap-1 rounded-lg border border-[var(--border)] px-2.5 text-xs font-semibold text-[var(--text-muted)] transition hover:border-[var(--primary)] hover:text-[var(--primary)]"
+                              >
+                                <X className="h-3.5 w-3.5" />
+                                Close
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Messages */}
+                          <div
+                            ref={studyChatScrollRef}
+                            className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4 surface-2"
+                            style={{scrollbarWidth:"thin",scrollbarColor:"var(--border) transparent"}}
+                          >
+                            {studyMessages.length === 0 ? (
+                              <div className="flex flex-col items-center justify-center h-full text-center gap-4 py-8">
+                                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-violet-100 dark:bg-violet-900/30">
+                                  <MessageCircle className="h-6 w-6 text-violet-600" />
+                                </div>
+                                <div>
+                                  <div className="text-sm font-semibold text-main">Ask about this document</div>
+                                  <div className="text-xs text-muted mt-1 max-w-[200px]">Select text, take a snip, or type a question below.</div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-2 w-full max-w-[260px]">
+                                  {[["Summarize","Summarize this document"],["Key points","What are the key points?"],["Quiz me","Quiz me on this content"],["Explain","Explain the main ideas"]].map(([label, prompt]) => (
+                                    <button key={label} onClick={() => setStudyInput(prompt)}
+                                      className="rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs font-medium text-[var(--text-secondary)] hover:border-violet-500 hover:text-violet-500 transition-all text-left">
+                                      {label}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : (
+                              studyMessages.map((m) => (
+                                <div key={m.id} className={`flex gap-2.5 ${m.role === "user" ? "flex-row-reverse" : "flex-row"}`}>
+                                  <div className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold ${
+                                    m.role === "user"
+                                      ? "bg-[var(--surface)] border border-[var(--border)] text-[var(--text-secondary)]"
+                                      : "bg-violet-600 text-white"
+                                  }`}>{m.role === "user" ? "You" : "AI"}</div>
+                                  <div className={`flex flex-col max-w-[85%] gap-1 ${m.role === "user" ? "items-end" : "items-start"}`}>
+                                    {m.selected_text && (
+                                      <div className="text-[10px] px-2.5 py-1.5 rounded-xl border-l-2 border-violet-400 bg-violet-50 dark:bg-violet-900/20 text-violet-700 dark:text-violet-300 italic max-w-full">
+                                        <span className="line-clamp-2">{m.selected_text}</span>
+                                      </div>
+                                    )}
+                                    {m.image_attachment?.data_url && (
+                                      <img src={m.image_attachment.data_url} alt="Snippet" className="max-h-28 rounded-xl border border-[var(--border)] object-contain" />
+                                    )}
+                                    <div className={`text-sm leading-relaxed px-3.5 py-2.5 rounded-2xl ${
+                                      m.role === "user"
+                                        ? "bg-[var(--surface)] border border-[var(--border)] text-main rounded-tr-sm"
+                                        : "text-main rounded-tl-sm"
+                                    }`}>
+                                      <div className="whitespace-pre-wrap">{m.content}</div>
+                                    </div>
+                                    {m.citations && m.citations.length > 0 && (
+                                      <div className="flex flex-wrap gap-1 mt-0.5">
+                                        {m.citations.slice(0, 3).map((c: any, i: number) => (
+                                          <span key={i} className="text-[10px] px-2 py-0.5 rounded-full border border-[var(--border)] surface-2 text-muted truncate max-w-[140px]">
+                                            📄 {c.filename}{c.page_start ? ` p.${c.page_start}` : ""}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              ))
+                            )}
+                            {studyBusy && (
+                              <div className="flex gap-2.5">
+                                <div className="flex-shrink-0 w-7 h-7 rounded-full bg-violet-600 flex items-center justify-center text-[11px] font-bold text-white">AI</div>
+                                <div className="flex items-center gap-1 px-3.5 py-2.5 rounded-2xl surface border border-[var(--border)]">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-violet-400 animate-bounce" style={{animationDelay:"0ms"}} />
+                                  <span className="h-1.5 w-1.5 rounded-full bg-violet-400 animate-bounce" style={{animationDelay:"150ms"}} />
+                                  <span className="h-1.5 w-1.5 rounded-full bg-violet-400 animate-bounce" style={{animationDelay:"300ms"}} />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Input area */}
+                          <div className="border-t border-[var(--border)] px-4 py-3 flex-shrink-0 space-y-2 bg-[var(--surface)]">
+                            {studySelectedQuote && (
+                              <div className="flex items-start gap-2 rounded-xl border-l-2 border-amber-400 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-xs">
+                                <div className="flex-1 min-w-0">
+                                  <div className="font-semibold text-amber-800 dark:text-amber-200 mb-0.5">Selected text</div>
+                                  <div className="line-clamp-2 italic text-amber-900/80 dark:text-amber-100/80">{studySelectedQuote.text}</div>
+                                </div>
+                                <button onClick={() => setStudySelectedQuote(null)} className="text-amber-500 hover:text-amber-700 flex-shrink-0"><X className="h-3.5 w-3.5" /></button>
+                              </div>
+                            )}
+                            {pendingSnip && (
+                              <div className="rounded-xl border border-[var(--border)] surface-2 px-3 py-2 text-xs">
+                                <div className="flex items-center justify-between mb-1.5">
+                                  <span className="font-semibold text-main">Snippet attached</span>
+                                  <button onClick={() => setPendingSnip(null)} className="text-muted"><X className="h-3.5 w-3.5" /></button>
+                                </div>
+                                <img src={pendingSnip.data_url} alt="Snippet" className="max-h-20 rounded-lg border border-[var(--border)]" />
+                              </div>
+                            )}
+                            <div className="flex items-end gap-2 rounded-xl border border-[var(--border)] surface-2 px-3 py-2 focus-within:border-violet-500 focus-within:ring-1 focus-within:ring-violet-500/20 transition-all">
+                              <textarea
+                                value={studyInput}
+                                onChange={(e) => {
+                                  setStudyInput(e.target.value);
+                                  const el = e.target;
+                                  el.style.height = "auto";
+                                  el.style.height = Math.min(el.scrollHeight, 120) + "px";
+                                }}
+                                placeholder="Ask about this document..."
+                                rows={1}
+                                className="flex-1 min-w-0 resize-none bg-transparent text-sm text-main placeholder:text-muted focus:outline-none leading-relaxed"
+                                style={{ maxHeight: "120px", minHeight: "22px" }}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onStudyAsk(); }
+                                }}
+                              />
+                              <button
+                                onClick={() => onStudyAsk()}
+                                disabled={studyBusy || (!studyInput.trim() && !pendingSnip)}
+                                className={`flex-shrink-0 h-8 w-8 rounded-lg flex items-center justify-center transition-all ${
+                                  (studyInput.trim() || pendingSnip) && !studyBusy
+                                    ? "bg-violet-600 text-white hover:bg-violet-700 active:scale-95"
+                                    : "border border-[var(--border)] text-muted opacity-40 cursor-not-allowed"
+                                }`}
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/>
+                                </svg>
+                              </button>
+                            </div>
+                            <div className="text-[10px] text-muted px-1">⏎ Send · ⇧⏎ New line</div>
+                          </div>
+                        </aside>
                       )}
                     </div>
                   </div>
@@ -1119,6 +1453,52 @@ function ClassesContent() {
         </section>
       </div>
     </div>
+
+      {/* Selection context menu from PDF */}
+      {selectionMenu && (
+        <div
+          className="fixed z-50 pointer-events-auto"
+          style={{ left: selectionMenu.x, top: selectionMenu.y, transform: "translateX(-50%)" }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface)] px-2 py-1 text-xs shadow-lg">
+            <button
+              className="rounded-full px-3 py-1.5 font-medium text-[var(--text-main)] hover:bg-violet-50 hover:text-violet-700 transition-colors"
+              onClick={() => {
+                setStudySelectedQuote({ text: selectionMenu.text, fileId: selectionMenu.fileId, pageNumber: selectionMenu.page });
+                setStudyAssistantOpen(true);
+                setStudyInput("Explain this part.");
+                setSelectionMenu(null);
+              }}
+            >
+              Ask
+            </button>
+            <button
+              className="rounded-full px-3 py-1.5 font-medium text-[var(--text-main)] hover:bg-violet-50 hover:text-violet-700 transition-colors"
+              onClick={() => {
+                setStudySelectedQuote({ text: selectionMenu.text, fileId: selectionMenu.fileId, pageNumber: selectionMenu.page });
+                setStudyAssistantOpen(true);
+                setStudyInput("Explain this clearly.");
+                setSelectionMenu(null);
+              }}
+            >
+              Explain
+            </button>
+            <button
+              className="rounded-full px-3 py-1.5 font-medium text-[var(--text-main)] hover:bg-violet-50 hover:text-violet-700 transition-colors"
+              onClick={() => {
+                setStudySelectedQuote({ text: selectionMenu.text, fileId: selectionMenu.fileId, pageNumber: selectionMenu.page });
+                setStudyAssistantOpen(true);
+                setStudyInput("Summarize this section.");
+                setSelectionMenu(null);
+              }}
+            >
+              Summarize
+            </button>
+          </div>
+        </div>
+      )}
+
 
       {toast && (
         <div className="fixed bottom-6 right-6 z-50 rounded-xl bg-inverse px-4 py-2 text-sm text-inverse shadow-lg">
