@@ -92,33 +92,26 @@
     display: block;
   }
 }
-/* put this in navbar.css or a global buttons.css file */
-.btn-primary {
+/* Sign Up Button Styling */
+.btn-primary-purple {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  background: linear-gradient(90deg, var(--c2), var(--c3));
-  color: #ffffff;
-  padding: 10px 16px;
-  border-radius: 999px;
+  background: var(--primary);
+  color: white !important;
+  padding: 10px 24px;
+  border-radius: 12px;
   font-weight: 600;
   font-size: 14px;
-  border: 0;
+  transition: all 0.3s var(--easing);
+  box-shadow: 0 4px 12px rgba(124, 58, 237, 0.2);
   text-decoration: none;
-  box-shadow: 0 10px 28px rgba(139, 92, 246, 0.24);
-  transition: transform .15s var(--easing),
-              box-shadow .18s var(--easing),
-              background-position .5s ease,
-              color .3s ease;
-  background-size: 200% 100%;
 }
-.btn-primary:hover {
-  transform: translateY(-2px);
-  background-position: 100% 0;
-  box-shadow: 0 16px 36px rgba(223, 223, 224, 0.28);
-  color: #ffffff;
-  background: rgb(123, 126, 190); 
+
+.btn-primary-purple:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(124, 58, 237, 0.3);
+  filter: brightness(1.1);
 }
 
 
