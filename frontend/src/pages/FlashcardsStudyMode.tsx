@@ -211,6 +211,7 @@ export default function FlashcardsStudyMode() {
   const [files, setFiles] = useState<{ id: string; filename: string }[]>([]);
   const [fileFilter, setFileFilter] = useState<string>("all");
   const [error, setError] = useState<string | null>(null);
+  const [reviewToast, setReviewToast] = useState<string | null>(null);
   const responseStart = useRef<number | null>(null);
   const scrollRestoreRef = useRef<number | null>(null);
   const timerRef = useRef<SessionTimerHandle | null>(null);
@@ -335,6 +336,10 @@ export default function FlashcardsStudyMode() {
       });
       applySession(data);
       timerRef.current?.flush();
+      setReviewToast(
+        confidence <= 2 ? "Saved: keep practicing this card." : confidence === 3 ? "Saved: getting better." : "Saved: great recall."
+      );
+      window.setTimeout(() => setReviewToast(null), 1400);
     } catch (err: any) {
       setError(err?.message || "Failed to save review");
     } finally {
@@ -397,6 +402,23 @@ export default function FlashcardsStudyMode() {
     stats.mastery_percent ||
     (stats.total_unique ? Math.round((stats.mastered_count / stats.total_unique) * 100) : 0);
   const timerActive = Boolean(sessionId) && !loading && !stats.ended;
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (!currentCard || loading || stats.ended || stats.done || submitting) return;
+      if (e.key === " " && !e.repeat) {
+        e.preventDefault();
+        setRevealed((prev) => !prev);
+        return;
+      }
+      if (revealed && ["1", "2", "3", "4", "5"].includes(e.key)) {
+        e.preventDefault();
+        handleReview(Number(e.key) as 1 | 2 | 3 | 4 | 5);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [currentCard?.id, loading, revealed, stats.ended, stats.done, submitting]);
+
   const handleSessionSave = (seconds: number) => {
     studySecondsRef.current = seconds;
     if (!studySessionId) return;
@@ -409,17 +431,19 @@ export default function FlashcardsStudyMode() {
 
   return (
     <AppShell
-      title="Study Session"
+      title="Flashcards"
       breadcrumbs={["Flashcards", "Study"]}
-      subtitle="Build mastery, one card at a time."
+      subtitle="Study mode"
       backLabel="Back to Flashcards"
       backTo={classId ? `/classes/${classId}/flashcards` : "/classes"}
     >
-      <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6">
+      <div className="mx-auto flex w-full max-w-[980px] flex-col gap-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <div className="text-xs uppercase tracking-[0.3em] text-[var(--primary)]">Study session</div>
-            <h1 className="mt-2 text-3xl font-semibold text-main">Mastery mode</h1>
+            <div className="text-xs uppercase tracking-[0.25em] text-[var(--text-muted-soft)]">
+              {fileFilter === "all" ? "All files" : files.find((f) => f.id === fileFilter)?.filename || "Selected file"}
+            </div>
+            <h1 className="mt-1 text-3xl font-semibold text-main">Flashcards</h1>
           </div>
           <div className="flex items-center gap-2">
             <Button className="rounded-full" onClick={startSession}>
@@ -440,24 +464,46 @@ export default function FlashcardsStudyMode() {
           </div>
         )}
 
-        <div className="rounded-[22px] surface p-4 shadow-token">
-          <div className="flex items-center justify-between text-xs text-muted">
-            <span>Mastery {masteryPct}%</span>
+        {reviewToast && (
+          <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2 text-xs text-[var(--text-secondary)] shadow-[var(--shadow-soft)]">
+            {reviewToast}
+          </div>
+        )}
+
+        <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-4 shadow-sm">
+          <div className="flex items-center justify-between text-xs text-[var(--text-secondary)]">
             <span>
-              {stats.mastered_count}/{stats.total_unique} mastered
+              Progress {stats.total_cards ? stats.current_index + 1 : 0} / {stats.total_cards || 0}
+            </span>
+            <span>
+              Mastery {masteryPct}% · {stats.mastered_count}/{stats.total_unique} mastered
             </span>
           </div>
-          <div className="mt-3 h-2 w-full overflow-hidden rounded-full surface-tint">
-            <div className="h-full rounded-full bg-[var(--accent-mint)]" style={{ width: `${masteryPct}%` }} />
+          <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-[var(--surface-2)]">
+            <div
+              className="h-full rounded-full bg-[var(--primary)] transition-all duration-300"
+              style={{
+                width: `${stats.total_cards ? Math.round(((stats.current_index + (revealed ? 1 : 0)) / Math.max(stats.total_cards, 1)) * 100) : 0}%`,
+              }}
+            />
           </div>
-          <div className="mt-3 grid gap-2 text-xs text-muted sm:grid-cols-3">
-            <div>Session time: {formatDuration(stats.session_seconds)}</div>
+          <div className="mt-3 grid gap-2 text-xs text-[var(--text-secondary)] sm:grid-cols-3">
+            <div>
+              Study time:{" "}
+              <SessionTimer
+                ref={timerRef}
+                sessionId={studySessionId ?? sessionId}
+                baseSeconds={studyBaseSeconds || stats.session_seconds}
+                active={timerActive}
+                onSave={handleSessionSave}
+              />
+            </div>
             <div>Avg rating: {stats.total_reviews ? stats.average_rating.toFixed(2) : "0.00"}</div>
             <div>Total reviews: {stats.total_reviews}</div>
           </div>
         </div>
 
-        <div className="rounded-[28px] surface p-6 shadow-token">
+        <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-5 shadow-sm">
           <div className="mb-4 flex items-center justify-between gap-2">
             <select
               value={fileFilter}
@@ -471,21 +517,7 @@ export default function FlashcardsStudyMode() {
                 </option>
               ))}
             </select>
-            <div className="text-xs text-muted">
-              <span className="mr-3">
-                {stats.total_cards ? stats.current_index + 1 : 0} / {stats.total_cards}
-              </span>
-              <span>
-                Study time:{" "}
-                <SessionTimer
-                  ref={timerRef}
-                  sessionId={studySessionId ?? sessionId}
-                  baseSeconds={studyBaseSeconds || stats.session_seconds}
-                  active={timerActive}
-                  onSave={handleSessionSave}
-                />
-              </span>
-            </div>
+            <div className="text-xs text-[var(--text-secondary)]">Space: flip · 1-5: rate</div>
           </div>
 
           {loading ? (
@@ -498,64 +530,68 @@ export default function FlashcardsStudyMode() {
             <div className="text-sm text-muted">No cards available in this session.</div>
           ) : (
             <div className="space-y-6">
-              <div className="rounded-[28px] border border-token bg-gradient-to-br from-[var(--surface)] to-[var(--surface-2)] p-8 shadow-token min-h-[320px]">
-                <div className="text-xs uppercase tracking-[0.2em] text-[var(--primary)]">Mastery</div>
-                <div className="mt-3 text-2xl font-semibold text-main">
-                  {sanitizeText(currentCard.question)}
-                </div>
-                <div
-                  className={`mt-6 rounded-2xl border border-token surface p-4 text-sm text-muted transition ${
-                    revealed ? "opacity-100" : "opacity-0 h-0 overflow-hidden"
-                  }`}
-                >
-                  {sanitizeText(currentCard.answer)}
-                </div>
-                <div className="mt-6">
-                  <Button variant="primary" className="rounded-full" onClick={() => setRevealed((v) => !v)}>
-                    {revealed ? "Hide answer" : "Show answer"}
-                  </Button>
+              <div className="mx-auto w-full max-w-[760px]">
+                <div className="min-h-[340px] rounded-3xl border border-neutral-200 bg-white p-6 shadow-sm sm:p-8">
+                  <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--text-muted-soft)]">
+                    {revealed ? "Answer" : "Question"}
+                  </div>
+                  <div
+                    className={`mt-5 text-lg font-semibold leading-relaxed text-[var(--text-main)] sm:text-2xl transition-all duration-300 ${
+                      revealed ? "translate-y-0 opacity-100" : "translate-y-0 opacity-100"
+                    }`}
+                  >
+                    {revealed ? sanitizeText(currentCard.answer) : sanitizeText(currentCard.question)}
+                  </div>
+                  <div className="mt-8 flex flex-wrap items-center gap-2">
+                    <Button
+                      variant="primary"
+                      className="rounded-full px-5"
+                      onClick={() => setRevealed((v) => !v)}
+                    >
+                      {revealed ? "Show question" : "Show answer"}
+                    </Button>
+                    <span className="text-xs text-[var(--text-secondary)]">Press Space</span>
+                  </div>
                 </div>
               </div>
 
               <div>
-                <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
                   {[
-                    { score: 1, label: "No clue", color: "border-accent bg-accent-soft text-accent" },
-                    { score: 2, label: "Hard", color: "border-accent bg-accent-weak text-accent" },
+                    { score: 1, label: "Again", color: "border-neutral-200 bg-white text-[var(--text-main)]" },
+                    { score: 2, label: "Hard", color: "border-neutral-200 bg-white text-[var(--text-main)]" },
                     {
                       score: 3,
-                      label: "Okay",
-                      color:
-                        "border-[var(--accent-lime)] bg-[var(--accent-lime)]/20 text-[var(--accent-lime)]",
+                      label: "Good",
+                      color: "border-neutral-200 bg-white text-[var(--text-main)]",
                     },
                     {
                       score: 4,
                       label: "Easy",
-                      color:
-                        "border-[var(--accent-mint)] bg-[var(--accent-mint)]/20 text-[var(--accent-mint)]",
+                      color: "border-neutral-200 bg-white text-[var(--text-main)]",
                     },
                     {
                       score: 5,
                       label: "Mastered",
-                      color:
-                        "border-[var(--accent-mint)] bg-[var(--accent-mint)]/30 text-[var(--accent-mint)]",
+                      color: "border-neutral-200 bg-white text-[var(--text-main)]",
                     },
                   ].map((opt) => (
                     <button
                       key={opt.score}
                       onClick={() => handleReview(opt.score as 1 | 2 | 3 | 4 | 5)}
-                      disabled={submitting}
-                      className={`rounded-2xl border px-3 py-3 text-xs font-semibold transition ${
+                      disabled={submitting || !revealed}
+                      className={`h-11 rounded-xl border px-3 text-sm font-semibold transition ${
                         submitting ? "cursor-not-allowed opacity-60" : ""
-                      } ${opt.color}`}
+                      } ${!revealed ? "opacity-50" : ""} ${opt.color} hover:border-[var(--primary)] hover:text-[var(--primary)]`}
                     >
-                      {opt.label}
+                      {opt.label}{" "}
+                      <span className="ml-1 text-[11px] text-[var(--text-muted-soft)]">{opt.score}</span>
                     </button>
                   ))}
                 </div>
-                <div className="mt-2 flex justify-between text-xs text-muted">
-                  <span>Not confident</span>
-                  <span>Mastered</span>
+                <div className="mt-2 flex items-center justify-between text-xs text-[var(--text-secondary)]">
+                  <span>Reveal the answer, then rate recall quality.</span>
+                  <span>1 = Again · 5 = Mastered</span>
                 </div>
               </div>
             </div>

@@ -6,7 +6,8 @@ from typing import Any, Dict, List, Optional
 
 from app.core.db import db_conn
 from app.core.llm import get_quiz_generator  # you will add this in step 3.2
-from app.core.migrations import ensure_quiz_jobs_schema
+from app.core.migrations import ensure_learning_analytics_schema, ensure_quiz_jobs_schema
+from app.lib.tags import normalize_tag_names, sync_quiz_question_tags
 
 POLL_SECONDS = 2
 log = logging.getLogger("uvicorn.error")
@@ -129,34 +130,36 @@ RULES FOR NON-MCQ (type="conceptual"|"definition"|"scenario"|"short_qa"):
 - NO options field
 - NO correct_index field
 
-OUTPUT FORMAT:
-Return ONLY valid JSON, no markdown, no extra text.
+    OUTPUT FORMAT:
+    Return ONLY valid JSON, no markdown, no extra text.
 
-{{
-  "title": "Quiz title based on content",
-  "items": [
+    {{
+      "title": "Quiz title based on content",
+      "items": [
     // MCQ EXAMPLE (you must generate EXACTLY {mcq_count if mcq_count else 'the specified number of'} of these):
     {{
       "type": "mcq",
       "question": "Question text here?",
       "options": ["Option A", "Option B", "Option C", "Option D"],
       "correct_index": 0,
-      "answer_key": null,
-      "explanation": "Brief explanation (optional)",
-      "difficulty": "{difficulty}",
-      "source": {{"chunk_id": 123, "page_start": 1, "page_end": 1}}
-    }},
+          "answer_key": null,
+          "explanation": "Brief explanation (optional)",
+          "tags": ["topic one", "topic two"],
+          "difficulty": "{difficulty}",
+          "source": {{"chunk_id": 123, "page_start": 1, "page_end": 1}}
+        }},
     // NON-MCQ EXAMPLE (you must generate EXACTLY {subjective_count if mcq_count else 'the remaining'} of these):
     {{
       "type": "conceptual",
       "question": "Question text here?",
       "options": null,
-      "correct_index": null,
-      "answer_key": "Detailed answer here",
-      "explanation": "Brief explanation (optional)",
-      "difficulty": "{difficulty}",
-      "source": {{"chunk_id": 124, "page_start": 2, "page_end": 2}}
-    }}
+          "correct_index": null,
+          "answer_key": "Detailed answer here",
+          "explanation": "Brief explanation (optional)",
+          "tags": ["topic one", "topic two"],
+          "difficulty": "{difficulty}",
+          "source": {{"chunk_id": 124, "page_start": 2, "page_end": 2}}
+        }}
   ]
 }}
 
@@ -266,6 +269,7 @@ async def _save_quiz(user_id: str, class_id: int, file_id: str, title: str, sett
                 VALUES
                 (%s, %s, %s, %s, %s, %s, %s,
                  %s, %s, %s, %s, %s)
+                RETURNING id
                 """,
                 (
                     quiz_id, idx,
@@ -275,6 +279,15 @@ async def _save_quiz(user_id: str, class_id: int, file_id: str, title: str, sett
                     chunk_id, page_start, page_end
                 ),
             )
+            question_id = int((await cur.fetchone())[0])
+
+            raw_tags = it.get("tags") or []
+            if not isinstance(raw_tags, list):
+                raw_tags = []
+            normalized = normalize_tag_names(raw_tags)
+            if not normalized:
+                normalized = [str(qtype or "quiz")]
+            await sync_quiz_question_tags(cur, question_id, normalized)
 
         await conn.commit()
         return quiz_id
@@ -321,6 +334,7 @@ async def _set_job_progress(job_id: str, p: int):
 async def run():
     log.info("[quiz_worker] running migrations before processing jobs")
     await ensure_quiz_jobs_schema()
+    await ensure_learning_analytics_schema()
     log.info("[quiz_worker] started")
     gen = get_quiz_generator()
 
@@ -395,7 +409,10 @@ async def run():
 
         except Exception as e:
             log.exception(f"[quiz_worker] failed job={job_id}: {e}")
-            await _set_job_failed(job_id, str(e))
+            await _set_job_failed(
+                job_id,
+                "Something went wrong while generating quiz. Please try again.",
+            )
 
 
 if __name__ == "__main__":

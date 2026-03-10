@@ -4,8 +4,10 @@ import AppShell from "../../layouts/AppShell";
 import { ArrowLeft, Clock } from "lucide-react";
 import {
   getQuiz,
+  getQuizBreakdown,
   startQuizAttempt,
   submitQuizAttempt,
+  type QuizBreakdown,
   type QuizDetail,
   type SubmitAttemptResponse,
 } from "../../lib/api";

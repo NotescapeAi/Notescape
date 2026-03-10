@@ -60,6 +60,7 @@ services:
       REQUIRE_EMAIL_VERIFIED: "${REQUIRE_EMAIL_VERIFIED:-false}"
       REDIS_URL: "redis://redis:6379/0"
       QUIZ_MIGRATION_FILE: "/workspace/db/init/10_quizzes.sql"
+      LEARNING_ANALYTICS_MIGRATION_FILE: "/workspace/db/init/11_learning_analytics_tags.sql"
     depends_on:
       db:
         condition: service_healthy
@@ -90,6 +91,7 @@ services:
       S3_REGION: "${S3_REGION:-us-east-1}"
       REDIS_URL: "redis://redis:6379/0"
       QUIZ_MIGRATION_FILE: "/workspace/db/init/10_quizzes.sql"
+      LEARNING_ANALYTICS_MIGRATION_FILE: "/workspace/db/init/11_learning_analytics_tags.sql"
     depends_on:
       db:
         condition: service_healthy

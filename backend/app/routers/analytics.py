@@ -1,6 +1,6 @@
 from typing import List, Dict, Optional
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 
 from app.core.cache import cache_get_json, cache_set_json
 from app.core.db import db_conn
@@ -14,6 +14,10 @@ NULL_TOPIC_ID = "00000000-0000-0000-0000-000000000000"
 
 def _cache_key(user_id: str, name: str, suffix: str = "") -> str:
     return f"analytics:{name}:{user_id}:{suffix}".rstrip(":")
+
+
+def _to_percent(value: float) -> float:
+    return round(max(0.0, min(1.0, float(value or 0.0))) * 100.0, 2)
 
 
 @router.get("/overview")
@@ -271,3 +275,270 @@ async def weak_cards(
 
     cache_set_json(cache_key, results, ttl_seconds=CACHE_TTL_SECONDS)
     return results
+
+
+@router.get("/weak-tags")
+async def weak_tags(
+    limit: int = Query(default=5, ge=1, le=25),
+    recent_quiz_attempts: int = Query(default=50, ge=10, le=300),
+    recent_flashcard_reviews: int = Query(default=50, ge=10, le=300),
+    user_id: str = Depends(get_request_user_uid),
+):
+    cache_key = _cache_key(
+        user_id,
+        "weak-tags",
+        f"limit={limit}:quiz={recent_quiz_attempts}:flash={recent_flashcard_reviews}",
+    )
+    cached = cache_get_json(cache_key)
+    if cached is not None:
+        return cached
+
+    async with db_conn() as (conn, cur):
+        await cur.execute(
+            """
+            WITH quiz_recent AS (
+              SELECT
+                qqa.question_id,
+                GREATEST(0::float, LEAST(1::float, COALESCE(qqa.score, 0))) AS score,
+                qqa.graded_at,
+                q.class_id
+              FROM quiz_question_attempts qqa
+              JOIN quiz_attempts qa ON qa.id = qqa.attempt_id
+              JOIN quizzes q ON q.id = qa.quiz_id
+              WHERE qa.user_id = %s
+              ORDER BY qqa.graded_at DESC
+              LIMIT %s
+            ),
+            quiz_by_tag AS (
+              SELECT
+                qqt.tag_id,
+                AVG(qr.score) AS quiz_accuracy,
+                MAX(qr.graded_at) AS quiz_last_seen,
+                MIN(qr.class_id) AS class_id
+              FROM quiz_recent qr
+              JOIN quiz_question_tags qqt ON qqt.question_id = qr.question_id
+              GROUP BY qqt.tag_id
+            ),
+            flash_recent AS (
+              SELECT
+                fr.flashcard_id,
+                lower(fr.rating) AS rating,
+                fr.reviewed_at,
+                f.class_id
+              FROM flashcard_reviews fr
+              JOIN flashcards f ON f.id = fr.flashcard_id
+              WHERE fr.user_id = %s
+                AND f.deleted_at IS NULL
+              ORDER BY fr.reviewed_at DESC
+              LIMIT %s
+            ),
+            flash_by_tag AS (
+              SELECT
+                ft.tag_id,
+                AVG(
+                  CASE WHEN fr.rating IN ('again','hard','0','1','2') THEN 1.0 ELSE 0.0 END
+                ) AS flashcard_difficulty,
+                MAX(fr.reviewed_at) AS flash_last_seen,
+                MIN(fr.class_id) AS class_id
+              FROM flash_recent fr
+              JOIN flashcard_tags ft ON ft.flashcard_id = fr.flashcard_id
+              GROUP BY ft.tag_id
+            )
+            SELECT
+              t.id,
+              t.name,
+              COALESCE(q.quiz_accuracy, 0) AS quiz_accuracy,
+              COALESCE(f.flashcard_difficulty, 0) AS flashcard_difficulty,
+              GREATEST(
+                COALESCE(q.quiz_last_seen, to_timestamp(0)),
+                COALESCE(f.flash_last_seen, to_timestamp(0))
+              ) AS last_seen,
+              (
+                (1 - COALESCE(q.quiz_accuracy, 0)) * 0.6
+                + COALESCE(f.flashcard_difficulty, 0) * 0.4
+              ) AS weakness_score,
+              COALESCE(f.class_id, q.class_id) AS class_id
+            FROM tags t
+            LEFT JOIN quiz_by_tag q ON q.tag_id = t.id
+            LEFT JOIN flash_by_tag f ON f.tag_id = t.id
+            WHERE q.tag_id IS NOT NULL OR f.tag_id IS NOT NULL
+            ORDER BY weakness_score DESC, last_seen DESC
+            LIMIT %s
+            """,
+            (user_id, recent_quiz_attempts, user_id, recent_flashcard_reviews, limit),
+        )
+        rows = await cur.fetchall()
+
+    payload = [
+        {
+            "tag_id": int(r[0]),
+            "tag": r[1],
+            "quiz_accuracy": float(r[2] or 0),
+            "quiz_accuracy_pct": _to_percent(float(r[2] or 0)),
+            "flashcard_difficulty": float(r[3] or 0),
+            "flashcard_difficulty_pct": _to_percent(float(r[3] or 0)),
+            "last_seen": r[4].isoformat() if r[4] else None,
+            "weakness_score": float(r[5] or 0),
+            "class_id": int(r[6]) if r[6] is not None else None,
+        }
+        for r in rows
+    ]
+    cache_set_json(cache_key, payload, ttl_seconds=CACHE_TTL_SECONDS)
+    return payload
+
+
+@router.get("/tag/{tag_id}")
+async def tag_analytics(
+    tag_id: int = Path(..., ge=1),
+    recent_quiz_attempts: int = Query(default=50, ge=10, le=300),
+    recent_flashcard_reviews: int = Query(default=50, ge=10, le=300),
+    user_id: str = Depends(get_request_user_uid),
+):
+    async with db_conn() as (conn, cur):
+        await cur.execute("SELECT id, name FROM tags WHERE id=%s", (tag_id,))
+        tag_row = await cur.fetchone()
+        if not tag_row:
+            raise HTTPException(status_code=404, detail="Tag not found")
+
+        await cur.execute(
+            """
+            WITH quiz_recent AS (
+              SELECT qqa.question_id, GREATEST(0::float, LEAST(1::float, COALESCE(qqa.score, 0))) AS score
+              FROM quiz_question_attempts qqa
+              JOIN quiz_attempts qa ON qa.id = qqa.attempt_id
+              WHERE qa.user_id = %s
+              ORDER BY qqa.graded_at DESC
+              LIMIT %s
+            ),
+            flash_recent AS (
+              SELECT fr.flashcard_id, lower(fr.rating) AS rating
+              FROM flashcard_reviews fr
+              WHERE fr.user_id = %s
+              ORDER BY fr.reviewed_at DESC
+              LIMIT %s
+            )
+            SELECT
+              COALESCE((SELECT AVG(qr.score)
+                        FROM quiz_recent qr
+                        JOIN quiz_question_tags qqt ON qqt.question_id = qr.question_id
+                        WHERE qqt.tag_id=%s), 0) AS quiz_accuracy,
+              COALESCE((SELECT AVG(CASE WHEN fr.rating IN ('again','hard','0','1','2') THEN 1.0 ELSE 0.0 END)
+                        FROM flash_recent fr
+                        JOIN flashcard_tags ft ON ft.flashcard_id = fr.flashcard_id
+                        WHERE ft.tag_id=%s), 0) AS flashcard_difficulty,
+              COALESCE((SELECT COUNT(*)
+                        FROM quiz_question_tags qqt
+                        JOIN quiz_questions qq ON qq.id = qqt.question_id
+                        JOIN quizzes q ON q.id = qq.quiz_id
+                        WHERE qqt.tag_id=%s AND q.created_by=%s), 0) AS quiz_question_count,
+              COALESCE((SELECT COUNT(*)
+                        FROM flashcard_tags ft
+                        JOIN flashcards f ON f.id = ft.flashcard_id
+                        WHERE ft.tag_id=%s AND f.created_by=%s AND f.deleted_at IS NULL), 0) AS flashcard_count
+            """,
+            (
+                user_id,
+                recent_quiz_attempts,
+                user_id,
+                recent_flashcard_reviews,
+                tag_id,
+                tag_id,
+                tag_id,
+                user_id,
+                tag_id,
+                user_id,
+            ),
+        )
+        row = await cur.fetchone()
+
+    quiz_accuracy = float(row[0] or 0)
+    flash_difficulty = float(row[1] or 0)
+    payload = {
+        "tag_id": int(tag_row[0]),
+        "tag": tag_row[1],
+        "quiz_accuracy": quiz_accuracy,
+        "quiz_accuracy_pct": _to_percent(quiz_accuracy),
+        "flashcard_difficulty": flash_difficulty,
+        "flashcard_difficulty_pct": _to_percent(flash_difficulty),
+        "quiz_question_count": int(row[2] or 0),
+        "flashcard_count": int(row[3] or 0),
+        "weakness_score": (1 - quiz_accuracy) * 0.6 + flash_difficulty * 0.4,
+    }
+    return payload
+
+
+@router.get("/quiz-breakdown/{attempt_id}")
+async def quiz_breakdown(
+    attempt_id: str = Path(...),
+    user_id: str = Depends(get_request_user_uid),
+):
+    async with db_conn() as (conn, cur):
+        await cur.execute(
+            "SELECT 1 FROM quiz_attempts WHERE id::text=%s AND user_id=%s",
+            (attempt_id, user_id),
+        )
+        if not await cur.fetchone():
+            raise HTTPException(status_code=404, detail="Attempt not found")
+
+        await cur.execute(
+            """
+            SELECT
+              t.id,
+              t.name,
+              AVG(GREATEST(0::float, LEAST(1::float, COALESCE(qqa.score, 0)))) AS accuracy,
+              COUNT(*) AS total_questions,
+              SUM(CASE WHEN COALESCE(qqa.score, 0) < 0.7 THEN 1 ELSE 0 END) AS struggled_questions
+            FROM quiz_question_attempts qqa
+            JOIN quiz_question_tags qqt ON qqt.question_id = qqa.question_id
+            JOIN tags t ON t.id = qqt.tag_id
+            WHERE qqa.attempt_id::text=%s
+            GROUP BY t.id, t.name
+            ORDER BY accuracy ASC, total_questions DESC
+            """,
+            (attempt_id,),
+        )
+        rows = await cur.fetchall()
+
+        await cur.execute(
+            """
+            SELECT
+              qqt.tag_id,
+              mp.value
+            FROM quiz_question_attempts qqa
+            JOIN quiz_question_tags qqt ON qqt.question_id = qqa.question_id
+            LEFT JOIN LATERAL jsonb_array_elements_text(COALESCE(qqa.missing_points, '[]'::jsonb)) mp(value) ON TRUE
+            WHERE qqa.attempt_id::text=%s
+              AND mp.value IS NOT NULL
+            """,
+            (attempt_id,),
+        )
+        missing_rows = await cur.fetchall()
+
+    missing_by_tag: Dict[int, List[str]] = {}
+    for tag_id, item in missing_rows:
+        missing_by_tag.setdefault(int(tag_id), [])
+        if item not in missing_by_tag[int(tag_id)]:
+            missing_by_tag[int(tag_id)].append(item)
+
+    by_tag = []
+    struggled = []
+    for row in rows:
+        accuracy = float(row[2] or 0)
+        item = {
+            "tag_id": int(row[0]),
+            "tag": row[1],
+            "accuracy": accuracy,
+            "accuracy_pct": _to_percent(accuracy),
+            "total_questions": int(row[3] or 0),
+            "struggled_questions": int(row[4] or 0),
+            "missing_points": missing_by_tag.get(int(row[0]), []),
+        }
+        by_tag.append(item)
+        if accuracy < 0.7:
+            struggled.append(row[1])
+
+    return {
+        "attempt_id": attempt_id,
+        "struggled_tags": struggled[:5],
+        "by_tag": by_tag,
+    }
