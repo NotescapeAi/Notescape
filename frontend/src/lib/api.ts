@@ -39,6 +39,11 @@ function apiErrorMessage(err: unknown, fallback: string): string {
   return fallback;
 }
 
+async function getAuthToken(): Promise<string> {
+  const user = auth.currentUser;
+  if (!user) throw new Error("User not authenticated");
+  return user.getIdToken();
+}
 
 
 // Get auth headers for Firebase user
@@ -438,16 +443,7 @@ export type ChatAskRes = {
   citations: ChatCitation[];
 };
 
-export async function chatAsk(payload: {
-  class_id: number;
-  question: string;
-  top_k?: number;
-  file_ids?: string[];
-}): Promise<ChatAskRes> {
-  const headers = await userHeader();
-  const { data } = await http.post<ChatAskRes>("/chat/ask", payload, { headers });
-  return data;
-}
+
 
 export type ChatSession = {
   id: string;
@@ -1271,4 +1267,60 @@ export async function deleteAttempt(attemptId: string): Promise<void> {
 export async function deleteQuiz(quizId: string): Promise<void> {
   const headers = await userHeader();
   await http.delete(`/quizzes/${quizId}`, { headers });
+}
+
+
+// src/lib/api.ts  ── PATCH: add chatAsk with mode support
+// Add/replace the chatAsk function in your existing api.ts with this version.
+// Everything else in your api.ts stays the same.
+
+// ── Types ──────────────────────────────────────────────────────────────────
+
+export type ChatMode = "auto" | "rag" | "general";
+
+
+export interface WebSource {
+  title: string;
+  url:   string;
+}
+
+export interface ChatAskRequest {
+  class_id:  number;
+  question:  string;
+  top_k?:    number;
+  file_ids?: string[];
+  mode?:     ChatMode;   // ← NEW
+}
+
+export interface ChatAskResponse {
+  answer:         string;
+  mode:           "rag" | "general";   // ← NEW: what was actually used
+  citations:      ChatCitation[];
+  web_sources:    WebSource[];          // ← NEW: web links when mode=general
+  top_similarity: number;               // ← NEW: cosine similarity of best chunk
+}
+
+// ── Updated chatAsk ────────────────────────────────────────────────────────
+
+export async function chatAsk(req: ChatAskRequest): Promise<ChatAskResponse> {
+  const token = await getAuthToken();           // your existing auth helper
+  const res = await fetch("/api/chat/ask", {
+    method:  "POST",
+    headers: {
+      "Content-Type":  "application/json",
+      "Authorization": `Bearer ${token}`,
+    },
+    body: JSON.stringify({
+      class_id: req.class_id,
+      question: req.question,
+      top_k:    req.top_k    ?? 6,
+      file_ids: req.file_ids ?? undefined,
+      mode:     req.mode     ?? "auto",
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.detail ?? `chatAsk failed: ${res.status}`);
+  }
+  return res.json();
 }

@@ -10,8 +10,11 @@ WORKDIR /app
 
 # Install Tesseract OCR and Poppler utils for PDF processing
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends tesseract-ocr poppler-utils && \
+    apt-get install -y --no-install-recommends tesseract-ocr poppler-utils curl && \
     rm -rf /var/lib/apt/lists/*
+
+# Upgrade pip to ensure better download resilience
+RUN pip install --upgrade pip
 
 # ---- Install CPU-only PyTorch FIRST (small & fast) ----
 ARG TORCH_INDEX=https://download.pytorch.org/whl/cpu

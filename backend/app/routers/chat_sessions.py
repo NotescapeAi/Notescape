@@ -423,7 +423,7 @@ async def add_messages(session_id: str, payload: ChatMessageCreate, user_id: str
             await cur.execute(
                 """
                 INSERT INTO chat_messages (session_id, role, content, citations, selected_text, page_number, bounding_box, file_id, file_scope, image_attachment)
-                VALUES (%s, 'assistant', %s, %s, NULL, NULL, NULL, %s, NULL)
+                VALUES (%s, 'assistant', %s, %s, NULL, NULL, NULL, NULL, %s, NULL)
                 """,
                 (session_id, payload.assistant_content, citations_json, file_scope_json),
             )

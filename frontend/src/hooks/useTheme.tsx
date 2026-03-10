@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import { getPreferences, updatePreferences } from "../lib/api";
+import { auth } from "../firebase/firebase";
 
 export type ThemePreference = "light" | "dark" | "system";
 
@@ -72,6 +73,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     isMounted.current = true;
     (async () => {
       try {
+        if (!auth.currentUser) return; // Don't fetch if not logged in
         const pref = await getPreferences();
         const stored = window.localStorage.getItem("notescape.theme");
         const storedPref =

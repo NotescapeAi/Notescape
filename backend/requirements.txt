@@ -27,3 +27,16 @@ pytest-asyncio==0.22.0
 # If no GPU, you can use the CPU wheel:
 # pip install torch==2.2.2+cpu torchvision==0.17.2+cpu torchaudio==2.2.2+cpu \
 #   --index-url https://download.pytorch.org/whl/cpu
+
+# ── Add these to your requirements.txt ───────────────────────────────────────
+#
+# Web search (free, no API key needed)
+duckduckgo-search>=6.1.0
+#
+# Already in your stack (verify these are present):
+# groq>=0.31.0
+# fastapi
+# psycopg[binary]
+# psycopg-pool
+# pgvector          ← needed for <=> operator in smart_router.py
+# sentence-transformers==2.7.0   ← if EMBED_PROVIDER=local

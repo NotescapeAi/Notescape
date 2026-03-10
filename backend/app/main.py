@@ -26,7 +26,7 @@ from app.routers.analytics import router as analytics_router
 from app.routers.study_sessions import router as study_sessions_router
 from app.routers.quizzes import router as quizzes_router
 from app.core.migrations import ensure_quiz_jobs_schema, ensure_learning_analytics_schema
-
+from app.routers.chat_ask import router as chat_ask_router
 
 
 app = FastAPI(title=settings.api_title)
@@ -73,7 +73,7 @@ app.include_router(chat_ocr_router)
 app.include_router(analytics_router)
 app.include_router(study_sessions_router)
 app.include_router(quizzes_router)
-
+app.include_router(chat_ask_router)
 @app.on_event("startup")
 async def startup_hooks():
     await ensure_quiz_jobs_schema()

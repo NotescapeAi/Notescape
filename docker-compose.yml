@@ -76,7 +76,10 @@ services:
       - ./secrets:/app/secrets:ro
 
   ocr_worker:
-    image: notescape-backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: notescape-ocr-worker
     container_name: notescape-ocr-worker
     command: python -m app.workers.ocr_worker
     environment:
@@ -104,7 +107,10 @@ services:
       - ./db:/workspace/db:ro
 
   flashcard_worker:
-    image: notescape-backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: notescape-flashcard-worker
     container_name: notescape-flashcard-worker
     command: python -m app.workers.flashcard_worker
     environment:
@@ -141,7 +147,10 @@ services:
 
   # ✅ NEW: quiz_worker (added safely under services)
   quiz_worker:
-    image: notescape-backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: notescape-quiz-worker
     container_name: notescape-quiz-worker
     command: python -m app.workers.quiz_worker
     environment:
