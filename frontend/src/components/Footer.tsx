@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { FormEvent, useState } from "react";
 import "./footer.css";
 import { sendNewsletterSubscription } from "../lib/newsletter";
+import { Twitter, Linkedin, Github, Mail } from "lucide-react";
 
 type Feedback = {
   variant: "success" | "error";
@@ -48,67 +49,94 @@ const Footer: React.FC = () => {
   };
 
   return (
-    <footer className="ns-footer relative w-full mt-auto">
-      <div className="container foot-grid">
-        <section>
-          <div className="foot-brand">
-            <img src="/logo1.png" alt="Notescape logo" />
-            <strong className="agr-text">Notescape</strong>
+    <footer className="ns-premium-footer">
+      <div className="footer-glow" />
+      <div className="container footer-content">
+        <div className="footer-grid">
+          {/* Brand Column */}
+          <div className="footer-brand-col">
+            <Link to="/" className="footer-logo">
+              <div className="logo-icon">
+                <img src="/logo1.png" alt="Notescape" />
+              </div>
+              <span className="logo-text">Notescape</span>
+            </Link>
+            <p className="footer-tagline">
+              The AI-powered workspace that transforms how students learn, retain, and master new concepts.
+            </p>
+            <div className="social-links">
+              <a href="#" aria-label="Twitter"><Twitter className="w-5 h-5" /></a>
+              <a href="#" aria-label="LinkedIn"><Linkedin className="w-5 h-5" /></a>
+              <a href="#" aria-label="GitHub"><Github className="w-5 h-5" /></a>
+              <a href="mailto:hello@notescape.com" aria-label="Email"><Mail className="w-5 h-5" /></a>
+            </div>
           </div>
-          <p className="foot-note">The first AI workspace for faster learning.</p>
-        </section>
 
-        <section>
-          <h4>Product</h4>
-          <Link to="/">Home</Link>
-          <Link to="/#how">How It Works</Link>
-          <Link to="/#features">Features</Link>
-        </section>
+          {/* Links Columns */}
+          <div className="footer-links-group">
+            <div className="footer-col">
+              <h4>Product</h4>
+              <ul>
+                <li><Link to="/#features">Features</Link></li>
+                <li><Link to="/#how">How it Works</Link></li>
+                <li><Link to="/pricing">Pricing</Link></li>
+                <li><Link to="/login">Log In</Link></li>
+              </ul>
+            </div>
+            
+            <div className="footer-col">
+              <h4>Company</h4>
+              <ul>
+                <li><Link to="/about">About Us</Link></li>
+                <li><Link to="/blog">Blog</Link></li>
+                <li><Link to="/careers">Careers</Link></li>
+                <li><Link to="/contact">Contact</Link></li>
+              </ul>
+            </div>
 
-        <section>
-          <h4>Company</h4>
-          <Link to="/support">Contact</Link>
-          <Link to="/support">Support</Link>
-          <Link to="/privacy">Privacy Policy</Link>
-          <Link to="/terms">Terms of Use</Link>
-        </section>
+            <div className="footer-col">
+              <h4>Legal</h4>
+              <ul>
+                <li><Link to="/privacy">Privacy Policy</Link></li>
+                <li><Link to="/terms">Terms of Service</Link></li>
+                <li><Link to="/cookies">Cookie Policy</Link></li>
+              </ul>
+            </div>
+          </div>
 
-        <section className="footer-subscribe">
-          <div className="space-y-2">
-            <h4 className="text-white font-semibold text-lg">Subscribe</h4>
-            <p className="text-white/80 text-sm">Get product updates.</p>
-
-            <form className="pt-1" onSubmit={handleSubscribe}>
-              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          {/* Newsletter Column */}
+          <div className="footer-newsletter-col">
+            <h4>Stay Updated</h4>
+            <p>Get the latest study tips and product updates delivered to your inbox.</p>
+            
+            <form onSubmit={handleSubscribe} className="footer-form">
+              <div className="input-group">
                 <input
                   type="email"
-                  placeholder="Email address"
-                  aria-label="Email address for newsletter"
+                  placeholder="Enter your email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="h-11 w-full sm:w-72 rounded-xl px-4 text-sm text-neutral-900 placeholder:text-neutral-400 outline-none border border-white/20 focus:border-white/40 focus:ring-2 focus:ring-white/30 bg-white"
-                />
-                <button
-                  type="submit"
-                  className="h-11 inline-flex items-center justify-center rounded-xl bg-black px-6 text-white text-sm font-semibold leading-none hover:bg-neutral-800 transition"
                   disabled={isSubmitting}
-                >
-                  {isSubmitting ? "Subscribing…" : "Subscribe"}
+                />
+                <button type="submit" disabled={isSubmitting}>
+                  {isSubmitting ? "..." : "Subscribe"}
                 </button>
               </div>
+              {feedback && (
+                <p className={`feedback-msg ${feedback.variant}`}>
+                  {feedback.message}
+                </p>
+              )}
             </form>
-
-            {feedback && (
-              <p className={`subscribe-feedback ${feedback.variant}`} aria-live="polite">
-                {feedback.message}
-              </p>
-            )}
           </div>
-        </section>
-      </div>
+        </div>
 
-      <div className="container foot-bottom">
-        (c) {new Date().getFullYear()} Notescape. All rights reserved.
+        <div className="footer-bottom">
+          <p>&copy; {new Date().getFullYear()} Notescape Inc. All rights reserved.</p>
+          <div className="footer-badges">
+            <span>Made with ❤️ for students</span>
+          </div>
+        </div>
       </div>
     </footer>
   );
