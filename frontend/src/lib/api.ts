@@ -638,6 +638,7 @@ export type ProfileData = {
   provider: string;
   provider_id: string;
   display_name?: string | null;
+  secondary_email?: string | null;
   dark_mode?: boolean;
   created_at?: string;
   updated_at?: string;
@@ -652,9 +653,20 @@ export async function getProfile(): Promise<ProfileData> {
 export async function updateProfile(payload: {
   display_name?: string;
   avatar_url?: string | null;
+  secondary_email?: string | null;
 }): Promise<ProfileData> {
   const headers = await userHeader();
   const { data } = await http.patch<ProfileData>("/profile", payload, { headers });
+  return data;
+}
+
+export async function uploadAvatar(file: File): Promise<ProfileData> {
+  const headers = await userHeader();
+  const fd = new FormData();
+  fd.append("file", file);
+  const { data } = await http.post<ProfileData>("/profile/avatar", fd, {
+    headers: { ...headers, "Content-Type": "multipart/form-data" },
+  });
   return data;
 }
 

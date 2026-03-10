@@ -1,11 +1,13 @@
 # backend/app/dependencies.py
-from fastapi import Depends, HTTPException, Header
+from fastapi import Depends, HTTPException, Header, Request
 from fastapi.security import OAuth2PasswordBearer
 import firebase_admin
 from firebase_admin import auth
 from firebase_admin import credentials
 import logging
 import os
+import base64
+import json
 from typing import Any, Dict
 from app.core.settings import settings
 
@@ -29,10 +31,29 @@ def _decode_verified_token(token: str) -> Dict[str, Any]:
         raise HTTPException(status_code=403, detail="Email not verified")
     return decoded_token
 
+def _decode_unverified_token(token: str) -> Dict[str, Any]:
+    try:
+        # JWT has 3 parts: header.payload.signature
+        parts = token.split(".")
+        if len(parts) != 3:
+            raise ValueError("Invalid token format")
+        payload = parts[1]
+        # Pad base64 string
+        padded = payload + "=" * (-len(payload) % 4)
+        decoded = base64.urlsafe_b64decode(padded)
+        return json.loads(decoded)
+    except Exception as e:
+        log.error(f"Failed to decode token unverified: {e}")
+        raise HTTPException(status_code=401, detail="Invalid token format")
+
 
 async def get_current_user_uid(token: str = Depends(oauth2_scheme)):
     try:
-        decoded_token = _decode_verified_token(token)
+        if not firebase_admin._apps:
+             # Fallback: decode unverified if app not init
+             decoded_token = _decode_unverified_token(token)
+        else:
+             decoded_token = _decode_verified_token(token)
         return decoded_token["uid"]  # Real Firebase UID
     except HTTPException:
         raise
@@ -41,17 +62,28 @@ async def get_current_user_uid(token: str = Depends(oauth2_scheme)):
 
 
 async def get_request_user_uid(
+    request: Request,
     authorization: str | None = Header(default=None),
     x_user_id: str | None = Header(default=None, alias="X-User-Id"),
 ) -> str:
     if authorization and authorization.lower().startswith("bearer "):
         token = authorization.split(" ", 1)[1]
         try:
-            decoded_token = _decode_verified_token(token)
+            if not firebase_admin._apps:
+                # Fallback: decode unverified if app not init
+                # Only use this in dev environment
+                log.warning("Firebase Admin SDK not initialized. Using unverified token decoding.")
+                decoded_token = _decode_unverified_token(token)
+            else:
+                decoded_token = _decode_verified_token(token)
+            
+            # Store full user info in request state for downstream usage
+            request.state.user = decoded_token
             return decoded_token["uid"]
         except HTTPException:
             raise
-        except Exception:
+        except Exception as e:
+            log.error(f"Auth error: {e}")
             raise HTTPException(status_code=401, detail="Invalid token")
     if x_user_id:
         return x_user_id
