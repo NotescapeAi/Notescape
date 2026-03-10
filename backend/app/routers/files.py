@@ -3,8 +3,10 @@ import shutil
 import logging
 import json
 import asyncio
+from typing import BinaryIO
 from uuid import UUID
 from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 from app.core.db import db_conn
 from pathlib import Path, PurePosixPath
@@ -33,6 +35,92 @@ log = logging.getLogger("uvicorn.error")
 
 class FileRename(BaseModel):
     filename: str
+
+
+def _copy_upload_to_path(src_file: BinaryIO, dest_path: Path) -> int:
+    src_file.seek(0)
+    with open(dest_path, "wb") as out:
+        shutil.copyfileobj(src_file, out)
+    return dest_path.stat().st_size
+
+
+def _upload_local_file_to_s3(local_path: Path, key: str, content_type: str | None):
+    with open(local_path, "rb") as src:
+        return put_object(src, key=key, content_type=content_type)
+
+
+async def _set_file_storage_key(file_id: str, storage_key: str):
+    async with db_conn() as (conn, cur):
+        await cur.execute(
+            "UPDATE files SET storage_key=%s WHERE id=%s",
+            (storage_key, file_id),
+        )
+        await conn.commit()
+
+
+async def _finalize_s3_upload_async(
+    file_id: str,
+    class_id: int,
+    owner_uid: str,
+    original_name: str,
+    safe_name: str,
+    size_bytes: int,
+    content_type: str | None,
+    local_path: Path,
+):
+    try:
+        upload_id = str(uuid.uuid4())
+        key = build_s3_key_original(
+            "public",
+            owner_uid,
+            class_id,
+            file_id,
+            upload_id,
+            safe_name,
+        )
+        stored = await run_in_threadpool(_upload_local_file_to_s3, local_path, key, content_type)
+        storage_key = stored.key
+
+        metadata_key = f"{build_s3_document_prefix('public', owner_uid, class_id, file_id)}/metadata.json"
+        metadata_payload = {
+            "document_id": file_id,
+            "class_id": class_id,
+            "user_id": owner_uid,
+            "original_filename": original_name,
+            "safe_filename": safe_name,
+            "size_bytes": size_bytes,
+            "mime_type": content_type,
+            "storage_key": storage_key,
+        }
+        await run_in_threadpool(
+            put_bytes,
+            metadata_key,
+            json.dumps(metadata_payload).encode("utf-8"),
+            "application/json",
+        )
+        await _set_file_storage_key(file_id, storage_key)
+
+        if safe_name.lower().endswith(".pdf"):
+            await _update_file_status(file_id, "PROCESSING")
+            await _process_pdf_async(
+                file_id=file_id,
+                safe_name=safe_name,
+                local_path=local_path,
+                class_id=class_id,
+                owner_uid=owner_uid,
+                storage_backend="s3",
+                storage_key=storage_key,
+            )
+        else:
+            await _update_file_status(file_id, "UPLOADED")
+            try:
+                if local_path.exists():
+                    local_path.unlink()
+            except Exception:
+                pass
+    except Exception as e:
+        log.error(f"[files] s3 upload failed for {file_id}: {e}")
+        await _update_file_status(file_id, "FAILED", error=str(e))
 
 
 @router.get("/{class_id:int}")  
@@ -141,7 +229,6 @@ async def upload_file(class_id: int, file: UploadFile = File(...)):
     original_name = file.filename or "upload.bin"
     safe_name = sanitize_filename(original_name)
     file_id = str(uuid.uuid4())
-    upload_id = str(uuid.uuid4())
 
     # 2) local disk path + S3 key
     rel_path = PurePosixPath(f"class_{class_id}/{file_id}/{safe_name}")
@@ -149,10 +236,7 @@ async def upload_file(class_id: int, file: UploadFile = File(...)):
     local_path.parent.mkdir(parents=True, exist_ok=True)
 
     try:
-        file.file.seek(0)
-        with open(local_path, "wb") as out:
-            shutil.copyfileobj(file.file, out)
-        size_bytes = local_path.stat().st_size
+        size_bytes = await run_in_threadpool(_copy_upload_to_path, file.file, local_path)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to save upload: {e}")
     finally:
@@ -164,53 +248,40 @@ async def upload_file(class_id: int, file: UploadFile = File(...)):
     storage_url = f"/api/classes/{class_id}/documents/{file_id}/download"
     storage_key = None
     storage_backend = settings.storage_backend.lower()
-
-    if storage_backend == "s3":
-        key = build_s3_key_original(
-            "public",
-            owner_uid,
-            class_id,
-            file_id,
-            upload_id,
-            safe_name,
-        )
-        try:
-            stored = put_object(file.file, key=key, content_type=file.content_type)
-            storage_key = stored.key
-            metadata_key = f"{build_s3_document_prefix('public', owner_uid, class_id, file_id)}/metadata.json"
-            metadata_payload = {
-                "document_id": file_id,
-                "class_id": class_id,
-                "user_id": owner_uid,
-                "original_filename": original_name,
-                "safe_filename": safe_name,
-                "size_bytes": size_bytes,
-                "mime_type": file.content_type,
-                "storage_key": storage_key,
-            }
-            put_bytes(metadata_key, json.dumps(metadata_payload).encode("utf-8"), "application/json")
-        except Exception as e:
-            raise HTTPException(status_code=502, detail=f"Storage upload failed: {e}")
-    elif storage_backend == "local":
+    if storage_backend == "local":
         storage_key = rel_path.as_posix()
-    else:
+    elif storage_backend != "s3":
         raise HTTPException(status_code=500, detail="Unsupported storage backend")
 
     # 3) insert DB row
+    initial_status = "UPLOADING" if storage_backend == "s3" else "UPLOADED"
     async with db_conn() as (conn, cur):
         await cur.execute(
             """
             INSERT INTO files (id, class_id, filename, mime_type, storage_url, storage_key, size_bytes, status, storage_backend)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
-            (file_id, class_id, original_name, file.content_type, storage_url, storage_key, size_bytes, "UPLOADED", storage_backend)
+            (file_id, class_id, original_name, file.content_type, storage_url, storage_key, size_bytes, initial_status, storage_backend)
         )
         await conn.commit()
 
-    # 4) conditional OCR + indexing (PDF only) - run async to keep uploads fast
-    status = "UPLOADED"
+    # 4) async post-upload processing
+    status = initial_status
     ocr_job_id = None
-    if safe_name.lower().endswith(".pdf"):
+    if storage_backend == "s3":
+        asyncio.create_task(
+            _finalize_s3_upload_async(
+                file_id=file_id,
+                class_id=class_id,
+                owner_uid=owner_uid,
+                original_name=original_name,
+                safe_name=safe_name,
+                size_bytes=size_bytes,
+                content_type=file.content_type,
+                local_path=local_path,
+            )
+        )
+    elif safe_name.lower().endswith(".pdf"):
         status = "PROCESSING"
         await _update_file_status(file_id, status)
         asyncio.create_task(
@@ -224,8 +295,6 @@ async def upload_file(class_id: int, file: UploadFile = File(...)):
                 storage_key=storage_key,
             )
         )
-    else:
-        await _update_file_status(file_id, status)
 
     return {
         "id": file_id,

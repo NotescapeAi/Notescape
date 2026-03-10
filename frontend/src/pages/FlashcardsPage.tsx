@@ -173,6 +173,16 @@ export default function FlashcardsPage() {
     });
   };
 
+  const handleVoiceQuiz = (cardsList: Flashcard[], startIndex = 0) => {
+    navigate(`/classes/${id}/flashcards/voice`, {
+      state: {
+        cards: cardsList,
+        className,
+        startIndex: Math.max(0, startIndex),
+      },
+    });
+  };
+
   function openCreate() {
     setEditingCard(null);
     setFormState({
@@ -260,6 +270,9 @@ export default function FlashcardsPage() {
             </Button>
             <Button className="rounded-full" onClick={() => handleStudy(dueCards)}>
               Study due
+            </Button>
+            <Button className="rounded-full" onClick={() => handleVoiceQuiz(dueCards.length ? dueCards : filtered)}>
+              Voice quiz
             </Button>
           </div>
         </div>
@@ -374,6 +387,7 @@ export default function FlashcardsPage() {
                     <KebabMenu
                       items={[
                         { label: "Study", onClick: () => handleStudy(filtered, startIndex) },
+                        { label: "Voice quiz", onClick: () => handleVoiceQuiz(filtered, startIndex) },
                         { label: "View", onClick: () => handleView(filtered, startIndex) },
                         { label: "Edit", onClick: () => openEdit(c) },
                         { label: "Delete", onClick: () => handleDelete(String(c.id)) },

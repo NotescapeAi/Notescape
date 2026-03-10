@@ -6,7 +6,7 @@ from typing import Optional, List, Dict, Any
 import logging
 from pathlib import Path, PurePosixPath
 from app.core.db import db_conn
-from app.dependencies import get_current_user_uid
+from app.dependencies import get_request_user_uid
 from app.core.settings import settings
 from app.core.storage import presign_get_url
 
@@ -24,7 +24,7 @@ class ClassUpdate(BaseModel):
     subject: Optional[str] = None
 
 @router.get("")  # GET /api/classes
-async def list_classes(user_uid: str = Depends(get_current_user_uid)) -> List[Dict[str, Any]]:
+async def list_classes(user_uid: str = Depends(get_request_user_uid)) -> List[Dict[str, Any]]:
     async with db_conn() as (conn, cur):
         await cur.execute(
             "SELECT id, name, subject, created_at FROM classes "
@@ -38,7 +38,7 @@ async def list_classes(user_uid: str = Depends(get_current_user_uid)) -> List[Di
 
 @router.post("")  # POST /api/classes
 async def create_class(
-    payload: ClassCreate, user_uid: str = Depends(get_current_user_uid)
+    payload: ClassCreate, user_uid: str = Depends(get_request_user_uid)
 ):
     subject = (payload.subject or "").strip() or "General"
     async with db_conn() as (conn, cur):
@@ -55,7 +55,7 @@ async def create_class(
 
 @router.put("/{class_id}")  # PUT /api/classes/{class_id}
 async def update_class(
-    class_id: int, payload: ClassUpdate, user_uid: str = Depends(get_current_user_uid)
+    class_id: int, payload: ClassUpdate, user_uid: str = Depends(get_request_user_uid)
 ):
     fields, values = [], []
     if payload.name is not None:
@@ -84,7 +84,7 @@ async def update_class(
 
 
 @router.delete("/{class_id}", status_code=204)  # DELETE /api/classes/{class_id}
-async def delete_class(class_id: int, user_uid: str = Depends(get_current_user_uid)):
+async def delete_class(class_id: int, user_uid: str = Depends(get_request_user_uid)):
     async with db_conn() as (conn, cur):
         await cur.execute(
             "DELETE FROM classes WHERE id=%s AND owner_uid=%s",
@@ -97,7 +97,7 @@ async def delete_class(class_id: int, user_uid: str = Depends(get_current_user_u
 async def download_document(
     class_id: int,
     document_id: str,
-    user_uid: str = Depends(get_current_user_uid),
+    user_uid: str = Depends(get_request_user_uid),
 ):
     async with db_conn() as (conn, cur):
         await cur.execute(
@@ -143,7 +143,7 @@ async def download_document(
 async def get_document_view_url(
     class_id: int,
     document_id: str,
-    user_uid: str = Depends(get_current_user_uid),
+    user_uid: str = Depends(get_request_user_uid),
 ):
     async with db_conn() as (conn, cur):
         await cur.execute(

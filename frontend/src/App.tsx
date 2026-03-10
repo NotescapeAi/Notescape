@@ -38,6 +38,7 @@ const FlashcardsPage     = lazy(() => import("./pages/FlashcardsPage"));
 const FlashcardsHub      = lazy(() => import("./pages/FlashcardsHub"));
 const FlashcardsViewMode = lazy(() => import("./pages/FlashcardsViewMode"));
 const FlashcardsStudyMode = lazy(() => import("./pages/FlashcardsStudyMode"));
+const FlashcardsVoiceQuizPage = lazy(() => import("./pages/FlashcardsVoiceQuizPage"));
 const FlashcardsBookmarks = lazy(() => import("./pages/FlashcardsBookmarks"));
 
 const Pricing            = lazy(() => import("./pages/Pricing"));
@@ -50,6 +51,8 @@ const VerifyEmail        = lazy(() => import("./pages/VerifyEmail"));
 
 const QuizzesPage = lazy(() => import("./pages/quizzes/QuizzesPage"));
 const QuizAttemptPage = lazy(() => import("./pages/quizzes/QuizAttemptPage"));
+const QuizHistoryPage = lazy(() => import("./pages/quizzes/QuizHistoryPage"));
+const QuizHistoryDetailsPage = lazy(() => import("./pages/quizzes/QuizHistoryDetailsPage"));
 
 
 function GetStartedGate() {
@@ -110,7 +113,7 @@ function AppRoutes() {
       <Route path="/verify-email"  element={<RequireAuth requireEmailVerified={false}><VerifyEmail /></RequireAuth>} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/logout" element={<LogoutPage />} />
-
+      
       {/* App (Protected) */}
       <Route
         path="/classes"
@@ -138,6 +141,14 @@ function AppRoutes() {
         }
       />
       <Route
+        path="/classes/:classId/flashcards/voice"
+        element={
+          <RequireAuth>
+            <FlashcardsVoiceQuizPage />
+          </RequireAuth>
+        }
+      />
+      <Route
         path="/classes/:classId/flashcards/bookmarks"
         element={
           <RequireAuth>
@@ -156,6 +167,8 @@ function AppRoutes() {
 
 
       <Route path="/quizzes" element={<RequireAuth><QuizzesPage /></RequireAuth>} />
+      <Route path="/quizzes/history" element={<RequireAuth><QuizHistoryPage /></RequireAuth>} />
+      <Route path="/quizzes/history/:attemptId" element={<RequireAuth><QuizHistoryDetailsPage /></RequireAuth>} />
       <Route path="/quizzes/:quizId" element={<RequireAuth><QuizAttemptPage /></RequireAuth>} />
 
       <Route

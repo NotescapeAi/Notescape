@@ -406,4 +406,51 @@ def get_quiz_generator() -> Callable[[str], Any]:
 
     return _gen
 
-__all__ = ["get_embedder", "get_card_generator", "get_quiz_generator", "EMBED_DIM"]
+# -----------------------
+# Grading helper
+# -----------------------
+async def grade_theory_answer(question: str, expected_answer: str, user_answer: str) -> int:
+    """
+    Grades a theory/written answer using LLM.
+    Returns:
+    - 2: Fully correct/relevant
+    - 1: Partially correct/relevant
+    - 0: Incorrect/Irrelevant/Empty
+    """
+    if not user_answer or not user_answer.strip():
+        return 0
+
+    cg = get_card_generator()
+    
+    system = (
+        "You are a strict but fair academic grader. "
+        "Grade the student's answer based on meaning and relevance to the question and expected answer key. "
+        "Do NOT require exact wording. Do NOT grade based on length alone. "
+        "Focus on semantic correctness and completeness.\n"
+        "Return ONLY a single integer: 0, 1, or 2.\n\n"
+        "Grading Rubric:\n"
+        "2 = FULL CREDIT: The answer is semantically correct and addresses the core question. "
+        "It matches the INTENT of the expected answer, even if phrased differently. "
+        "Short but correct answers get full marks.\n"
+        "1 = PARTIAL CREDIT: The answer is partially correct or relevant but incomplete. "
+        "It misses key details or is slightly off-topic but shows some understanding.\n"
+        "0 = NO CREDIT: The answer is wrong, irrelevant, empty, or makes no sense."
+    )
+    
+    user_prompt = (
+        f"Question: {question}\n"
+        f"Expected Answer/Key: {expected_answer}\n"
+        f"Student Answer: {user_answer}\n\n"
+        "Grade (0/1/2):"
+    )
+
+    raw = await cg.generate_raw(system, user_prompt)
+    
+    # Extract first digit found
+    match = re.search(r"[0-2]", raw)
+    if match:
+        return int(match.group(0))
+    
+    return 0
+
+__all__ = ["get_embedder", "get_card_generator", "get_quiz_generator", "grade_theory_answer", "EMBED_DIM"]

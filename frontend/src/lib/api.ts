@@ -14,6 +14,31 @@ const http = axios.create({
   withCredentials: false,
 });
 
+function detailMessageFromApi(detail: unknown): string | null {
+  if (typeof detail === "string" && detail.trim()) return detail.trim();
+  if (Array.isArray(detail) && detail.length > 0) {
+    const first = detail[0] as Record<string, unknown>;
+    const msg = first?.msg;
+    if (typeof msg === "string" && msg.trim()) return msg.trim();
+  }
+  if (detail && typeof detail === "object") {
+    const msg = (detail as Record<string, unknown>).message;
+    if (typeof msg === "string" && msg.trim()) return msg.trim();
+  }
+  return null;
+}
+
+function apiErrorMessage(err: unknown, fallback: string): string {
+  if (axios.isAxiosError(err)) {
+    const detail = (err.response?.data as any)?.detail;
+    const detailMessage = detailMessageFromApi(detail);
+    if (detailMessage) return detailMessage;
+    if (typeof err.message === "string" && err.message.trim()) return err.message;
+  }
+  if (err instanceof Error && err.message.trim()) return err.message;
+  return fallback;
+}
+
 
 
 // Get auth headers for Firebase user
@@ -157,6 +182,21 @@ export type MasterySession = {
   done?: boolean;
   ended?: boolean;
   current_card?: MasteryCard | null;
+};
+
+export type VoiceTranscriptionResult = {
+  transcript: string;
+  audio_url?: string | null;
+};
+
+export type VoiceAttemptResult = {
+  ok: boolean;
+  attempt_id: string;
+  mode: "voice";
+  state?: {
+    next_review_at?: string | null;
+    [key: string]: unknown;
+  };
 };
 
 export type StudySession = {
@@ -558,14 +598,6 @@ export async function postContactApi(payload: ContactPayload): Promise<{ ok: boo
 export async function logout(): Promise<void> {
   await http.post("/auth/logout", {});
 }
-http.interceptors.request.use((config) => {
-  const token = localStorage.getItem("auth_token");
-  if (token) {
-    config.headers = config.headers ?? {};
-    (config.headers as any).Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
 
 
 export async function deleteAccount(): Promise<{ ok: boolean }> {
@@ -657,11 +689,84 @@ export async function startMasterySession(payload: {
 
 export async function startStudySession(payload: {
   class_id?: number;
-  mode?: "study" | "view";
+  mode?: "study" | "view" | "voice";
 }): Promise<StudySession> {
   const headers = await userHeader();
   const { data } = await http.post<StudySession>("/study-sessions/start", payload, { headers });
   return data;
+}
+
+export async function transcribeVoiceFlashcardAnswer(audio: Blob): Promise<VoiceTranscriptionResult> {
+  try {
+    const headers = await userHeader();
+    const form = new FormData();
+    const ext = (audio.type || "").includes("mp4")
+      ? "m4a"
+      : (audio.type || "").includes("mpeg")
+      ? "mp3"
+      : (audio.type || "").includes("ogg")
+      ? "ogg"
+      : (audio.type || "").includes("wav")
+      ? "wav"
+      : "webm";
+    form.append("audio", audio, `voice-answer.${ext}`);
+    const { data } = await http.post<VoiceTranscriptionResult>(
+      "/flashcards/voice/transcribe",
+      form,
+      {
+        headers,
+      }
+    );
+    return data;
+  } catch (err) {
+    if (axios.isAxiosError(err)) {
+      const detail = (err.response?.data as any)?.detail;
+      const code = detail && typeof detail === "object" && !Array.isArray(detail)
+        ? (detail as Record<string, unknown>).code
+        : null;
+      const detailMessage = detailMessageFromApi(detail) || "";
+      if (code === "transcription_unavailable") {
+        throw new Error(
+          "Voice transcription is unavailable. Set TRANSCRIPTION_PROVIDER=openai and configure OPENAI_API_KEY."
+        );
+      }
+      if (/unsupported audio type/i.test(detailMessage)) {
+        throw new Error("Unsupported recording format. Please retry with a supported browser (webm, wav, mp3, m4a, or ogg).");
+      }
+      if (/audio file is empty/i.test(detailMessage)) {
+        throw new Error("No audio was captured. Please record your answer again.");
+      }
+      if (/too large/i.test(detailMessage)) {
+        throw new Error(detailMessage);
+      }
+    }
+    const raw = apiErrorMessage(
+      err,
+      "We couldn't transcribe your answer right now. Please retry in a few seconds."
+    );
+    if (/error parsing the body|field required|missing boundary/i.test(raw)) {
+      throw new Error("Audio upload failed because the recording request was malformed. Please retry recording.");
+    }
+    throw new Error(
+      raw
+    );
+  }
+}
+
+export async function saveVoiceFlashcardAttempt(payload: {
+  card_id: string;
+  transcript: string;
+  user_rating: 1 | 2 | 3 | 4 | 5;
+  response_time_seconds?: number;
+  audio_url?: string | null;
+}): Promise<VoiceAttemptResult> {
+  try {
+    const headers = await userHeader();
+    const { data } = await http.post<VoiceAttemptResult>("/flashcards/voice/attempts", payload, { headers });
+    return data;
+  } catch (err) {
+    throw new Error(apiErrorMessage(err, "Failed to save voice attempt."));
+  }
 }
 
 export async function heartbeatStudySession(payload: {
@@ -929,6 +1034,12 @@ export type StartAttemptResponse = {
   attempt_id: string;
   quiz_id: string;
   total: number;
+  mcq_completed: boolean;
+  theory_completed: boolean;
+  current_section: string;
+  score?: number;
+  mcq_attempt_time?: number;
+  theory_attempt_time?: number;
 };
 
 export type SubmitAttemptResponse = {
@@ -1018,15 +1129,74 @@ export async function submitQuizAttempt(
     selected_index?: number;
     written_answer?: string;
   }>,
-  revealAnswers: boolean = true
+  revealAnswers: boolean = true,
+  section: "mcq" | "theory" | "all" = "all",
+  timeTaken: number = 0
 ): Promise<SubmitAttemptResponse> {
   const headers = await userHeader();
   const { data } = await http.post<SubmitAttemptResponse>(
     `/quizzes/attempts/${attemptId}/submit`,
-    { answers, reveal_answers: revealAnswers },
+    { answers, reveal_answers: revealAnswers, section, time_taken: timeTaken },
     { headers }
   );
   return data;
+}
+
+export type QuizHistoryItem = {
+  attempt_id: string;
+  quiz_id: string;
+  quiz_title: string;
+  file_name: string;
+  attempted_at: string;
+  score: number;
+  total_possible: number;
+  mcq_score: number;
+  theory_score: number;
+  passed: boolean;
+  mcq_count: number;
+  theory_count: number;
+  mcq_attempt_time: number;
+  theory_attempt_time: number;
+  total_attempt_time: number;
+};
+
+export type QuizAttemptDetail = {
+  attempt: QuizHistoryItem;
+  questions: Array<{
+    id: number;
+    qtype: string;
+    question: string;
+    options?: string[];
+    correct_index?: number;
+    answer_key?: string;
+    selected_index?: number;
+    written_answer?: string;
+    is_correct?: boolean | null;
+    marks_awarded: number;
+    max_marks: number;
+  }>;
+};
+
+// ... existing code ...
+
+// Get quiz history
+export async function getQuizHistory(): Promise<QuizHistoryItem[]> {
+  const headers = await userHeader();
+  const { data } = await http.get<QuizHistoryItem[]>("/quizzes/history", { headers });
+  return Array.isArray(data) ? data : [];
+}
+
+// Get attempt detail
+export async function getAttemptDetail(attemptId: string): Promise<QuizAttemptDetail> {
+  const headers = await userHeader();
+  const { data } = await http.get<QuizAttemptDetail>(`/quizzes/history/${attemptId}`, { headers });
+  return data;
+}
+
+// Delete attempt
+export async function deleteAttempt(attemptId: string): Promise<void> {
+  const headers = await userHeader();
+  await http.delete(`/quizzes/history/${attemptId}`, { headers });
 }
 
 // Delete quiz

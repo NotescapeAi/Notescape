@@ -2,39 +2,46 @@ import { useLayoutEffect } from "react";
 import { useLocation } from "react-router-dom";
 
 export default function ScrollToTop() {
-  const { pathname, hash } = useLocation();
+  const { pathname } = useLocation();
 
   useLayoutEffect(() => {
-    if (typeof window === "undefined" || typeof document === "undefined") {
-      return;
-    }
-
+    // 1. Disable browser's default scroll restoration to avoid conflict
     if ("scrollRestoration" in window.history) {
       window.history.scrollRestoration = "manual";
     }
 
+    // 2. Identify all possible scroll containers
+    // Some layouts might scroll 'body', others might scroll '#app-scroll-container'
+    // or 'html'. We reset them all to be safe.
     const scrollContainer = document.getElementById("app-scroll-container");
-    const scrollRoot = (
-      document.scrollingElement ?? document.documentElement ?? document.body
-    ) as HTMLElement | null;
+    const docElement = document.documentElement;
+    const body = document.body;
 
     const scrollToTop = () => {
-      scrollRoot?.scrollTo({ top: 0, left: 0, behavior: "auto" });
-      scrollContainer?.scrollTo({ top: 0, left: 0, behavior: "auto" });
-      window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+      // Force instant scroll to top
+      window.scrollTo(0, 0);
+      
+      if (scrollContainer) {
+        scrollContainer.scrollTop = 0;
+      }
+      if (docElement) {
+        docElement.scrollTop = 0;
+      }
+      if (body) {
+        body.scrollTop = 0;
+      }
     };
 
-    if (hash) {
-      const id = hash.replace(/^#/, "");
-      const target = id ? document.getElementById(id) : null;
-      if (target) {
-        target.scrollIntoView({ behavior: "auto", block: "start" });
-        return;
-      }
-    }
-
+    // 3. Execute scroll reset immediately
     scrollToTop();
-  }, [pathname, hash]);
+
+    // 4. Also execute in the next animation frame to handle cases where 
+    // content might resize or layout shifts after initial render (e.g. Suspense fallback)
+    requestAnimationFrame(() => {
+        scrollToTop();
+    });
+
+  }, [pathname]); // Run whenever the route path changes
 
   return null;
 }

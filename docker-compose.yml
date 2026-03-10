@@ -57,6 +57,7 @@ services:
       CHAT_PROVIDER: "groq"
       CHAT_MODEL: "llama-3.3-70b-versatile"
       GROQ_API_KEY: "${GROQ_API_KEY:-}"
+      REQUIRE_EMAIL_VERIFIED: "${REQUIRE_EMAIL_VERIFIED:-false}"
       REDIS_URL: "redis://redis:6379/0"
       QUIZ_MIGRATION_FILE: "/workspace/db/init/10_quizzes.sql"
     depends_on:

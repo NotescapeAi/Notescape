@@ -1,18 +1,26 @@
 from datetime import datetime, timezone
 import json
 import logging
+import os
+from pathlib import Path
 import uuid
 from typing import Dict, List, Optional, Tuple
 
-from fastapi import APIRouter, HTTPException, Path, Query, Depends
+from fastapi import APIRouter, HTTPException, Path as ApiPath, Query, Depends, UploadFile, File, Request
 from pydantic import BaseModel, Field
 
 from app.core.db import db_conn
 from app.core.embedding_cache import embed_texts_cached
 from app.core.llm import get_embedder
+from app.core.settings import settings
 from app.dependencies import get_request_user_uid
 from app.lib.flashcard_generation import insert_flashcards, pick_relevant_chunks, vec_literal
 from app.lib.study_analytics import apply_study_review
+from app.services.transcription import (
+    TranscriptionError,
+    TranscriptionUnavailableError,
+    get_transcription_service,
+)
 
 log = logging.getLogger("uvicorn.error")
 router = APIRouter(prefix="/api/flashcards", tags=["flashcards"])
@@ -40,6 +48,29 @@ async def _ensure_file_in_class(file_id: str, class_id: int):
             raise HTTPException(status_code=404, detail="File not found in class")
 
 _mastery_schema_checked = False
+_voice_schema_checked = False
+
+_ALLOWED_AUDIO_TYPES = {
+    "audio/webm",
+    "audio/wav",
+    "audio/x-wav",
+    "audio/mpeg",
+    "audio/mp4",
+    "audio/x-m4a",
+    "audio/ogg",
+    "video/webm",
+}
+
+_AUDIO_EXT_BY_TYPE = {
+    "audio/webm": ".webm",
+    "video/webm": ".webm",
+    "audio/wav": ".wav",
+    "audio/x-wav": ".wav",
+    "audio/mpeg": ".mp3",
+    "audio/mp4": ".m4a",
+    "audio/x-m4a": ".m4a",
+    "audio/ogg": ".ogg",
+}
 
 
 async def _ensure_mastery_schema():
@@ -100,6 +131,94 @@ async def _ensure_mastery_schema():
         )
         await conn.commit()
     _mastery_schema_checked = True
+
+
+async def _ensure_voice_quiz_schema():
+    global _voice_schema_checked
+    if _voice_schema_checked:
+        return
+    async with db_conn() as (conn, cur):
+        await cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS voice_quiz_attempts (
+              id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+              user_id TEXT NOT NULL,
+              flashcard_id UUID NOT NULL REFERENCES flashcards(id) ON DELETE CASCADE,
+              mode TEXT NOT NULL DEFAULT 'voice',
+              transcript TEXT,
+              audio_url TEXT,
+              user_rating INT NOT NULL CHECK (user_rating BETWEEN 1 AND 5),
+              response_time_seconds NUMERIC(8, 2),
+              created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+              next_review_at TIMESTAMPTZ
+            )
+            """
+        )
+        await cur.execute(
+            "CREATE INDEX IF NOT EXISTS voice_quiz_attempts_user_idx ON voice_quiz_attempts (user_id, created_at DESC)"
+        )
+        await cur.execute(
+            "CREATE INDEX IF NOT EXISTS voice_quiz_attempts_card_idx ON voice_quiz_attempts (flashcard_id, created_at DESC)"
+        )
+        await conn.commit()
+    _voice_schema_checked = True
+
+
+def _voice_rating_to_sm2(rating: int) -> str:
+    if rating <= 1:
+        return "again"
+    if rating == 2:
+        return "hard"
+    if rating == 3:
+        return "good"
+    return "easy"
+
+
+def _is_allowed_audio(content_type: Optional[str], filename: Optional[str]) -> bool:
+    ctype = (content_type or "").split(";")[0].strip().lower()
+    if ctype in _ALLOWED_AUDIO_TYPES:
+        return True
+    ext = Path(filename or "").suffix.lower()
+    return ext in {".webm", ".wav", ".mp3", ".m4a", ".ogg"}
+
+
+def _audio_extension(content_type: Optional[str], filename: Optional[str]) -> str:
+    ctype = (content_type or "").split(";")[0].strip().lower()
+    if ctype in _AUDIO_EXT_BY_TYPE:
+        return _AUDIO_EXT_BY_TYPE[ctype]
+    ext = Path(filename or "").suffix.lower()
+    if ext in {".webm", ".wav", ".mp3", ".m4a", ".ogg"}:
+        return ext
+    return ".webm"
+
+
+def _uploads_root_from_request(request: Request) -> Path:
+    root = getattr(request.app.state, "uploads_root", None)
+    if root:
+        return Path(root)
+    configured = getattr(settings, "upload_root", None)
+    if configured:
+        return Path(configured).resolve()
+    return Path.cwd() / "uploads"
+
+
+def _persist_voice_audio(
+    request: Request,
+    user_id: str,
+    content_type: Optional[str],
+    filename: Optional[str],
+    data: bytes,
+) -> Optional[str]:
+    if not settings.voice_quiz_persist_audio:
+        return None
+    ext = _audio_extension(content_type, filename)
+    rel = Path("voice_quiz") / user_id / f"{uuid.uuid4()}{ext}"
+    abs_path = _uploads_root_from_request(request) / rel
+    abs_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(abs_path, "wb") as f:
+        f.write(data)
+    rel_url = str(rel).replace("\\", "/")
+    return f"/uploads/{rel_url}"
 
 class EnsureEmbeddingsReq(BaseModel):
     limit: Optional[int] = Field(default=500)
@@ -230,6 +349,19 @@ class MasteryReviewReq(BaseModel):
     card_id: str
     rating: int = Field(ge=1, le=5)
     response_time_ms: Optional[int] = Field(default=None, ge=0)
+
+
+class VoiceTranscriptionOut(BaseModel):
+    transcript: str
+    audio_url: Optional[str] = None
+
+
+class VoiceAttemptReq(BaseModel):
+    card_id: str
+    transcript: str = Field(min_length=1, max_length=20000)
+    user_rating: int = Field(ge=1, le=5)
+    response_time_seconds: Optional[float] = Field(default=None, ge=0)
+    audio_url: Optional[str] = Field(default=None, max_length=2048)
 
 
 def _mastery_offset(rating: int) -> int:
@@ -500,6 +632,138 @@ async def review_card(
     return {"ok": True, "state": updated}
 
 
+@router.post("/voice/transcribe", response_model=VoiceTranscriptionOut)
+async def transcribe_voice_answer(
+    request: Request,
+    audio: UploadFile = File(...),
+    user_id: str = Depends(get_request_user_uid),
+):
+    await _ensure_voice_quiz_schema()
+    max_bytes = max(1, int(settings.voice_quiz_max_audio_mb)) * 1024 * 1024
+    filename = os.path.basename(audio.filename or "voice.webm")
+    content_type = (audio.content_type or "").split(";")[0].strip().lower()
+    if not _is_allowed_audio(content_type, filename):
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported audio type. Use webm, wav, mp3, m4a, or ogg.",
+        )
+
+    raw = await audio.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="Audio file is empty.")
+    if len(raw) > max_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Audio file is too large. Max size is {int(settings.voice_quiz_max_audio_mb)}MB.",
+        )
+
+    transcription = get_transcription_service()
+    try:
+        transcript = await transcription.transcribe(raw, filename=filename, content_type=content_type or None)
+    except TranscriptionUnavailableError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "transcription_unavailable",
+                "message": str(exc),
+            },
+        ) from exc
+    except TranscriptionError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": "transcription_failed",
+                "message": str(exc),
+            },
+        ) from exc
+    except Exception as exc:  # pragma: no cover - defensive fallback
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "transcription_internal_error",
+                "message": "Unexpected error while transcribing audio.",
+            },
+        ) from exc
+
+    audio_url = _persist_voice_audio(
+        request=request,
+        user_id=user_id,
+        content_type=content_type or None,
+        filename=filename,
+        data=raw,
+    )
+    return VoiceTranscriptionOut(transcript=transcript, audio_url=audio_url)
+
+
+@router.post("/voice/attempts")
+async def save_voice_attempt(
+    payload: VoiceAttemptReq,
+    user_id: str = Depends(get_request_user_uid),
+):
+    await _ensure_voice_quiz_schema()
+    transcript = payload.transcript.strip()
+    if not transcript:
+        raise HTTPException(status_code=400, detail="Transcript is required.")
+    rating = _voice_rating_to_sm2(payload.user_rating)
+    response_ms = (
+        int(payload.response_time_seconds * 1000)
+        if payload.response_time_seconds is not None
+        else None
+    )
+
+    async with db_conn() as (conn, cur):
+        await cur.execute(
+            """
+            SELECT f.class_id, f.file_id
+            FROM flashcards f
+            WHERE f.id::text=%s AND f.deleted_at IS NULL
+            """,
+            (payload.card_id,),
+        )
+        row = await cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Card not found")
+        deck_id, topic_id = row
+        await _ensure_class_owner(deck_id, user_id)
+
+        updated = await apply_study_review(
+            cur,
+            user_id=user_id,
+            card_id=payload.card_id,
+            deck_id=deck_id,
+            topic_id=str(topic_id) if topic_id else None,
+            rating=rating,
+            response_time_ms=response_ms,
+        )
+
+        attempt_id = str(uuid.uuid4())
+        await cur.execute(
+            """
+            INSERT INTO voice_quiz_attempts
+              (id, user_id, flashcard_id, mode, transcript, audio_url, user_rating, response_time_seconds, next_review_at)
+            VALUES (%s, %s, %s, 'voice', %s, %s, %s, %s, %s)
+            """,
+            (
+                attempt_id,
+                user_id,
+                payload.card_id,
+                transcript,
+                payload.audio_url,
+                payload.user_rating,
+                payload.response_time_seconds,
+                updated.get("next_review_at"),
+            ),
+        )
+        await conn.commit()
+
+    return {
+        "ok": True,
+        "attempt_id": attempt_id,
+        "mode": "voice",
+        "state": updated,
+    }
+
+
 @router.get("/progress")
 async def flashcard_progress(
     class_id: int,
@@ -710,7 +974,7 @@ async def list_flashcards_for_class(
 
 @router.delete("/{card_id}", status_code=204)
 async def delete_flashcard(
-    card_id: str = Path(..., description="flashcards.id (UUID)"),
+    card_id: str = ApiPath(..., description="flashcards.id (UUID)"),
     user_id: str = Depends(get_request_user_uid),
 ):
     async with db_conn() as (conn, cur):

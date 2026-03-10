@@ -16,9 +16,8 @@ async def get_pool() -> AsyncConnectionPool:
     global _pool
     if _pool is None:
         conninfo = _normalize_conninfo(settings.database_url)
-        # Ensure the pool is open during initialization
-        _pool = AsyncConnectionPool(conninfo, min_size=1, max_size=10, open=True)
-        await _pool.open(wait=True)  # Wait until connections are ready
+        _pool = AsyncConnectionPool(conninfo, min_size=1, max_size=10, open=False)
+        await _pool.open(wait=True)
     return _pool
 
 @asynccontextmanager

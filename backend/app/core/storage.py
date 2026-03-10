@@ -2,6 +2,10 @@ from dataclasses import dataclass
 from app.core.settings import settings
 import re
 from pathlib import Path
+from threading import Lock
+
+_ensured_buckets: set[str] = set()
+_ensured_buckets_lock = Lock()
 
 @dataclass
 class StoredObject:
@@ -85,7 +89,10 @@ def ensure_bucket(s3, bucket: str) -> None:
 def put_object(fileobj, key: str, content_type: str | None):
     s3 = get_s3_client()
     bucket = settings.s3_bucket
-    ensure_bucket(s3, bucket)
+    with _ensured_buckets_lock:
+        if bucket not in _ensured_buckets:
+            ensure_bucket(s3, bucket)
+            _ensured_buckets.add(bucket)
     extra = {}
     if content_type:
         extra["ContentType"] = content_type
@@ -129,9 +136,13 @@ def get_object_bytes(key: str) -> bytes:
 
 def put_bytes(key: str, data: bytes, content_type: str = "application/octet-stream"):
     s3 = get_s3_client()
-    ensure_bucket(s3, settings.s3_bucket)
+    bucket = settings.s3_bucket
+    with _ensured_buckets_lock:
+        if bucket not in _ensured_buckets:
+            ensure_bucket(s3, bucket)
+            _ensured_buckets.add(bucket)
     s3.put_object(
-        Bucket=settings.s3_bucket,
+        Bucket=bucket,
         Key=key,
         Body=data,
         ContentType=content_type,
