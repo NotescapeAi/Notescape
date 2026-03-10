@@ -104,6 +104,15 @@ body {
   background: var(--bg-page);
   overflow-x: hidden;
   line-height: 1.5;
+  /* Prevent caret on body/root */
+  caret-color: transparent;
+  /* Reserve space for scrollbar to prevent layout shift */
+  scrollbar-gutter: stable;
+}
+
+/* Restore caret for inputs */
+input, textarea, [contenteditable="true"] {
+  caret-color: var(--primary);
 }
 
 body {

@@ -7,6 +7,7 @@ from firebase_admin import credentials
 import logging
 import os
 from typing import Any, Dict
+from app.core.settings import settings
 
 SERVICE_ACCOUNT_PATH = os.environ.get("FIREBASE_SERVICE_ACCOUNT_KEY", "/app/secrets/serviceAccountKey.json")
 log = logging.getLogger("uvicorn.error")
@@ -24,7 +25,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")  # tokenUrl is unused her
 
 def _decode_verified_token(token: str) -> Dict[str, Any]:
     decoded_token = auth.verify_id_token(token)
-    if not decoded_token.get("email_verified"):
+    if settings.require_email_verified and not decoded_token.get("email_verified"):
         raise HTTPException(status_code=403, detail="Email not verified")
     return decoded_token
 
