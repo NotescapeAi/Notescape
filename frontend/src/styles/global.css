@@ -151,6 +151,62 @@ p {
   flex-direction: column;
 }
 
+.route-transition-stage {
+  position: relative;
+  width: 100%;
+  min-height: 100vh;
+}
+
+.route-transition-page {
+  width: 100%;
+  min-height: 100vh;
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+  transform: translateZ(0);
+}
+
+.route-suspense-fallback {
+  min-height: 100vh;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 24px;
+}
+
+.route-suspense-bar {
+  width: min(520px, 88vw);
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    rgba(124, 58, 237, 0.15) 0%,
+    rgba(124, 58, 237, 0.45) 45%,
+    rgba(124, 58, 237, 0.15) 100%
+  );
+  background-size: 220% 100%;
+  animation: routeBarPulse 1.1s ease-in-out infinite;
+}
+
+@keyframes routeBarPulse {
+  0% {
+    background-position: 100% 0;
+    opacity: 0.75;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    background-position: -100% 0;
+    opacity: 0.75;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .route-suspense-bar {
+    animation: none;
+  }
+}
+
 .surface {
   background: var(--surface);
 }
