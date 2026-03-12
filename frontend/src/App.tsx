@@ -13,6 +13,7 @@ import { onAuthStateChanged, User } from "firebase/auth";
 import { auth } from "./firebase/firebase";
 
 import RequireAuth from "./components/RequireAuth";
+import RouteTransition from "./components/RouteTransition";
 import ScrollToTop from "./components/ScrollToTop";
 import { UserProvider } from "./hooks/useUser";
 import { ThemeProvider } from "./hooks/useTheme";
@@ -103,7 +104,8 @@ function AppRoutes() {
   const location = useLocation();
 
   return (
-    <Routes location={location} key={location.pathname}>
+    <RouteTransition routeKey={location.pathname}>
+    <Routes location={location}>
       {/* Marketing / Auth */}
       <Route path="/" element={<LandingPage />} />
       <Route path="/start" element={<NotescapeStartPage />} />
@@ -223,6 +225,7 @@ function AppRoutes() {
       {/* 404 */}
       <Route path="*" element={<NotFound />} />
     </Routes>
+    </RouteTransition>
   );
 }
 
@@ -243,7 +246,13 @@ export default function App() {
         <BrowserRouter>
           <ScrollToTop />
           <AppLayout>
-            <Suspense fallback={<div style={{ padding: 24 }}>Loading…</div>}>
+            <Suspense
+              fallback={
+                <div className="route-suspense-fallback" aria-live="polite" aria-busy="true">
+                  <div className="route-suspense-bar" />
+                </div>
+              }
+            >
               <AppRoutes />
             </Suspense>
           </AppLayout>
