@@ -7,7 +7,7 @@ type UserState = {
   profile: ProfileData | null;
   loading: boolean;
   refresh: () => Promise<void>;
-  saveProfile: (payload: { display_name?: string; avatar_url?: string | null }) => Promise<void>;
+  saveProfile: (payload: { display_name?: string; avatar_url?: string | null; secondary_email?: string | null }) => Promise<ProfileData>;
 };
 
 const UserContext = createContext<UserState | null>(null);
@@ -56,9 +56,10 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const saveProfile = useCallback(async (payload: { display_name?: string; avatar_url?: string | null }) => {
+  const saveProfile = useCallback(async (payload: { display_name?: string; avatar_url?: string | null; secondary_email?: string | null }) => {
     const updated = await updateProfile(payload);
     setProfile(updated);
+    return updated;
   }, []);
 
   useEffect(() => {

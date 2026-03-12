@@ -2,19 +2,23 @@ import { useMemo, useState, useRef, useEffect } from "react";
 import AppShell from "../layouts/AppShell";
 import Button from "../components/Button";
 import { useUser } from "../hooks/useUser";
-import { uploadAvatar, getQuizHistory, type QuizHistoryItem } from "../lib/api";
+import { uploadAvatar, getQuizHistory, getQuizDailyStreak, type QuizHistoryItem, type QuizDailyStreakItem } from "../lib/api";
 import ImageCropper from "../components/ImageCropper";
 import ActivityHeatmap from "../components/ActivityHeatmap";
+
+const MAX_DISPLAY_NAME_LEN = 120;
 
 export default function Profile() {
   const { profile, loading, saveProfile, refresh } = useUser();
   const [quizHistory, setQuizHistory] = useState<QuizHistoryItem[]>([]);
+  const [quizStreakDays, setQuizStreakDays] = useState<QuizDailyStreakItem[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
   
   // Local state for form fields
   const [displayName, setDisplayName] = useState("");
   const [secondaryEmail, setSecondaryEmail] = useState("");
   const [isDirty, setIsDirty] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   
   // Avatar state
   const [avatarUrl, setAvatarUrl] = useState("");
@@ -30,6 +34,7 @@ export default function Profile() {
       setDisplayName(profile.display_name || profile.full_name || "");
       setSecondaryEmail(profile.secondary_email || "");
       setAvatarUrl(profile.avatar_url || "");
+      setSaveError(null);
     }
   }, [profile]);
 
@@ -37,10 +42,14 @@ export default function Profile() {
   useEffect(() => {
     async function loadHistory() {
       try {
-        const data = await getQuizHistory();
-        setQuizHistory(data);
+        const [historyData, streakData] = await Promise.all([
+          getQuizHistory(),
+          getQuizDailyStreak(),
+        ]);
+        setQuizHistory(historyData);
+        setQuizStreakDays(streakData);
       } catch (err) {
-        console.error("Failed to load quiz history", err);
+        console.error("Failed to load quiz activity", err);
       } finally {
         setLoadingHistory(false);
       }
@@ -54,29 +63,41 @@ export default function Profile() {
   const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setDisplayName(e.target.value);
     setIsDirty(true);
+    setSaveError(null);
   };
 
   const handleSecondaryEmailChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSecondaryEmail(e.target.value);
     setIsDirty(true);
+    setSaveError(null);
   };
 
   // Save changes
   async function handleSave() {
+    const trimmedDisplayName = displayName.trim();
+    if (!trimmedDisplayName) {
+      setSaveError("Display name cannot be empty.");
+      return;
+    }
+    if (trimmedDisplayName.length > MAX_DISPLAY_NAME_LEN) {
+      setSaveError(`Display name must be ${MAX_DISPLAY_NAME_LEN} characters or fewer.`);
+      return;
+    }
+
     try {
-      await saveProfile({ 
-        display_name: displayName.trim(), 
+      setSaveError(null);
+      const updated = await saveProfile({
+        display_name: trimmedDisplayName,
         secondary_email: secondaryEmail.trim() || null,
-        // We don't send avatar_url here unless we want to clear it manually, 
-        // but typically uploadAvatar handles the avatar update. 
-        // However, if the user clicked "Remove", we might have cleared it locally.
-        avatar_url: avatarUrl || null
       });
+      setDisplayName((updated.display_name || trimmedDisplayName).trim());
+      setSecondaryEmail(updated.secondary_email || "");
+      setAvatarUrl(updated.avatar_url || "");
       setIsDirty(false);
-      // Show success toast? For now, just a console log or alert
     } catch (err) {
       console.error("Failed to save profile", err);
-      alert("Failed to save changes.");
+      const message = err instanceof Error ? err.message : "Failed to save changes.";
+      setSaveError(message);
     }
   }
 
@@ -174,8 +195,10 @@ export default function Profile() {
                       value={displayName}
                       onChange={handleNameChange}
                       placeholder="e.g. John Doe"
+                      maxLength={MAX_DISPLAY_NAME_LEN}
                       className="h-10 w-full rounded-lg border border-token bg-transparent px-3 text-sm text-main placeholder:text-muted/50 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
                     />
+                    {saveError && <p className="text-xs text-red-500">{saveError}</p>}
                   </div>
 
                   {/* Primary Email (Read-Only) */}
@@ -228,7 +251,7 @@ export default function Profile() {
 
                 <div className="pt-4 mt-2">
                   <div className="flex items-center gap-3">
-                     <Button variant="primary" onClick={handleSave} disabled={!isDirty}>
+                     <Button variant="primary" onClick={handleSave} disabled={!isDirty || !displayName.trim()}>
                         Save Changes
                      </Button>
                      {isDirty && (
@@ -236,6 +259,7 @@ export default function Profile() {
                            setDisplayName(profile?.display_name || "");
                            setSecondaryEmail(profile?.secondary_email || "");
                            setIsDirty(false);
+                           setSaveError(null);
                         }}>
                            Cancel
                         </Button>
@@ -316,7 +340,7 @@ export default function Profile() {
            {loadingHistory ? (
               <div className="py-8 text-center text-muted">Loading activity...</div>
            ) : (
-              <ActivityHeatmap history={quizHistory} />
+              <ActivityHeatmap history={quizHistory} streakDays={quizStreakDays} />
            )}
         </div>
       </div>

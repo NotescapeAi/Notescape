@@ -1,8 +1,10 @@
 import json
 import logging
 import re
+from datetime import datetime, timezone, date
 from typing import List, Optional, Literal, Dict, Any, Tuple
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Path
 from pydantic import BaseModel, Field
@@ -12,6 +14,7 @@ from app.dependencies import get_request_user_uid
 
 log = logging.getLogger("uvicorn.error")
 router = APIRouter(prefix="/api/quizzes", tags=["quizzes"])
+KARACHI_TZ = ZoneInfo("Asia/Karachi")
 
 # helper sets
 SHORT_ANSWER_TYPES = {"short_qa"}
@@ -40,6 +43,42 @@ def _normalize_answer_text(text: Optional[str]) -> str:
     cleaned = re.sub(r"[^\w\s]", " ", text)
     normalized = re.sub(r"\s+", " ", cleaned).strip().lower()
     return normalized
+
+
+def _to_karachi_iso(value: Optional[datetime]) -> str:
+    if not value:
+        return ""
+    dt = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    return dt.astimezone(KARACHI_TZ).isoformat()
+
+
+def _karachi_local_date(value: datetime) -> date:
+    dt = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    return dt.astimezone(KARACHI_TZ).date()
+
+
+async def _ensure_quiz_daily_streaks_table(cur) -> None:
+    await cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS quiz_daily_streaks (
+            id BIGSERIAL PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            local_date DATE NOT NULL,
+            status TEXT NOT NULL CHECK (status IN ('passed', 'failed')),
+            first_attempt_at TIMESTAMPTZ NOT NULL,
+            last_attempt_at TIMESTAMPTZ NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            UNIQUE (user_id, local_date)
+        )
+        """
+    )
+    await cur.execute(
+        """
+        CREATE INDEX IF NOT EXISTS quiz_daily_streaks_user_date_idx
+        ON quiz_daily_streaks (user_id, local_date DESC)
+        """
+    )
 
 
 def _extract_key_points(answer_key: Optional[str]) -> List[str]:
@@ -211,6 +250,12 @@ class QuizAttemptDetail(BaseModel):
     attempt: QuizHistoryItem
     questions: List[Dict[str, Any]]
 
+
+class QuizDailyStreakItem(BaseModel):
+    local_date: str
+    status: Literal["passed", "failed"]
+    updated_at: Optional[str] = None
+
 # ---------- endpoints ----------
 
 @router.get("/ping")
@@ -273,7 +318,7 @@ async def get_quiz_history(user_id: str = Depends(get_request_user_uid)):
                 q.id::text,
                 q.title,
                 f.filename,
-                qa.started_at,
+                COALESCE(qa.submitted_at, qa.started_at) AS attempted_at,
                 qa.score,
                 qa.total_possible,
                 qa.mcq_score,
@@ -288,7 +333,7 @@ async def get_quiz_history(user_id: str = Depends(get_request_user_uid)):
             JOIN quizzes q ON qa.quiz_id = q.id
             JOIN files f ON q.file_id = f.id
             WHERE qa.user_id = %s AND qa.status = 'submitted'
-            ORDER BY qa.started_at DESC
+            ORDER BY attempted_at DESC
             """,
             (user_id,)
         )
@@ -300,7 +345,7 @@ async def get_quiz_history(user_id: str = Depends(get_request_user_uid)):
             quiz_id=str(r[1]),
             quiz_title=str(r[2] or "Untitled Quiz"),
             file_name=str(r[3] or "Unknown File"),
-            attempted_at=r[4].isoformat() if r[4] else "",
+            attempted_at=_to_karachi_iso(r[4]),
             score=int(r[5] or 0),
             total_possible=int(r[6] or 0),
             mcq_score=int(r[7] or 0),
@@ -326,7 +371,7 @@ async def get_attempt_detail(attempt_id: UUID, user_id: str = Depends(get_reques
                 q.id::text,
                 q.title,
                 f.filename,
-                qa.started_at,
+                COALESCE(qa.submitted_at, qa.started_at) AS attempted_at,
                 qa.score,
                 qa.total_possible,
                 qa.mcq_score,
@@ -353,7 +398,7 @@ async def get_attempt_detail(attempt_id: UUID, user_id: str = Depends(get_reques
             quiz_id=str(r[1]),
             quiz_title=str(r[2] or "Untitled Quiz"),
             file_name=str(r[3] or "Unknown File"),
-            attempted_at=r[4].isoformat() if r[4] else "",
+            attempted_at=_to_karachi_iso(r[4]),
             score=int(r[5] or 0),
             total_possible=int(r[6] or 0),
             mcq_score=int(r[7] or 0),
@@ -418,6 +463,31 @@ async def delete_attempt(attempt_id: UUID, user_id: str = Depends(get_request_us
              raise HTTPException(status_code=404, detail="Attempt not found")
         await conn.commit()
     return {"status": "deleted"}
+
+
+@router.get("/streak/daily", response_model=List[QuizDailyStreakItem])
+async def get_quiz_daily_streak(user_id: str = Depends(get_request_user_uid)):
+    async with db_conn() as (conn, cur):
+        await _ensure_quiz_daily_streaks_table(cur)
+        await cur.execute(
+            """
+            SELECT local_date::text, status, updated_at
+            FROM quiz_daily_streaks
+            WHERE user_id=%s
+            ORDER BY local_date DESC
+            """,
+            (user_id,),
+        )
+        rows = await cur.fetchall()
+
+    return [
+        QuizDailyStreakItem(
+            local_date=str(r[0]),
+            status=str(r[1]),
+            updated_at=r[2].isoformat() if r[2] else None,
+        )
+        for r in rows
+    ]
 
 # 3) List quizzes for a class
 @router.get("", response_model=List[QuizListItem])
@@ -821,6 +891,7 @@ async def submit_attempt(
                 theory_attempt_time=%s,
                 total_attempt_time=%s
             WHERE id=%s AND user_id=%s
+            RETURNING submitted_at, started_at
             """,
             (
                 status, 
@@ -841,6 +912,37 @@ async def submit_attempt(
                 user_id
             ),
         )
+        updated_attempt = await cur.fetchone()
+
+        if status == "submitted":
+            await _ensure_quiz_daily_streaks_table(cur)
+            submitted_at, started_at = updated_attempt
+            attempt_time = submitted_at or started_at or datetime.now(timezone.utc)
+            local_date = _karachi_local_date(attempt_time)
+            streak_status = "passed" if passed else "failed"
+
+            await cur.execute(
+                """
+                INSERT INTO quiz_daily_streaks (
+                    user_id,
+                    local_date,
+                    status,
+                    first_attempt_at,
+                    last_attempt_at
+                )
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (user_id, local_date)
+                DO UPDATE SET
+                    status = CASE
+                        WHEN quiz_daily_streaks.status = 'passed' THEN 'passed'
+                        WHEN EXCLUDED.status = 'passed' THEN 'passed'
+                        ELSE 'failed'
+                    END,
+                    last_attempt_at = GREATEST(quiz_daily_streaks.last_attempt_at, EXCLUDED.last_attempt_at),
+                    updated_at = now()
+                """,
+                (user_id, local_date, streak_status, attempt_time, attempt_time),
+            )
         await conn.commit()
 
     return SubmitAttemptOut(

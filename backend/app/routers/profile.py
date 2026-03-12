@@ -203,7 +203,7 @@ async def _upsert_user_from_firebase(request: Request, user_id: str) -> Dict[str
               full_name=EXCLUDED.full_name,
               provider_avatar_url=EXCLUDED.provider_avatar_url,
               avatar_url=COALESCE(users.custom_avatar_url, EXCLUDED.provider_avatar_url),
-              display_name=EXCLUDED.display_name,
+              display_name=COALESCE(NULLIF(users.display_name, ''), EXCLUDED.display_name),
               provider=EXCLUDED.provider,
               provider_id=EXCLUDED.provider_id,
               updated_at=now()
@@ -277,7 +277,12 @@ async def update_profile(request: Request, payload: ProfileUpdate, user_id: str 
     data = await _upsert_user_from_firebase(request, user_id)
     updates = {}
     if payload.display_name is not None:
-        updates["display_name"] = payload.display_name.strip()
+        trimmed_display_name = payload.display_name.strip()
+        if not trimmed_display_name:
+            raise HTTPException(status_code=400, detail="Display name cannot be empty.")
+        if len(trimmed_display_name) > 120:
+            raise HTTPException(status_code=400, detail="Display name must be 120 characters or fewer.")
+        updates["display_name"] = trimmed_display_name
     
     if payload.avatar_url is not None:
         val = payload.avatar_url.strip() or None
