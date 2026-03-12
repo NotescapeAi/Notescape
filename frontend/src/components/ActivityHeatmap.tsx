@@ -1,50 +1,47 @@
 import { useMemo, useState } from "react";
-import { format, subDays, getYear, isSameDay, eachDayOfInterval, startOfYear, endOfYear, getDay } from "date-fns";
-import { QuizHistoryItem } from "../lib/api";
+import { format, subDays, eachDayOfInterval, startOfYear, endOfYear, getDay } from "date-fns";
+import { QuizDailyStreakItem, QuizHistoryItem } from "../lib/api";
 
 type ActivityHeatmapProps = {
   history: QuizHistoryItem[];
+  streakDays: QuizDailyStreakItem[];
 };
 
 type DayStatus = "passed" | "failed" | "none";
+const KARACHI_TZ = "Asia/Karachi";
 
-export default function ActivityHeatmap({ history }: ActivityHeatmapProps) {
-  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+function karachiDayKey(date: Date): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: KARACHI_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const year = parts.find((p) => p.type === "year")?.value ?? "0000";
+  const month = parts.find((p) => p.type === "month")?.value ?? "01";
+  const day = parts.find((p) => p.type === "day")?.value ?? "01";
+  return `${year}-${month}-${day}`;
+}
 
-  // 1. Process data into a map of "YYYY-MM-DD" -> status
-  // Green = at least one passed
-  // Red = attempted but all failed
-  // None = no attempts
+export default function ActivityHeatmap({ history, streakDays }: ActivityHeatmapProps) {
+  const [selectedYear, setSelectedYear] = useState(Number(karachiDayKey(new Date()).slice(0, 4)));
+
+  // Bubble color source of truth: persisted daily streak records.
   const activityMap = useMemo(() => {
     const map = new Map<string, DayStatus>();
-    
-    // Sort history by date asc
-    const sorted = [...history].sort((a, b) => 
-        new Date(a.attempted_at).getTime() - new Date(b.attempted_at).getTime()
-    );
-
-    for (const item of sorted) {
-      const dateKey = format(new Date(item.attempted_at), "yyyy-MM-dd");
-      const currentStatus = map.get(dateKey) || "none";
-      
-      // If already passed, stay passed
-      if (currentStatus === "passed") continue;
-
-      if (item.passed) {
-        map.set(dateKey, "passed");
-      } else {
-        // If not passed yet, set to failed (unless already failed, which stays failed)
-        map.set(dateKey, "failed");
+    for (const day of streakDays) {
+      if (day.status === "passed" || day.status === "failed") {
+        map.set(day.local_date, day.status);
       }
     }
     return map;
-  }, [history]);
+  }, [streakDays]);
 
   // 2. Calculate stats
   const stats = useMemo(() => {
-    let totalAttempts = history.length;
-    let passed = history.filter(h => h.passed).length;
-    let failed = totalAttempts - passed;
+    const totalAttempts = history.length;
+    const passed = history.filter(h => h.passed).length;
+    const failed = totalAttempts - passed;
 
     // Consecutive days streak
     // Check backwards from today (or last active day)
@@ -56,14 +53,14 @@ export default function ActivityHeatmap({ history }: ActivityHeatmapProps) {
     let streak = 0;
     let checkDate = today;
     
-    // If no activity today, check if streak ended yesterday
-    const todayKey = format(today, "yyyy-MM-dd");
+    // Karachi-local "today" check for streak continuity
+    const todayKey = karachiDayKey(today);
     if (!activityMap.has(todayKey)) {
         checkDate = subDays(today, 1);
     }
 
     while (true) {
-        const key = format(checkDate, "yyyy-MM-dd");
+        const key = karachiDayKey(checkDate);
         if (activityMap.has(key)) {
             streak++;
             checkDate = subDays(checkDate, 1);
@@ -85,13 +82,13 @@ export default function ActivityHeatmap({ history }: ActivityHeatmapProps) {
     // Actually standard contribution graph is usually columns=weeks, rows=days
     
     // Group by weeks
-    const weeks: Date[][] = [];
-    let currentWeek: Date[] = [];
+    const weeks: Array<Array<Date | null>> = [];
+    let currentWeek: Array<Date | null> = [];
     
     // Pad first week if year doesn't start on Sunday
     const firstDayOfWeek = getDay(start); // 0 = Sun
     for (let i = 0; i < firstDayOfWeek; i++) {
-        currentWeek.push(null as any); // Spacer
+        currentWeek.push(null); // Spacer
     }
 
     days.forEach(day => {
@@ -105,7 +102,7 @@ export default function ActivityHeatmap({ history }: ActivityHeatmapProps) {
     // Push last week
     if (currentWeek.length > 0) {
         while (currentWeek.length < 7) {
-            currentWeek.push(null as any);
+            currentWeek.push(null);
         }
         weeks.push(currentWeek);
     }
@@ -118,10 +115,13 @@ export default function ActivityHeatmap({ history }: ActivityHeatmapProps) {
 
   // Available years from data + current year
   const years = useMemo(() => {
-    const yearsSet = new Set<number>([new Date().getFullYear()]);
-    history.forEach(h => yearsSet.add(getYear(new Date(h.attempted_at))));
+    const yearsSet = new Set<number>([Number(karachiDayKey(new Date()).slice(0, 4))]);
+    streakDays.forEach((d) => {
+      const year = Number(d.local_date.slice(0, 4));
+      if (!Number.isNaN(year)) yearsSet.add(year);
+    });
     return Array.from(yearsSet).sort((a, b) => b - a);
-  }, [history]);
+  }, [streakDays]);
 
   return (
     <div className="flex flex-col gap-6">

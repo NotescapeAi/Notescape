@@ -7,6 +7,8 @@ import {
 } from "../../lib/api";
 import { ArrowLeft, CheckCircle2, XCircle, FileText, Calendar } from "lucide-react";
 
+const KARACHI_TZ = "Asia/Karachi";
+
 export default function QuizHistoryDetailsPage() {
   const { attemptId } = useParams();
   const navigate = useNavigate();
@@ -25,7 +27,7 @@ export default function QuizHistoryDetailsPage() {
       setLoading(true);
       const data = await getAttemptDetail(id);
       setDetail(data);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Failed to load attempt detail", err);
       setError("Failed to load attempt details.");
     } finally {
@@ -59,6 +61,15 @@ export default function QuizHistoryDetailsPage() {
   const { attempt, questions } = detail;
   const mcqs = questions.filter(q => q.qtype === "mcq");
   const theory = questions.filter(q => q.qtype !== "mcq");
+  const attemptedAtKarachi = new Intl.DateTimeFormat(undefined, {
+    timeZone: KARACHI_TZ,
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(new Date(attempt.attempted_at));
 
   return (
     <AppShell title="Quiz Attempt Details" headerMaxWidthClassName="max-w-[1200px]">
@@ -85,7 +96,7 @@ export default function QuizHistoryDetailsPage() {
                   <span>{attempt.file_name}</span>
                   <span className="mx-1">•</span>
                   <Calendar className="h-4 w-4" />
-                  <span>{new Date(attempt.attempted_at).toLocaleString()}</span>
+                  <span>{attemptedAtKarachi}</span>
                 </div>
               </div>
               <div className={`px-4 py-2 rounded-full text-sm font-bold uppercase tracking-wider flex items-center gap-2 ${

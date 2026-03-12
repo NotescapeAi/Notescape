@@ -8,6 +8,8 @@ import {
 } from "../../lib/api";
 import { Trash2, Eye, Calendar, BookOpen, CheckCircle2, XCircle, FileText } from "lucide-react";
 
+const KARACHI_TZ = "Asia/Karachi";
+
 export default function QuizHistoryPage() {
   const [history, setHistory] = useState<QuizHistoryItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -23,7 +25,7 @@ export default function QuizHistoryPage() {
       const data = await getQuizHistory();
       setHistory(data);
       setError(null);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Failed to load history", err);
       setError("Failed to load quiz history.");
     } finally {
@@ -36,7 +38,7 @@ export default function QuizHistoryPage() {
     try {
       await deleteAttempt(attemptId);
       setHistory(prev => prev.filter(h => h.attempt_id !== attemptId));
-    } catch (err) {
+    } catch {
       alert("Failed to delete attempt");
     }
   };
@@ -69,6 +71,14 @@ export default function QuizHistoryPage() {
     const secs = seconds % 60;
     return `${mins}m ${secs}s`;
   };
+
+  const formatKarachiDate = (value: string) =>
+    new Intl.DateTimeFormat(undefined, {
+      timeZone: KARACHI_TZ,
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    }).format(new Date(value));
 
   return (
     <AppShell title="Quiz History" headerMaxWidthClassName="max-w-full">
@@ -148,7 +158,7 @@ export default function QuizHistoryPage() {
                             <span className="opacity-40">•</span>
                             <span className="inline-flex items-center gap-1">
                                <Calendar className="h-3 w-3 opacity-70" />
-                               <span>{new Date(item.attempted_at).toLocaleDateString()}</span>
+                               <span>{formatKarachiDate(item.attempted_at)}</span>
                             </span>
                           </div>
                         </div>
