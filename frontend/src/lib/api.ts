@@ -1089,6 +1089,11 @@ export type QuizListItem = {
   file_id: string;
   title: string;
   created_at?: string;
+  requested_mcq_count?: number | null;
+  requested_theory_count?: number | null;
+  actual_mcq_count?: number | null;
+  actual_theory_count?: number | null;
+  count_mismatch?: boolean;
 };
 
 export type QuizDetail = {
@@ -1101,6 +1106,11 @@ export type QuizJobResponse = {
   status: "queued" | "running" | "completed" | "failed";
   progress: number;
   error_message?: string;
+  failure_reason?: string | null;
+  requested_mcq_count?: number | null;
+  requested_theory_count?: number | null;
+  actual_mcq_count?: number | null;
+  actual_theory_count?: number | null;
 };
 
 export type StartAttemptResponse = {
@@ -1231,6 +1241,9 @@ export type QuizHistoryItem = {
   passed: boolean;
   mcq_count: number;
   theory_count: number;
+  requested_mcq_count?: number | null;
+  requested_theory_count?: number | null;
+  count_mismatch?: boolean;
   mcq_attempt_time: number;
   theory_attempt_time: number;
   total_attempt_time: number;
@@ -1240,6 +1253,12 @@ export type QuizDailyStreakItem = {
   local_date: string;
   status: "passed" | "failed";
   updated_at?: string | null;
+};
+
+export type QuizAnalyticsSummary = {
+  total_attempts: number;
+  passed_attempts: number;
+  failed_attempts: number;
 };
 
 export type QuizAttemptDetail = {
@@ -1272,6 +1291,16 @@ export async function getQuizDailyStreak(): Promise<QuizDailyStreakItem[]> {
   const headers = await userHeader();
   const { data } = await http.get<QuizDailyStreakItem[]>("/quizzes/streak/daily", { headers });
   return Array.isArray(data) ? data : [];
+}
+
+export async function getQuizAnalyticsSummary(): Promise<QuizAnalyticsSummary> {
+  const headers = await userHeader();
+  const { data } = await http.get<QuizAnalyticsSummary>("/quizzes/analytics/summary", { headers });
+  return {
+    total_attempts: Number(data?.total_attempts ?? 0),
+    passed_attempts: Number(data?.passed_attempts ?? 0),
+    failed_attempts: Number(data?.failed_attempts ?? 0),
+  };
 }
 
 // Get attempt detail

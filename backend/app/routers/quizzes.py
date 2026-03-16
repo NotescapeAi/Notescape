@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from app.core.db import db_conn
 from app.dependencies import get_request_user_uid
+from app.lib.quiz_counts import resolve_requested_counts
 
 log = logging.getLogger("uvicorn.error")
 router = APIRouter(prefix="/api/quizzes", tags=["quizzes"])
@@ -169,6 +170,11 @@ class QuizJobOut(BaseModel):
     status: str
     progress: int
     error_message: Optional[str] = None
+    failure_reason: Optional[str] = None
+    requested_mcq_count: Optional[int] = None
+    requested_theory_count: Optional[int] = None
+    actual_mcq_count: Optional[int] = None
+    actual_theory_count: Optional[int] = None
 
 class QuizListItem(BaseModel):
     id: str
@@ -176,6 +182,11 @@ class QuizListItem(BaseModel):
     file_id: str
     title: str
     created_at: Optional[str] = None
+    requested_mcq_count: Optional[int] = None
+    requested_theory_count: Optional[int] = None
+    actual_mcq_count: Optional[int] = None
+    actual_theory_count: Optional[int] = None
+    count_mismatch: bool = False
 
 class QuizQuestionOut(BaseModel):
     id: int
@@ -242,6 +253,9 @@ class QuizHistoryItem(BaseModel):
     passed: bool
     mcq_count: int
     theory_count: int
+    requested_mcq_count: Optional[int] = None
+    requested_theory_count: Optional[int] = None
+    count_mismatch: bool = False
     mcq_attempt_time: int
     theory_attempt_time: int
     total_attempt_time: int
@@ -256,20 +270,65 @@ class QuizDailyStreakItem(BaseModel):
     status: Literal["passed", "failed"]
     updated_at: Optional[str] = None
 
+class QuizAnalyticsSummary(BaseModel):
+    total_attempts: int
+    passed_attempts: int
+    failed_attempts: int
+
 # ---------- endpoints ----------
 
 @router.get("/ping")
 async def ping():
     return {"status": "ok", "router": "quizzes"}
 
+
+async def _ensure_quiz_history_visibility_columns(cur) -> None:
+    await cur.execute(
+        """
+        ALTER TABLE quiz_attempts
+        ADD COLUMN IF NOT EXISTS hidden_from_history BOOLEAN NOT NULL DEFAULT FALSE
+        """
+    )
+    await cur.execute(
+        """
+        ALTER TABLE quiz_attempts
+        ADD COLUMN IF NOT EXISTS hidden_from_history_at TIMESTAMPTZ
+        """
+    )
+    await cur.execute(
+        """
+        CREATE INDEX IF NOT EXISTS quiz_attempts_user_history_visible_idx
+        ON quiz_attempts (user_id, submitted_at DESC, started_at DESC)
+        """
+    )
+
+
+async def _ensure_quiz_count_columns(cur) -> None:
+    await cur.execute("ALTER TABLE quiz_jobs ADD COLUMN IF NOT EXISTS requested_mcq_count INT")
+    await cur.execute("ALTER TABLE quiz_jobs ADD COLUMN IF NOT EXISTS requested_theory_count INT")
+    await cur.execute("ALTER TABLE quiz_jobs ADD COLUMN IF NOT EXISTS actual_mcq_count INT")
+    await cur.execute("ALTER TABLE quiz_jobs ADD COLUMN IF NOT EXISTS actual_theory_count INT")
+    await cur.execute("ALTER TABLE quiz_jobs ADD COLUMN IF NOT EXISTS failure_reason TEXT")
+    await cur.execute("ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS requested_mcq_count INT")
+    await cur.execute("ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS requested_theory_count INT")
+    await cur.execute("ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS actual_mcq_count INT")
+    await cur.execute("ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS actual_theory_count INT")
+
 # 1) Create quiz generation job (worker will process in Step 3)
 @router.post("/jobs", response_model=QuizJobOut)
 async def create_quiz_job(req: CreateQuizJobReq, user_id: str = Depends(get_request_user_uid)):
     await _ensure_class_owner(req.class_id, user_id)
     await _ensure_file_in_class(req.file_id, req.class_id)
+    requested_mcq_count, requested_theory_count = resolve_requested_counts(
+        n_questions=req.n_questions,
+        mcq_count=req.mcq_count,
+        types=req.types,
+    )
 
     payload = {
         "n_questions": req.n_questions,
+        "requested_mcq_count": requested_mcq_count,
+        "requested_theory_count": requested_theory_count,
         "mcq_count": req.mcq_count,  # ← ADD THIS LINE
         "types": req.types,
         "difficulty": req.difficulty,
@@ -278,26 +337,59 @@ async def create_quiz_job(req: CreateQuizJobReq, user_id: str = Depends(get_requ
 
     # ... rest of the code stays the same
     async with db_conn() as (conn, cur):
+        await _ensure_quiz_count_columns(cur)
         await cur.execute(
             """
-            INSERT INTO quiz_jobs (user_id, class_id, file_id, status, progress, payload)
-            VALUES (%s, %s, %s, 'queued', 0, %s::jsonb)
-            RETURNING id::text, status, progress
+            INSERT INTO quiz_jobs (
+                user_id,
+                class_id,
+                file_id,
+                status,
+                progress,
+                payload,
+                requested_mcq_count,
+                requested_theory_count
+            )
+            VALUES (%s, %s, %s, 'queued', 0, %s::jsonb, %s, %s)
+            RETURNING id::text, status, progress, requested_mcq_count, requested_theory_count
             """,
-            (user_id, req.class_id, str(req.file_id), __import__("json").dumps(payload)),
+            (
+                user_id,
+                req.class_id,
+                str(req.file_id),
+                __import__("json").dumps(payload),
+                requested_mcq_count,
+                requested_theory_count,
+            ),
         )
         row = await cur.fetchone()
         await conn.commit()
 
-    return QuizJobOut(job_id=row[0], status=row[1], progress=row[2])
+    return QuizJobOut(
+        job_id=row[0],
+        status=row[1],
+        progress=row[2],
+        requested_mcq_count=row[3],
+        requested_theory_count=row[4],
+    )
 
 # 2) Poll job status
 @router.get("/jobs/{job_id}", response_model=QuizJobOut)
 async def get_quiz_job(job_id: UUID, user_id: str = Depends(get_request_user_uid)):
     async with db_conn() as (conn, cur):
+        await _ensure_quiz_count_columns(cur)
         await cur.execute(
             """
-            SELECT id::text, status, progress, error_message
+            SELECT
+                id::text,
+                status,
+                progress,
+                error_message,
+                failure_reason,
+                requested_mcq_count,
+                requested_theory_count,
+                actual_mcq_count,
+                actual_theory_count
             FROM quiz_jobs
             WHERE id=%s AND user_id=%s
             """,
@@ -306,11 +398,23 @@ async def get_quiz_job(job_id: UUID, user_id: str = Depends(get_request_user_uid
         row = await cur.fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Job not found")
-    return QuizJobOut(job_id=row[0], status=row[1], progress=row[2], error_message=row[3])
+    return QuizJobOut(
+        job_id=row[0],
+        status=row[1],
+        progress=row[2],
+        error_message=row[3],
+        failure_reason=row[4],
+        requested_mcq_count=row[5],
+        requested_theory_count=row[6],
+        actual_mcq_count=row[7],
+        actual_theory_count=row[8],
+    )
 
 @router.get("/history", response_model=List[QuizHistoryItem])
 async def get_quiz_history(user_id: str = Depends(get_request_user_uid)):
     async with db_conn() as (conn, cur):
+        await _ensure_quiz_history_visibility_columns(cur)
+        await _ensure_quiz_count_columns(cur)
         await cur.execute(
             """
             SELECT 
@@ -324,14 +428,19 @@ async def get_quiz_history(user_id: str = Depends(get_request_user_uid)):
                 qa.mcq_score,
                 qa.theory_score,
                 qa.passed,
-                (SELECT COUNT(*) FROM quiz_questions qq WHERE qq.quiz_id = q.id AND qq.qtype = 'mcq') as mcq_count,
-                (SELECT COUNT(*) FROM quiz_questions qq WHERE qq.quiz_id = q.id AND qq.qtype != 'mcq') as theory_count,
+                COALESCE(q.actual_mcq_count, (SELECT COUNT(*) FROM quiz_questions qq WHERE qq.quiz_id = q.id AND qq.qtype = 'mcq')) as mcq_count,
+                COALESCE(q.actual_theory_count, (SELECT COUNT(*) FROM quiz_questions qq WHERE qq.quiz_id = q.id AND qq.qtype != 'mcq')) as theory_count,
+                q.requested_mcq_count,
+                q.requested_theory_count,
                 qa.mcq_attempt_time,
                 qa.theory_attempt_time,
                 qa.total_attempt_time
             FROM quiz_attempts qa
             JOIN quizzes q ON qa.quiz_id = q.id
             JOIN files f ON q.file_id = f.id
+            WHERE qa.user_id = %s
+              AND qa.status = 'submitted'
+              AND qa.hidden_from_history = FALSE
             WHERE qa.user_id = %s AND qa.status = 'submitted'
             ORDER BY attempted_at DESC
             """,
@@ -353,9 +462,14 @@ async def get_quiz_history(user_id: str = Depends(get_request_user_uid)):
             passed=bool(r[9] if r[9] is not None else False),
             mcq_count=int(r[10] or 0),
             theory_count=int(r[11] or 0),
-            mcq_attempt_time=int(r[12] or 0),
-            theory_attempt_time=int(r[13] or 0),
-            total_attempt_time=int(r[14] or 0)
+            requested_mcq_count=(int(r[12]) if r[12] is not None else None),
+            requested_theory_count=(int(r[13]) if r[13] is not None else None),
+            count_mismatch=(
+                r[12] is not None and r[13] is not None and (int(r[12] or 0) != int(r[10] or 0) or int(r[13] or 0) != int(r[11] or 0))
+            ),
+            mcq_attempt_time=int(r[14] or 0),
+            theory_attempt_time=int(r[15] or 0),
+            total_attempt_time=int(r[16] or 0)
         )
         for r in rows
     ]
@@ -363,6 +477,8 @@ async def get_quiz_history(user_id: str = Depends(get_request_user_uid)):
 @router.get("/history/{attempt_id}", response_model=QuizAttemptDetail)
 async def get_attempt_detail(attempt_id: UUID, user_id: str = Depends(get_request_user_uid)):
     async with db_conn() as (conn, cur):
+        await _ensure_quiz_history_visibility_columns(cur)
+        await _ensure_quiz_count_columns(cur)
         # 1. Get attempt info
         await cur.execute(
             """
@@ -377,15 +493,19 @@ async def get_attempt_detail(attempt_id: UUID, user_id: str = Depends(get_reques
                 qa.mcq_score,
                 qa.theory_score,
                 qa.passed,
-                (SELECT COUNT(*) FROM quiz_questions qq WHERE qq.quiz_id = q.id AND qq.qtype = 'mcq') as mcq_count,
-                (SELECT COUNT(*) FROM quiz_questions qq WHERE qq.quiz_id = q.id AND qq.qtype != 'mcq') as theory_count,
+                COALESCE(q.actual_mcq_count, (SELECT COUNT(*) FROM quiz_questions qq WHERE qq.quiz_id = q.id AND qq.qtype = 'mcq')) as mcq_count,
+                COALESCE(q.actual_theory_count, (SELECT COUNT(*) FROM quiz_questions qq WHERE qq.quiz_id = q.id AND qq.qtype != 'mcq')) as theory_count,
+                q.requested_mcq_count,
+                q.requested_theory_count,
                 qa.mcq_attempt_time,
                 qa.theory_attempt_time,
                 qa.total_attempt_time
             FROM quiz_attempts qa
             JOIN quizzes q ON qa.quiz_id = q.id
             JOIN files f ON q.file_id = f.id
-            WHERE qa.id = %s AND qa.user_id = %s
+            WHERE qa.id = %s
+              AND qa.user_id = %s
+              AND qa.hidden_from_history = FALSE
             """,
             (str(attempt_id), user_id)
         )
@@ -406,9 +526,14 @@ async def get_attempt_detail(attempt_id: UUID, user_id: str = Depends(get_reques
             passed=bool(r[9] if r[9] is not None else False),
             mcq_count=int(r[10] or 0),
             theory_count=int(r[11] or 0),
-            mcq_attempt_time=int(r[12] or 0),
-            theory_attempt_time=int(r[13] or 0),
-            total_attempt_time=int(r[14] or 0)
+            requested_mcq_count=(int(r[12]) if r[12] is not None else None),
+            requested_theory_count=(int(r[13]) if r[13] is not None else None),
+            count_mismatch=(
+                r[12] is not None and r[13] is not None and (int(r[12] or 0) != int(r[10] or 0) or int(r[13] or 0) != int(r[11] or 0))
+            ),
+            mcq_attempt_time=int(r[14] or 0),
+            theory_attempt_time=int(r[15] or 0),
+            total_attempt_time=int(r[16] or 0)
         )
 
         # 2. Get questions and answers
@@ -455,14 +580,45 @@ async def get_attempt_detail(attempt_id: UUID, user_id: str = Depends(get_reques
 @router.delete("/history/{attempt_id}")
 async def delete_attempt(attempt_id: UUID, user_id: str = Depends(get_request_user_uid)):
     async with db_conn() as (conn, cur):
+        await _ensure_quiz_history_visibility_columns(cur)
         await cur.execute(
-            "DELETE FROM quiz_attempts WHERE id=%s AND user_id=%s",
+            """
+            UPDATE quiz_attempts
+            SET hidden_from_history=TRUE,
+                hidden_from_history_at=COALESCE(hidden_from_history_at, now())
+            WHERE id=%s AND user_id=%s AND status='submitted' AND hidden_from_history=FALSE
+            """,
             (str(attempt_id), user_id)
         )
         if cur.rowcount == 0:
              raise HTTPException(status_code=404, detail="Attempt not found")
         await conn.commit()
     return {"status": "deleted"}
+
+
+@router.get("/analytics/summary", response_model=QuizAnalyticsSummary)
+async def get_quiz_analytics_summary(user_id: str = Depends(get_request_user_uid)):
+    async with db_conn() as (conn, cur):
+        await _ensure_quiz_history_visibility_columns(cur)
+        await cur.execute(
+            """
+            SELECT
+                COUNT(*)::int AS total_attempts,
+                COUNT(*) FILTER (WHERE COALESCE(passed, FALSE) = TRUE)::int AS passed_attempts,
+                COUNT(*) FILTER (WHERE COALESCE(passed, FALSE) = FALSE)::int AS failed_attempts
+            FROM quiz_attempts
+            WHERE user_id = %s
+              AND status = 'submitted'
+            """,
+            (user_id,),
+        )
+        row = await cur.fetchone()
+
+    return QuizAnalyticsSummary(
+        total_attempts=int(row[0] or 0),
+        passed_attempts=int(row[1] or 0),
+        failed_attempts=int(row[2] or 0),
+    )
 
 
 @router.get("/streak/daily", response_model=List[QuizDailyStreakItem])
@@ -494,9 +650,19 @@ async def get_quiz_daily_streak(user_id: str = Depends(get_request_user_uid)):
 async def list_quizzes(class_id: int = Query(...), user_id: str = Depends(get_request_user_uid)):
     await _ensure_class_owner(class_id, user_id)
     async with db_conn() as (conn, cur):
+        await _ensure_quiz_count_columns(cur)
         await cur.execute(
             """
-            SELECT id::text, class_id, file_id::text, title, created_at
+            SELECT
+                id::text,
+                class_id,
+                file_id::text,
+                title,
+                created_at,
+                requested_mcq_count,
+                requested_theory_count,
+                actual_mcq_count,
+                actual_theory_count
             FROM quizzes
             WHERE class_id=%s
             ORDER BY created_at DESC
@@ -511,7 +677,14 @@ async def list_quizzes(class_id: int = Query(...), user_id: str = Depends(get_re
         out.append(
             QuizListItem(
                 id=r[0], class_id=r[1], file_id=r[2], title=r[3],
-                created_at=r[4].isoformat() if r[4] else None
+                created_at=r[4].isoformat() if r[4] else None,
+                requested_mcq_count=r[5],
+                requested_theory_count=r[6],
+                actual_mcq_count=r[7],
+                actual_theory_count=r[8],
+                count_mismatch=(
+                    r[5] is not None and r[6] is not None and (r[5] != (r[7] or 0) or r[6] != (r[8] or 0))
+                ),
             )
         )
     return out
@@ -560,8 +733,22 @@ async def get_quiz(
     user_id: str = Depends(get_request_user_uid),
 ):
     async with db_conn() as (conn, cur):
+        await _ensure_quiz_count_columns(cur)
         await cur.execute(
-            "SELECT id::text, class_id, file_id::text, title, created_at FROM quizzes WHERE id=%s",
+            """
+            SELECT
+                id::text,
+                class_id,
+                file_id::text,
+                title,
+                created_at,
+                requested_mcq_count,
+                requested_theory_count,
+                actual_mcq_count,
+                actual_theory_count
+            FROM quizzes
+            WHERE id=%s
+            """,
             (str(quiz_id),),
         )
         q = await cur.fetchone()
@@ -583,7 +770,14 @@ async def get_quiz(
 
     quiz_meta = QuizListItem(
         id=q[0], class_id=q[1], file_id=q[2], title=q[3],
-        created_at=q[4].isoformat() if q[4] else None
+        created_at=q[4].isoformat() if q[4] else None,
+        requested_mcq_count=q[5],
+        requested_theory_count=q[6],
+        actual_mcq_count=q[7],
+        actual_theory_count=q[8],
+        count_mismatch=(
+            q[5] is not None and q[6] is not None and (q[5] != (q[7] or 0) or q[6] != (q[8] or 0))
+        ),
     )
 
     items = [

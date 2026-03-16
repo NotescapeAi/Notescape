@@ -399,6 +399,15 @@ def get_quiz_generator() -> Callable[[str], Any]:
             for v in variants:
                 try:
                     data = json.loads(v)
+                    if isinstance(data, dict):
+                        items = data.get("items")
+                        if isinstance(items, dict):
+                            data["items"] = [items]
+                            items = data["items"]
+                        if isinstance(items, list):
+                            return data
+                    if isinstance(data, list):
+                        return {"title": "Quiz", "items": data}
                     if isinstance(data, dict) and isinstance(data.get("items"), list):
                         return data
                 except Exception:
@@ -428,6 +437,33 @@ def get_quiz_generator() -> Callable[[str], Any]:
         parsed = _coerce_json(candidate)
         if parsed is not None:
             return parsed
+
+        log.warning(
+            "[quiz_llm] failed_initial_parse raw_preview=%s candidate_preview=%s",
+            raw[:800],
+            candidate[:800],
+        )
+
+        # Multi-pass repair: model occasionally emits very long malformed JSON.
+        repair_system = (
+            "You are a strict JSON repair engine.\n"
+            "Output ONLY valid JSON. No markdown. No comments.\n"
+            "Ensure all string quotes are escaped properly and no trailing commas exist."
+        )
+        schema_text = (
+            '{'
+            '"title":"Quiz title",'
+            '"items":[{'
+            '"type":"mcq|conceptual|definition|scenario|short_qa",'
+            '"question":"...",'
+            '"options":["A","B","C","D"],'
+            '"correct_index":0,'
+            '"answer_key":"...",'
+            '"explanation":"optional",'
+            '"difficulty":"easy|medium|hard",'
+            '"source":{"chunk_id":123,"page_start":1,"page_end":1}'
+            '}]}'
+        )
 
         # Multi-pass repair: model occasionally emits very long malformed JSON.
         repair_system = (
@@ -465,6 +501,12 @@ def get_quiz_generator() -> Callable[[str], Any]:
             if parsed is not None:
                 return parsed
             last_candidate = repaired_candidate or repaired_raw
+
+        log.warning(
+            "[quiz_llm] failed_parse_after_repair raw_preview=%s candidate_preview=%s",
+            raw[:800],
+            candidate[:800],
+        )
 
         raise ValueError("Failed to parse quiz JSON after repair attempts")
 

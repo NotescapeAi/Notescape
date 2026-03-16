@@ -2,6 +2,13 @@ import { useMemo, useState, useRef, useEffect } from "react";
 import AppShell from "../layouts/AppShell";
 import Button from "../components/Button";
 import { useUser } from "../hooks/useUser";
+import {
+  uploadAvatar,
+  getQuizDailyStreak,
+  getQuizAnalyticsSummary,
+  type QuizDailyStreakItem,
+  type QuizAnalyticsSummary,
+} from "../lib/api";
 import { uploadAvatar, getQuizHistory, getQuizDailyStreak, type QuizHistoryItem, type QuizDailyStreakItem } from "../lib/api";
 import ImageCropper from "../components/ImageCropper";
 import ActivityHeatmap from "../components/ActivityHeatmap";
@@ -10,6 +17,12 @@ const MAX_DISPLAY_NAME_LEN = 120;
 
 export default function Profile() {
   const { profile, loading, saveProfile, refresh } = useUser();
+  const [quizStreakDays, setQuizStreakDays] = useState<QuizDailyStreakItem[]>([]);
+  const [quizSummary, setQuizSummary] = useState<QuizAnalyticsSummary>({
+    total_attempts: 0,
+    passed_attempts: 0,
+    failed_attempts: 0,
+  });
   const [quizHistory, setQuizHistory] = useState<QuizHistoryItem[]>([]);
   const [quizStreakDays, setQuizStreakDays] = useState<QuizDailyStreakItem[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
@@ -42,6 +55,12 @@ export default function Profile() {
   useEffect(() => {
     async function loadHistory() {
       try {
+        const [streakData, summaryData] = await Promise.all([
+          getQuizDailyStreak(),
+          getQuizAnalyticsSummary(),
+        ]);
+        setQuizStreakDays(streakData);
+        setQuizSummary(summaryData);
         const [historyData, streakData] = await Promise.all([
           getQuizHistory(),
           getQuizDailyStreak(),
@@ -220,13 +239,27 @@ export default function Profile() {
                   {/* Secondary Email */}
                   <div className="flex flex-col gap-1.5">
                     <label className="text-[11px] font-semibold uppercase tracking-wider text-muted">Secondary Email <span className="text-muted/50 font-normal normal-case">(Optional)</span></label>
-                    <input
-                      type="email"
-                      value={secondaryEmail}
-                      onChange={handleSecondaryEmailChange}
-                      placeholder="backup@example.com"
-                      className="h-10 w-full rounded-lg border border-token bg-transparent px-3 text-sm text-main placeholder:text-muted/50 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
-                    />
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="email"
+                        value={secondaryEmail}
+                        onChange={handleSecondaryEmailChange}
+                        placeholder="backup@example.com"
+                        className="h-10 w-full rounded-lg border border-token bg-transparent px-3 text-sm text-main placeholder:text-muted/50 focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => {
+                          setSecondaryEmail("");
+                          setIsDirty(true);
+                          setSaveError(null);
+                        }}
+                        disabled={!secondaryEmail}
+                      >
+                        Clear
+                      </Button>
+                    </div>
                   </div>
 
                   {/* Account Info */}
@@ -340,6 +373,7 @@ export default function Profile() {
            {loadingHistory ? (
               <div className="py-8 text-center text-muted">Loading activity...</div>
            ) : (
+              <ActivityHeatmap summary={quizSummary} streakDays={quizStreakDays} />
               <ActivityHeatmap history={quizHistory} streakDays={quizStreakDays} />
            )}
         </div>

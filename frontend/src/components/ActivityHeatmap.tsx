@@ -1,5 +1,9 @@
 import { useMemo, useState } from "react";
 import { format, subDays, eachDayOfInterval, startOfYear, endOfYear, getDay } from "date-fns";
+import { QuizAnalyticsSummary, QuizDailyStreakItem } from "../lib/api";
+
+type ActivityHeatmapProps = {
+  summary: QuizAnalyticsSummary;
 import { QuizDailyStreakItem, QuizHistoryItem } from "../lib/api";
 
 type ActivityHeatmapProps = {
@@ -23,6 +27,7 @@ function karachiDayKey(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
+export default function ActivityHeatmap({ summary, streakDays }: ActivityHeatmapProps) {
 export default function ActivityHeatmap({ history, streakDays }: ActivityHeatmapProps) {
   const [selectedYear, setSelectedYear] = useState(Number(karachiDayKey(new Date()).slice(0, 4)));
 
@@ -39,6 +44,9 @@ export default function ActivityHeatmap({ history, streakDays }: ActivityHeatmap
 
   // 2. Calculate stats
   const stats = useMemo(() => {
+    const totalAttempts = summary.total_attempts;
+    const passed = summary.passed_attempts;
+    const failed = summary.failed_attempts;
     const totalAttempts = history.length;
     const passed = history.filter(h => h.passed).length;
     const failed = totalAttempts - passed;
@@ -70,7 +78,7 @@ export default function ActivityHeatmap({ history, streakDays }: ActivityHeatmap
     }
 
     return { totalAttempts, passed, failed, streak };
-  }, [history, activityMap]);
+  }, [summary, activityMap]);
 
   // 3. Generate grid for selected year
   const grid = useMemo(() => {
