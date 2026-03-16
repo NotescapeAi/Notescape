@@ -28,6 +28,21 @@ GEN_T          = float(os.getenv("GEN_T", "0.2"))
 QUIZ_MODEL = os.getenv("QUIZ_MODEL", GEN_MODEL)
 QUIZ_T     = float(os.getenv("QUIZ_T", str(GEN_T)))
 
+
+def _is_billing_or_quota_error_message(message: str) -> bool:
+    lowered = (message or "").lower()
+    markers = (
+        "billing",
+        "insufficient",
+        "insufficient_quota",
+        "quota",
+        "credit",
+        "balance",
+        "hard limit",
+        "payment required",
+    )
+    return any(m in lowered for m in markers)
+
 log.info(
     "[llm] LLM_PROVIDER=%s GEN_MODEL=%s GEN_T=%s CHAT_PROVIDER=%s CHAT_MODEL=%s EMBED_PROVIDER=%s EMBED_MODEL=%s EMBED_DIM=%s",
     LLM_PROVIDER, GEN_MODEL, GEN_T, CHAT_PROVIDER, CHAT_MODEL, EMBED_PROVIDER, EMBED_MODEL, EMBED_DIM
@@ -255,18 +270,40 @@ def get_card_generator() -> "CardGenerator":
         # IMPORTANT: flashcards use GEN_MODEL from env/compose
         model = GEN_MODEL
         temperature = GEN_T
+        fallback_model = os.getenv("GROQ_FALLBACK_MODEL", "llama-3.1-8b-instant")
 
-        async def _chat(system: str, user: str) -> str:
-            r = client.chat.completions.create(
-                model=model,
+        def _call_chat(target_model: str, system: str, user: str):
+            return client.chat.completions.create(
+                model=target_model,
                 temperature=temperature,
                 messages=[
                     {"role": "system", "content": system},
                     {"role": "user", "content": user},
                 ],
             )
+
+        async def _chat(system: str, user: str) -> str:
+            used_model = model
+            try:
+                r = _call_chat(model, system, user)
+            except Exception as e:
+                err_text = str(e)
+                if (
+                    model != fallback_model
+                    and fallback_model
+                    and _is_billing_or_quota_error_message(err_text)
+                ):
+                    log.warning(
+                        "[flashcards][groq] model=%s failed due to quota/billing; retrying with fallback=%s",
+                        model,
+                        fallback_model,
+                    )
+                    used_model = fallback_model
+                    r = _call_chat(fallback_model, system, user)
+                else:
+                    raise
             out = (r.choices[0].message.content or "").strip()
-            log.info("[flashcards][groq model=%s] raw_out=%s", model, out[:1200])
+            log.info("[flashcards][groq model=%s] raw_out=%s", used_model, out[:1200])
             return out
 
         return CardGenerator(_chat)
@@ -349,6 +386,25 @@ def get_quiz_generator() -> Callable[[str], Any]:
         GEN_T = old_t
 
     async def _gen(prompt: str) -> Dict[str, Any]:
+        def _coerce_json(text: str) -> Dict[str, Any] | None:
+            candidate = (text or "").strip()
+            if not candidate:
+                return None
+
+            variants = [candidate]
+            # Common model mistakes: trailing commas / BOM / odd control chars.
+            variants.append(re.sub(r",\s*([}\]])", r"\1", candidate))
+            variants.append(candidate.replace("\ufeff", ""))
+
+            for v in variants:
+                try:
+                    data = json.loads(v)
+                    if isinstance(data, dict) and isinstance(data.get("items"), list):
+                        return data
+                except Exception:
+                    continue
+            return None
+
         system = (
             "You generate exam-quality quizzes.\n"
             "Return ONLY valid JSON. No markdown, no extra text.\n"
@@ -369,40 +425,48 @@ def get_quiz_generator() -> Callable[[str], Any]:
 
         raw = await cg.generate_raw(system, prompt)
         candidate = cg._extract_json_candidate(raw)
+        parsed = _coerce_json(candidate)
+        if parsed is not None:
+            return parsed
 
-        try:
-            data = json.loads(candidate)
-        except Exception:
-            # Repair pass (same idea as flashcards)
-            repair_system = "You are a JSON formatter. Output ONLY valid JSON. No markdown, no extra text."
+        # Multi-pass repair: model occasionally emits very long malformed JSON.
+        repair_system = (
+            "You are a strict JSON repair engine.\n"
+            "Output ONLY valid JSON. No markdown. No comments.\n"
+            "Ensure all string quotes are escaped properly and no trailing commas exist."
+        )
+        schema_text = (
+            '{'
+            '"title":"Quiz title",'
+            '"items":[{'
+            '"type":"mcq|conceptual|definition|scenario|short_qa",'
+            '"question":"...",'
+            '"options":["A","B","C","D"],'
+            '"correct_index":0,'
+            '"answer_key":"...",'
+            '"explanation":"optional",'
+            '"difficulty":"easy|medium|hard",'
+            '"source":{"chunk_id":123,"page_start":1,"page_end":1}'
+            '}]}'
+        )
+
+        last_candidate = candidate
+        for repair_round in range(3):
             repair_user = (
-                "Convert the following into STRICT JSON in this exact schema:\n"
-                '{'
-                '"title":"Quiz title",'
-                '"items":[{'
-                '"type":"mcq|conceptual|definition|scenario|short_qa",'
-                '"question":"...",'
-                '"options":["A","B","C","D"],'
-                '"correct_index":0,'
-                '"answer_key":"...",'
-                '"explanation":"optional",'
-                '"difficulty":"easy|medium|hard",'
-                '"source":{"chunk_id":123,"page_start":1,"page_end":1}'
-                '}]}'
-                "\n\n"
-                f"TEXT TO CONVERT:\n{raw}"
+                "Repair this malformed JSON into STRICT valid JSON matching exactly this schema:\n"
+                f"{schema_text}\n\n"
+                f"ROUND: {repair_round + 1}\n"
+                "Return only the JSON object.\n\n"
+                f"TEXT TO REPAIR:\n{last_candidate or raw}"
             )
-            raw2 = await cg.generate_raw(repair_system, repair_user)
-            candidate2 = cg._extract_json_candidate(raw2)
-            data = json.loads(candidate2)
+            repaired_raw = await cg.generate_raw(repair_system, repair_user)
+            repaired_candidate = cg._extract_json_candidate(repaired_raw)
+            parsed = _coerce_json(repaired_candidate)
+            if parsed is not None:
+                return parsed
+            last_candidate = repaired_candidate or repaired_raw
 
-        if not isinstance(data, dict):
-            raise ValueError("Quiz JSON root must be an object")
-
-        if "items" not in data or not isinstance(data["items"], list):
-            raise ValueError("Quiz JSON must contain an 'items' list")
-
-        return data
+        raise ValueError("Failed to parse quiz JSON after repair attempts")
 
     return _gen
 
