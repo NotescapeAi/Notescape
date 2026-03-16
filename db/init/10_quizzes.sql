@@ -15,6 +15,10 @@ CREATE TABLE IF NOT EXISTS quizzes (
 
 CREATE INDEX IF NOT EXISTS quizzes_class_idx ON quizzes (class_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS quizzes_file_idx ON quizzes (file_id, created_at DESC);
+ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS requested_mcq_count INT;
+ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS requested_theory_count INT;
+ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS actual_mcq_count INT;
+ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS actual_theory_count INT;
 
 -- Quiz questions (store MCQ + conceptual + definition + scenario)
 CREATE TABLE IF NOT EXISTS quiz_questions (
@@ -99,3 +103,8 @@ CREATE TABLE IF NOT EXISTS quiz_jobs (
 CREATE INDEX IF NOT EXISTS quiz_jobs_user_idx ON quiz_jobs (user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS quiz_jobs_class_idx ON quiz_jobs (class_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS quiz_jobs_file_idx ON quiz_jobs (file_id, created_at DESC);
+ALTER TABLE quiz_jobs ADD COLUMN IF NOT EXISTS requested_mcq_count INT;
+ALTER TABLE quiz_jobs ADD COLUMN IF NOT EXISTS requested_theory_count INT;
+ALTER TABLE quiz_jobs ADD COLUMN IF NOT EXISTS actual_mcq_count INT;
+ALTER TABLE quiz_jobs ADD COLUMN IF NOT EXISTS actual_theory_count INT;
+ALTER TABLE quiz_jobs ADD COLUMN IF NOT EXISTS failure_reason TEXT;

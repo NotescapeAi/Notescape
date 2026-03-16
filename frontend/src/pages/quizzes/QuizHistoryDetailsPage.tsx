@@ -6,6 +6,7 @@ import {
   type QuizAttemptDetail,
 } from "../../lib/api";
 import { ArrowLeft, CheckCircle2, XCircle, FileText, Calendar } from "lucide-react";
+import { getQuizCountPresentation } from "./quizCountUtils";
 
 const KARACHI_TZ = "Asia/Karachi";
 
@@ -61,6 +62,7 @@ export default function QuizHistoryDetailsPage() {
   const { attempt, questions } = detail;
   const mcqs = questions.filter(q => q.qtype === "mcq");
   const theory = questions.filter(q => q.qtype !== "mcq");
+  const countPresentation = getQuizCountPresentation(attempt, questions);
   const attemptedAtKarachi = new Intl.DateTimeFormat(undefined, {
     timeZone: KARACHI_TZ,
     year: "numeric",
@@ -121,11 +123,11 @@ export default function QuizHistoryDetailsPage() {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4 border-t border-[var(--border)]">
               <div className="p-3 bg-gray-50 dark:bg-white/5 rounded-lg text-center">
                 <div className="text-xs uppercase text-[var(--text-muted)] font-semibold mb-1">Total MCQs</div>
-                <div className="text-lg font-bold text-[var(--text-main)]">{attempt.mcq_count}</div>
+                <div className="text-lg font-bold text-[var(--text-main)]">{countPresentation.actualMcqCount}</div>
               </div>
               <div className="p-3 bg-gray-50 dark:bg-white/5 rounded-lg text-center">
                 <div className="text-xs uppercase text-[var(--text-muted)] font-semibold mb-1">Written Qs</div>
-                <div className="text-lg font-bold text-[var(--text-main)]">{attempt.theory_count}</div>
+                <div className="text-lg font-bold text-[var(--text-main)]">{countPresentation.actualTheoryCount}</div>
               </div>
               <div className="p-3 bg-gray-50 dark:bg-white/5 rounded-lg text-center">
                 <div className="text-xs uppercase text-[var(--text-muted)] font-semibold mb-1">Correct MCQs</div>
@@ -136,6 +138,17 @@ export default function QuizHistoryDetailsPage() {
                 <div className="text-lg font-bold text-[var(--text-main)]">{attempt.theory_score}</div>
               </div>
             </div>
+
+            {countPresentation.countMismatch && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-200">
+                This quiz has legacy count metadata that does not match the saved question mix.
+                {countPresentation.requestedMcqCount !== null && countPresentation.requestedTheoryCount !== null && (
+                  <span className="ml-1">
+                    Requested {countPresentation.requestedMcqCount} MCQs and {countPresentation.requestedTheoryCount} theory questions, but saved as {countPresentation.actualMcqCount} MCQs and {countPresentation.actualTheoryCount} theory questions.
+                  </span>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="panel p-6 flex flex-col justify-center items-center text-center bg-gradient-to-br from-[var(--surface)] to-[var(--surface-hover)]">

@@ -48,6 +48,7 @@ export default function QuizPanel({ classId, files, onQuizCreated }: QuizPanelPr
     const payload = status as Record<string, unknown>;
     const candidates = [
       payload.error_message,
+      payload.failure_reason,
       payload.error,
       payload.detail,
       payload.message,

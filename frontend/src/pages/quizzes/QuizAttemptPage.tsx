@@ -16,6 +16,7 @@ import QuizStartScreen from "./components/QuizStartScreen";
 import QuizMCQSection from "./components/QuizMCQSection";
 import QuizTheorySection from "./components/QuizTheorySection";
 import QuizCompletionScreen from "./components/QuizCompletionScreen";
+import { getQuizCountPresentation } from "./quizCountUtils";
 
 export default function QuizAttemptPage() {
   const { quizId } = useParams();
@@ -106,6 +107,10 @@ export default function QuizAttemptPage() {
     const theory = quizData.items.filter(q => q.qtype !== "mcq");
     return { mcqQuestions: mcq, theoryQuestions: theory };
   }, [quizData]);
+  const countPresentation = useMemo(
+    () => getQuizCountPresentation(quizData?.quiz ?? {}, quizData?.items ?? []),
+    [quizData]
+  );
 
   // Handlers
   const handleStartMcq = () => {
@@ -232,8 +237,8 @@ export default function QuizAttemptPage() {
             <QuizStartScreen 
                 quizTitle={quizData.quiz.title}
                 totalQuestions={quizData.items.length}
-                mcqCount={mcqQuestions.length}
-                theoryCount={theoryQuestions.length}
+                mcqCount={countPresentation.actualMcqCount}
+                theoryCount={countPresentation.actualTheoryCount}
                 mcqCompleted={mcqCompleted}
                 theoryCompleted={theoryCompleted}
                 onStartMcq={handleStartMcq}

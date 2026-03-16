@@ -7,14 +7,16 @@ import os
 import random
 import re
 from collections import defaultdict
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from app.core.db import db_conn
 from app.core.llm import get_quiz_generator  # you will add this in step 3.2
 from app.core.migrations import ensure_learning_analytics_schema, ensure_quiz_jobs_schema
+from app.lib.quiz_counts import count_items_by_type, resolve_requested_counts, validate_quiz_counts
 from app.lib.tags import normalize_tag_names, sync_quiz_question_tags
 
 POLL_SECONDS = 2
+QUIZ_GENERATION_RETRIES = max(1, int(os.environ.get("QUIZ_GENERATION_RETRIES", "2")))
 log = logging.getLogger("uvicorn.error")
 
 
@@ -42,11 +44,30 @@ def _extract_retry_after(message: str) -> Optional[str]:
     return match.group(1).strip()
 
 
+class QuizGenerationCountError(RuntimeError):
+    def __init__(self, details: Dict[str, Any]):
+        self.details = details
+        super().__init__(details.get("failure_reason") or "quiz_generation_count_validation_failed")
+
+
+async def _ensure_quiz_count_columns(cur) -> None:
+    await cur.execute("ALTER TABLE quiz_jobs ADD COLUMN IF NOT EXISTS requested_mcq_count INT")
+    await cur.execute("ALTER TABLE quiz_jobs ADD COLUMN IF NOT EXISTS requested_theory_count INT")
+    await cur.execute("ALTER TABLE quiz_jobs ADD COLUMN IF NOT EXISTS actual_mcq_count INT")
+    await cur.execute("ALTER TABLE quiz_jobs ADD COLUMN IF NOT EXISTS actual_theory_count INT")
+    await cur.execute("ALTER TABLE quiz_jobs ADD COLUMN IF NOT EXISTS failure_reason TEXT")
+    await cur.execute("ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS requested_mcq_count INT")
+    await cur.execute("ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS requested_theory_count INT")
+    await cur.execute("ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS actual_mcq_count INT")
+    await cur.execute("ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS actual_theory_count INT")
+
+
 # -------------------------
 # 1) Claim a queued quiz job
 # -------------------------
 async def _fetch_and_claim_job() -> Optional[Dict[str, Any]]:
     async with db_conn() as (conn, cur):
+        await _ensure_quiz_count_columns(cur)
         await cur.execute(
             """
             UPDATE quiz_jobs
@@ -58,7 +79,8 @@ async def _fetch_and_claim_job() -> Optional[Dict[str, Any]]:
                 LIMIT 1
                 FOR UPDATE SKIP LOCKED
             )
-            RETURNING id::text, user_id, class_id, file_id::text, payload
+            RETURNING id::text, user_id, class_id, file_id::text, payload,
+                      requested_mcq_count, requested_theory_count
             """
         )
         row = await cur.fetchone()
@@ -254,11 +276,13 @@ async def _fetch_chunks(file_id: str, limit: int = 500) -> List[Dict[str, Any]]:
 
 def _build_prompt(
     chunks: List[Dict[str, Any]],
-    n_questions: int,
-    mcq_count: Optional[int],
+    requested_count: int,
     types: List[str],
     difficulty: str,
     variation_nonce: str,
+    batch_label: str,
+    total_requested_mcq_count: int,
+    total_requested_theory_count: int,
 ) -> str:
     def _excerpt(text: Optional[str], max_chars: int = 900) -> str:
         compact = " ".join((text or "").split())
@@ -273,19 +297,21 @@ def _build_prompt(
 
     context = "\n\n---\n\n".join(joined)
     non_mcq_types = [t for t in types if t != "mcq"] or ["conceptual", "definition", "scenario", "short_qa"]
-
-    mix_instruction = (
-        f"Try to include about {mcq_count} MCQs and {max(0, n_questions - (mcq_count or 0))} non-MCQs."
-        if mcq_count is not None
-        else "Use a balanced mix of allowed types."
+    is_mcq_batch = batch_label == "mcq"
+    type_rule = (
+        '- Every item must use type "mcq".'
+        if is_mcq_batch
+        else f"- Every item must use one of these non-MCQ types only: {non_mcq_types}."
     )
 
     return f"""
 You are an exam-quality quiz generator.
 
 TASK:
-Generate {n_questions} distinct quiz items STRICTLY based on the provided context.
+Generate EXACTLY {requested_count} distinct {batch_label} quiz items STRICTLY based on the provided context.
 Do NOT use outside knowledge.
+OVERALL QUIZ REQUEST: {total_requested_mcq_count} MCQs and {total_requested_theory_count} theory questions.
+THIS BATCH MUST RETURN: exactly {requested_count} {batch_label} items.
 
 ALLOWED QUESTION TYPES: {types}
 DIFFICULTY: {difficulty}
@@ -295,7 +321,10 @@ QUALITY RULES:
 - Prioritize reasoning, recall, and comprehension over shallow extraction.
 - Cover different parts of the context (avoid clustering).
 - Avoid rephrasing the same question multiple times.
-- {mix_instruction}
+- Return exactly {requested_count} items.
+- Do not return fewer or more items.
+- Do not include disallowed question types.
+{type_rule}
 
 FORMAT RULES:
 - For MCQ (type="mcq"): exactly 4 options and one correct_index.
@@ -498,17 +527,282 @@ def _assemble_final_questions(
     for item in picked:
         final_items.append(_shuffle_mcq_options(item, rng))
     return final_items
+
+
+def _build_failure_details(
+    requested_mcq_count: int,
+    requested_theory_count: int,
+    actual_mcq_count: int,
+    actual_theory_count: int,
+    failure_reason: str,
+) -> Dict[str, Any]:
+    details = validate_quiz_counts(
+        requested_mcq_count=requested_mcq_count,
+        requested_theory_count=requested_theory_count,
+        actual_mcq_count=actual_mcq_count,
+        actual_theory_count=actual_theory_count,
+    )
+    details["failure_reason"] = failure_reason
+    return details
+
+
+async def _generate_exact_batch(
+    *,
+    gen,
+    all_chunks: List[Dict[str, Any]],
+    requested_count: int,
+    allowed_types: List[str],
+    difficulty: str,
+    batch_label: str,
+    recent_fps: Set[str],
+    recent_questions: List[str],
+    rng: random.Random,
+    total_requested_mcq_count: int,
+    total_requested_theory_count: int,
+    max_attempts: int = QUIZ_GENERATION_RETRIES,
+) -> Tuple[List[Dict[str, Any]], List[str]]:
+    if requested_count <= 0:
+        return [], []
+
+    aggregated_items: List[Dict[str, Any]] = []
+    title_candidates: List[str] = []
+    used_fps: Set[str] = set()
+
+    for attempt in range(max_attempts):
+        remaining = requested_count - len(aggregated_items)
+        if remaining <= 0:
+            break
+
+        context_size = min(len(all_chunks), max(8, min(18, remaining * 3)))
+        sampled_chunks = _sample_chunks_distributed(all_chunks, context_size, rng)
+        prompt = _build_prompt(
+            sampled_chunks,
+            requested_count=min(requested_count, remaining + 2),
+            types=allowed_types,
+            difficulty=difficulty,
+            variation_nonce=f"{batch_label}-{attempt + 1}-{rng.randint(1000, 999999)}",
+            batch_label=batch_label,
+            total_requested_mcq_count=total_requested_mcq_count,
+            total_requested_theory_count=total_requested_theory_count,
+        )
+        log.info(
+            "[quiz_worker] %s batch prompt attempt=%s requested=%s overall_mcq=%s overall_theory=%s context_chunks=%s prompt_preview=%s",
+            batch_label,
+            attempt + 1,
+            requested_count,
+            total_requested_mcq_count,
+            total_requested_theory_count,
+            len(sampled_chunks),
+            prompt[:800],
+        )
+        try:
+            result = await gen(prompt)
+        except Exception as err:
+            if _is_rate_limit_error_message(str(err)):
+                raise
+            log.warning(
+                "[quiz_worker] %s batch generation failed attempt=%s requested=%s error=%s",
+                batch_label,
+                attempt + 1,
+                requested_count,
+                err,
+            )
+            continue
+        title_candidates.append(str(result.get("title") or "Quiz"))
+
+        raw_items = result.get("items", [])
+        sanitized = _sanitize_generated_items(
+            raw_items,
+            allowed_types=allowed_types,
+            difficulty=difficulty,
+        )
+        deduped = _dedupe_candidates(sanitized)
+        selected = _pick_with_coverage(
+            pool=deduped,
+            needed=remaining,
+            recent_fps=recent_fps,
+            recent_questions=recent_questions[:120],
+            used_fps=used_fps,
+            rng=rng,
+        )
+        if len(selected) < remaining:
+            supplemental = _pick_with_coverage(
+                pool=deduped,
+                needed=remaining - len(selected),
+                recent_fps=set(),
+                recent_questions=[],
+                used_fps=used_fps,
+                rng=rng,
+            )
+            selected.extend(supplemental)
+        aggregated_items.extend(selected)
+
+        log.info(
+            "[quiz_worker] %s batch counts attempt=%s generated_count_raw=%s parsed_count=%s valid_count=%s deduped_count=%s final_count=%s accumulated_count=%s",
+            batch_label,
+            attempt + 1,
+            len(raw_items) if isinstance(raw_items, list) else 0,
+            len(raw_items) if isinstance(raw_items, list) else 0,
+            len(sanitized),
+            len(deduped),
+            len(selected),
+            len(aggregated_items),
+        )
+
+        if len(aggregated_items) >= requested_count:
+            break
+
+    if len(aggregated_items) != requested_count:
+        actual_mcq_count, actual_theory_count = count_items_by_type(aggregated_items)
+        if batch_label == "mcq":
+            raise QuizGenerationCountError(
+                _build_failure_details(
+                    requested_mcq_count=requested_count,
+                    requested_theory_count=0,
+                    actual_mcq_count=actual_mcq_count,
+                    actual_theory_count=actual_theory_count,
+                    failure_reason="insufficient_mcq_questions_generated",
+                )
+            )
+        raise QuizGenerationCountError(
+            _build_failure_details(
+                requested_mcq_count=0,
+                requested_theory_count=requested_count,
+                actual_mcq_count=actual_mcq_count,
+                actual_theory_count=actual_theory_count,
+                failure_reason="insufficient_theory_questions_generated",
+            )
+        )
+
+    return aggregated_items[:requested_count], title_candidates
+
+
+async def _generate_quiz_items_exact(
+    *,
+    gen,
+    all_chunks: List[Dict[str, Any]],
+    requested_mcq_count: int,
+    requested_theory_count: int,
+    theory_types: List[str],
+    difficulty: str,
+    recent_fps: Set[str],
+    recent_questions: List[str],
+    rng: random.Random,
+) -> Tuple[List[Dict[str, Any]], str, Dict[str, Any]]:
+    mcq_items, mcq_titles, theory_items, theory_titles = [], [], [], []
+    if requested_mcq_count > 0 and requested_theory_count > 0:
+        mcq_task = _generate_exact_batch(
+            gen=gen,
+            all_chunks=all_chunks,
+            requested_count=requested_mcq_count,
+            allowed_types=["mcq"],
+            difficulty=difficulty,
+            batch_label="mcq",
+            recent_fps=recent_fps,
+            recent_questions=recent_questions,
+            rng=random.Random(rng.randint(1, 10**9)),
+            total_requested_mcq_count=requested_mcq_count,
+            total_requested_theory_count=requested_theory_count,
+        )
+        theory_task = _generate_exact_batch(
+            gen=gen,
+            all_chunks=all_chunks,
+            requested_count=requested_theory_count,
+            allowed_types=theory_types,
+            difficulty=difficulty,
+            batch_label="theory",
+            recent_fps=recent_fps,
+            recent_questions=recent_questions,
+            rng=random.Random(rng.randint(1, 10**9)),
+            total_requested_mcq_count=requested_mcq_count,
+            total_requested_theory_count=requested_theory_count,
+        )
+        (mcq_items, mcq_titles), (theory_items, theory_titles) = await asyncio.gather(mcq_task, theory_task)
+    elif requested_mcq_count > 0:
+        mcq_items, mcq_titles = await _generate_exact_batch(
+            gen=gen,
+            all_chunks=all_chunks,
+            requested_count=requested_mcq_count,
+            allowed_types=["mcq"],
+            difficulty=difficulty,
+            batch_label="mcq",
+            recent_fps=recent_fps,
+            recent_questions=recent_questions,
+            rng=random.Random(rng.randint(1, 10**9)),
+            total_requested_mcq_count=requested_mcq_count,
+            total_requested_theory_count=requested_theory_count,
+        )
+    elif requested_theory_count > 0:
+        theory_items, theory_titles = await _generate_exact_batch(
+            gen=gen,
+            all_chunks=all_chunks,
+            requested_count=requested_theory_count,
+            allowed_types=theory_types,
+            difficulty=difficulty,
+            batch_label="theory",
+            recent_fps=recent_fps,
+            recent_questions=recent_questions,
+            rng=random.Random(rng.randint(1, 10**9)),
+            total_requested_mcq_count=requested_mcq_count,
+            total_requested_theory_count=requested_theory_count,
+        )
+
+    items = [_shuffle_mcq_options(item, rng) for item in mcq_items] + theory_items
+    actual_mcq_count, actual_theory_count = count_items_by_type(items)
+    validation = validate_quiz_counts(
+        requested_mcq_count=requested_mcq_count,
+        requested_theory_count=requested_theory_count,
+        actual_mcq_count=actual_mcq_count,
+        actual_theory_count=actual_theory_count,
+    )
+    if not validation["is_valid"]:
+        raise QuizGenerationCountError(validation)
+
+    title = next((t for t in mcq_titles + theory_titles if t and t.strip()), "Quiz")
+    return items, title, validation
 # 3) Save quiz + questions
 # -------------------------
-async def _save_quiz(user_id: str, class_id: int, file_id: str, title: str, settings: Dict[str, Any], items: List[Dict[str, Any]]) -> str:
+async def _save_quiz(
+    user_id: str,
+    class_id: int,
+    file_id: str,
+    title: str,
+    settings: Dict[str, Any],
+    items: List[Dict[str, Any]],
+    requested_mcq_count: int,
+    requested_theory_count: int,
+    actual_mcq_count: int,
+    actual_theory_count: int,
+) -> str:
     async with db_conn() as (conn, cur):
+        await _ensure_quiz_count_columns(cur)
         await cur.execute(
             """
-            INSERT INTO quizzes (class_id, file_id, title, settings, created_by)
-            VALUES (%s, %s, %s, %s::jsonb, %s)
+            INSERT INTO quizzes (
+                class_id,
+                file_id,
+                title,
+                settings,
+                created_by,
+                requested_mcq_count,
+                requested_theory_count,
+                actual_mcq_count,
+                actual_theory_count
+            )
+            VALUES (%s, %s, %s, %s::jsonb, %s, %s, %s, %s, %s)
             RETURNING id::text
             """,
-            (class_id, file_id, title or "Quiz", json.dumps(settings), user_id),
+            (
+                class_id,
+                file_id,
+                title or "Quiz",
+                json.dumps(settings),
+                user_id,
+                requested_mcq_count,
+                requested_theory_count,
+                actual_mcq_count,
+                actual_theory_count,
+            ),
         )
         quiz_id = (await cur.fetchone())[0]
 
@@ -562,28 +856,61 @@ async def _save_quiz(user_id: str, class_id: int, file_id: str, title: str, sett
 # -------------------------
 # 4) Mark job status
 # -------------------------
-async def _set_job_failed(job_id: str, message: str):
+async def _set_job_failed(job_id: str, message: str, details: Optional[Dict[str, Any]] = None):
+    details = details or {}
     async with db_conn() as (conn, cur):
+        await _ensure_quiz_count_columns(cur)
         await cur.execute(
             """
             UPDATE quiz_jobs
-            SET status='failed', progress=100, error_message=%s, finished_at=now()
+            SET status='failed',
+                progress=100,
+                error_message=%s,
+                failure_reason=%s,
+                requested_mcq_count=COALESCE(%s, requested_mcq_count),
+                requested_theory_count=COALESCE(%s, requested_theory_count),
+                actual_mcq_count=%s,
+                actual_theory_count=%s,
+                finished_at=now()
             WHERE id=%s
             """,
-            (message[:1000], job_id),
+            (
+                message[:1000],
+                details.get("failure_reason"),
+                details.get("requested_mcq_count"),
+                details.get("requested_theory_count"),
+                details.get("actual_mcq_count"),
+                details.get("actual_theory_count"),
+                job_id,
+            ),
         )
         await conn.commit()
 
 
-async def _set_job_completed(job_id: str):
+async def _set_job_completed(job_id: str, details: Dict[str, Any]):
     async with db_conn() as (conn, cur):
+        await _ensure_quiz_count_columns(cur)
         await cur.execute(
             """
             UPDATE quiz_jobs
-            SET status='completed', progress=100, finished_at=now()
+            SET status='completed',
+                progress=100,
+                error_message=NULL,
+                failure_reason=NULL,
+                requested_mcq_count=COALESCE(%s, requested_mcq_count),
+                requested_theory_count=COALESCE(%s, requested_theory_count),
+                actual_mcq_count=%s,
+                actual_theory_count=%s,
+                finished_at=now()
             WHERE id=%s
             """,
-            (job_id,),
+            (
+                details.get("requested_mcq_count"),
+                details.get("requested_theory_count"),
+                details.get("actual_mcq_count"),
+                details.get("actual_theory_count"),
+                job_id,
+            ),
         )
         await conn.commit()
 
@@ -624,6 +951,12 @@ async def run():
                 mcq_count = int(mcq_count)
             types = settings.get("types", ["mcq", "conceptual"])
             difficulty = settings.get("difficulty", "medium")
+            requested_mcq_count, requested_theory_count = resolve_requested_counts(
+                n_questions=n_questions,
+                mcq_count=mcq_count,
+                types=types,
+            )
+            theory_types = [str(t).strip().lower() for t in types if str(t).strip().lower() != "mcq"]
 
             await _set_job_progress(job_id, 15)
 
@@ -645,81 +978,30 @@ async def run():
 
             await _set_job_progress(job_id, 35)
 
-            # Keep token usage moderate to avoid provider TPD/TPM spikes.
-            candidate_target = min(36, max(n_questions * 2, n_questions + 6))
-            candidate_mcq_target: Optional[int] = None
-            if mcq_count is not None and n_questions > 0:
-                candidate_mcq_target = max(0, min(candidate_target, round(candidate_target * (mcq_count / n_questions))))
-
-            aggregated_items: List[Dict[str, Any]] = []
-            title_candidates: List[str] = []
-            generation_rounds = 3
-            context_size = min(len(all_chunks), max(12, n_questions * 2))
-            rate_limit_failure_message: Optional[str] = None
-
-            for i in range(generation_rounds):
-                sampled_chunks = _sample_chunks_distributed(all_chunks, context_size, rng)
-                nonce = f"{job_id}-{i}-{rng.randint(1000, 999999)}"
-                prompt = _build_prompt(
-                    sampled_chunks,
-                    n_questions=candidate_target,
-                    mcq_count=candidate_mcq_target,
-                    types=types,
-                    difficulty=difficulty,
-                    variation_nonce=nonce,
-                )
-                try:
-                    result = await gen(prompt)
-                except Exception as round_err:
-                    round_err_text = str(round_err)
-                    if _is_rate_limit_error_message(round_err_text):
-                        retry_after = _extract_retry_after(round_err_text)
-                        rate_limit_failure_message = (
-                            "Quiz generation is temporarily limited by the AI provider (rate limit or billing/quota)."
-                            f"{f' Please try again in about {retry_after}.' if retry_after else ' Please try again later.'}"
-                        )
-                        log.warning(
-                            "[quiz_worker] rate-limited job=%s round=%s; stopping further rounds: %s",
-                            job_id,
-                            i + 1,
-                            round_err_text,
-                        )
-                        break
-                    log.warning(
-                        "[quiz_worker] generation round failed job=%s round=%s error=%s",
-                        job_id,
-                        i + 1,
-                        round_err,
-                    )
-                    continue
-                title_candidates.append(str(result.get("title") or "Quiz"))
-                raw_items = result.get("items", [])
-                aggregated_items.extend(
-                    _sanitize_generated_items(raw_items, allowed_types=types, difficulty=difficulty)
-                )
-                if len(aggregated_items) >= candidate_target * 2:
-                    break
-
             await _set_job_progress(job_id, 70)
 
-            if not aggregated_items:
-                if rate_limit_failure_message:
-                    raise RuntimeError(rate_limit_failure_message)
-                raise RuntimeError("Quiz model returned no parseable question candidates.")
+            if requested_theory_count > 0 and not theory_types:
+                raise QuizGenerationCountError(
+                    _build_failure_details(
+                        requested_mcq_count=requested_mcq_count,
+                        requested_theory_count=requested_theory_count,
+                        actual_mcq_count=0,
+                        actual_theory_count=0,
+                        failure_reason="missing_allowed_theory_types",
+                    )
+                )
 
-            items = _assemble_final_questions(
-                candidate_items=aggregated_items,
-                n_questions=n_questions,
-                mcq_count=mcq_count,
-                types=types,
+            items, title, validation = await _generate_quiz_items_exact(
+                gen=gen,
+                all_chunks=all_chunks,
+                requested_mcq_count=requested_mcq_count,
+                requested_theory_count=requested_theory_count,
+                theory_types=theory_types,
+                difficulty=difficulty,
                 recent_fps=recent_fps,
-                recent_questions=recent_questions[:120],
+                recent_questions=recent_questions,
                 rng=rng,
             )
-            if len(items) < n_questions:
-                raise RuntimeError(f"Could not assemble enough diverse questions ({len(items)}/{n_questions}).")
-
-            title = next((t for t in title_candidates if t and t.strip()), "Quiz")
             quiz_id = await _save_quiz(
                 user_id=user_id,
                 class_id=class_id,
@@ -727,12 +1009,24 @@ async def run():
                 title=title,
                 settings=settings,
                 items=items,
+                requested_mcq_count=requested_mcq_count,
+                requested_theory_count=requested_theory_count,
+                actual_mcq_count=validation["actual_mcq_count"],
+                actual_theory_count=validation["actual_theory_count"],
             )
 
             await _set_job_progress(job_id, 95)
-            await _set_job_completed(job_id)
+            await _set_job_completed(job_id, validation)
 
-            log.info(f"[quiz_worker] completed job={job_id} quiz_id={quiz_id}")
+            log.info(
+                "[quiz_worker] completed job=%s quiz_id=%s requested_mcq=%s requested_theory=%s actual_mcq=%s actual_theory=%s",
+                job_id,
+                quiz_id,
+                requested_mcq_count,
+                requested_theory_count,
+                validation["actual_mcq_count"],
+                validation["actual_theory_count"],
+            )
 
         except Exception as e:
             log.exception(f"[quiz_worker] failed job={job_id}: {e}")
@@ -744,6 +1038,20 @@ async def run():
                     + (f" Please try again in about {retry_after}." if retry_after else " Please try again later.")
                 )
                 await _set_job_failed(job_id, detail)
+                continue
+            if isinstance(e, QuizGenerationCountError):
+                details = e.details
+                await _set_job_failed(
+                    job_id,
+                    (
+                        f"Quiz generation failed: {details.get('failure_reason')}. "
+                        f"Requested {details.get('requested_mcq_count', 0)} MCQs and "
+                        f"{details.get('requested_theory_count', 0)} theory questions, but got "
+                        f"{details.get('actual_mcq_count', 0)} MCQs and "
+                        f"{details.get('actual_theory_count', 0)} theory questions."
+                    ),
+                    details,
+                )
                 continue
             await _set_job_failed(
                 job_id,

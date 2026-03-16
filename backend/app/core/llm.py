@@ -399,8 +399,15 @@ def get_quiz_generator() -> Callable[[str], Any]:
             for v in variants:
                 try:
                     data = json.loads(v)
-                    if isinstance(data, dict) and isinstance(data.get("items"), list):
-                        return data
+                    if isinstance(data, dict):
+                        items = data.get("items")
+                        if isinstance(items, dict):
+                            data["items"] = [items]
+                            items = data["items"]
+                        if isinstance(items, list):
+                            return data
+                    if isinstance(data, list):
+                        return {"title": "Quiz", "items": data}
                 except Exception:
                     continue
             return None
@@ -428,6 +435,12 @@ def get_quiz_generator() -> Callable[[str], Any]:
         parsed = _coerce_json(candidate)
         if parsed is not None:
             return parsed
+
+        log.warning(
+            "[quiz_llm] failed_initial_parse raw_preview=%s candidate_preview=%s",
+            raw[:800],
+            candidate[:800],
+        )
 
         # Multi-pass repair: model occasionally emits very long malformed JSON.
         repair_system = (
@@ -465,6 +478,12 @@ def get_quiz_generator() -> Callable[[str], Any]:
             if parsed is not None:
                 return parsed
             last_candidate = repaired_candidate or repaired_raw
+
+        log.warning(
+            "[quiz_llm] failed_parse_after_repair raw_preview=%s candidate_preview=%s",
+            raw[:800],
+            candidate[:800],
+        )
 
         raise ValueError("Failed to parse quiz JSON after repair attempts")
 
