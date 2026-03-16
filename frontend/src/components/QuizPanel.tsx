@@ -43,6 +43,30 @@ export default function QuizPanel({ classId, files, onQuizCreated }: QuizPanelPr
     return String(raw);
   }
 
+  function extractJobFailureMessage(status: unknown): string | null {
+    if (!status || typeof status !== "object") return null;
+    const payload = status as Record<string, unknown>;
+    const candidates = [
+      payload.error_message,
+      payload.error,
+      payload.detail,
+      payload.message,
+    ];
+
+    for (const value of candidates) {
+      if (typeof value === "string" && value.trim()) {
+        return value.trim();
+      }
+      if (value && typeof value === "object") {
+        const msg = (value as Record<string, unknown>).message;
+        if (typeof msg === "string" && msg.trim()) {
+          return msg.trim();
+        }
+      }
+    }
+    return null;
+  }
+
   function toggleSubjectiveType(type: string) {
     setSelectedSubjectiveTypes((prev) =>
       prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type]
@@ -125,7 +149,10 @@ export default function QuizPanel({ classId, files, onQuizCreated }: QuizPanelPr
             clearInterval(pollInterval);
             setGenerating(false);
             setJobId(null);
-            setError(status.error_message || "Something went wrong while generating quiz. Please try again.");
+            setError(
+              extractJobFailureMessage(status) ||
+                "Something went wrong while generating quiz. Please try again."
+            );
           }
         } catch (err: any) {
           console.error("Error polling job:", err);
