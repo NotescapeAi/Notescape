@@ -4,6 +4,10 @@ import { QuizAnalyticsSummary, QuizDailyStreakItem } from "../lib/api";
 
 type ActivityHeatmapProps = {
   summary: QuizAnalyticsSummary;
+import { QuizDailyStreakItem, QuizHistoryItem } from "../lib/api";
+
+type ActivityHeatmapProps = {
+  history: QuizHistoryItem[];
   streakDays: QuizDailyStreakItem[];
 };
 
@@ -24,6 +28,7 @@ function karachiDayKey(date: Date): string {
 }
 
 export default function ActivityHeatmap({ summary, streakDays }: ActivityHeatmapProps) {
+export default function ActivityHeatmap({ history, streakDays }: ActivityHeatmapProps) {
   const [selectedYear, setSelectedYear] = useState(Number(karachiDayKey(new Date()).slice(0, 4)));
 
   // Bubble color source of truth: persisted daily streak records.
@@ -42,6 +47,9 @@ export default function ActivityHeatmap({ summary, streakDays }: ActivityHeatmap
     const totalAttempts = summary.total_attempts;
     const passed = summary.passed_attempts;
     const failed = summary.failed_attempts;
+    const totalAttempts = history.length;
+    const passed = history.filter(h => h.passed).length;
+    const failed = totalAttempts - passed;
 
     // Consecutive days streak
     // Check backwards from today (or last active day)

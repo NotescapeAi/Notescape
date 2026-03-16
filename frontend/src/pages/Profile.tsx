@@ -9,6 +9,7 @@ import {
   type QuizDailyStreakItem,
   type QuizAnalyticsSummary,
 } from "../lib/api";
+import { uploadAvatar, getQuizHistory, getQuizDailyStreak, type QuizHistoryItem, type QuizDailyStreakItem } from "../lib/api";
 import ImageCropper from "../components/ImageCropper";
 import ActivityHeatmap from "../components/ActivityHeatmap";
 
@@ -22,6 +23,8 @@ export default function Profile() {
     passed_attempts: 0,
     failed_attempts: 0,
   });
+  const [quizHistory, setQuizHistory] = useState<QuizHistoryItem[]>([]);
+  const [quizStreakDays, setQuizStreakDays] = useState<QuizDailyStreakItem[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
   
   // Local state for form fields
@@ -58,6 +61,12 @@ export default function Profile() {
         ]);
         setQuizStreakDays(streakData);
         setQuizSummary(summaryData);
+        const [historyData, streakData] = await Promise.all([
+          getQuizHistory(),
+          getQuizDailyStreak(),
+        ]);
+        setQuizHistory(historyData);
+        setQuizStreakDays(streakData);
       } catch (err) {
         console.error("Failed to load quiz activity", err);
       } finally {
@@ -365,6 +374,7 @@ export default function Profile() {
               <div className="py-8 text-center text-muted">Loading activity...</div>
            ) : (
               <ActivityHeatmap summary={quizSummary} streakDays={quizStreakDays} />
+              <ActivityHeatmap history={quizHistory} streakDays={quizStreakDays} />
            )}
         </div>
       </div>

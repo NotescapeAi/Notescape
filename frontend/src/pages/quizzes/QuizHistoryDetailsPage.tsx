@@ -10,6 +10,8 @@ import { getQuizCountPresentation } from "./quizCountUtils";
 
 const KARACHI_TZ = "Asia/Karachi";
 
+const KARACHI_TZ = "Asia/Karachi";
+
 export default function QuizHistoryDetailsPage() {
   const { attemptId } = useParams();
   const navigate = useNavigate();

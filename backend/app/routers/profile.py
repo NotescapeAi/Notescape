@@ -281,6 +281,7 @@ async def update_profile(request: Request, payload: ProfileUpdate, user_id: str 
     if "display_name" in provided_fields:
         if payload.display_name is None:
             raise HTTPException(status_code=400, detail="Display name cannot be empty.")
+    if payload.display_name is not None:
         trimmed_display_name = payload.display_name.strip()
         if not trimmed_display_name:
             raise HTTPException(status_code=400, detail="Display name cannot be empty.")

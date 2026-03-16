@@ -270,7 +270,6 @@ class QuizDailyStreakItem(BaseModel):
     status: Literal["passed", "failed"]
     updated_at: Optional[str] = None
 
-
 class QuizAnalyticsSummary(BaseModel):
     total_attempts: int
     passed_attempts: int
@@ -442,6 +441,7 @@ async def get_quiz_history(user_id: str = Depends(get_request_user_uid)):
             WHERE qa.user_id = %s
               AND qa.status = 'submitted'
               AND qa.hidden_from_history = FALSE
+            WHERE qa.user_id = %s AND qa.status = 'submitted'
             ORDER BY attempted_at DESC
             """,
             (user_id,)

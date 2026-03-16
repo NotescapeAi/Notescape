@@ -8,6 +8,7 @@ import random
 import re
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set
 
 from app.core.db import db_conn
 from app.core.llm import get_quiz_generator  # you will add this in step 3.2
@@ -283,6 +284,11 @@ def _build_prompt(
     batch_label: str,
     total_requested_mcq_count: int,
     total_requested_theory_count: int,
+    n_questions: int,
+    mcq_count: Optional[int],
+    types: List[str],
+    difficulty: str,
+    variation_nonce: str,
 ) -> str:
     def _excerpt(text: Optional[str], max_chars: int = 900) -> str:
         compact = " ".join((text or "").split())
@@ -302,6 +308,11 @@ def _build_prompt(
         '- Every item must use type "mcq".'
         if is_mcq_batch
         else f"- Every item must use one of these non-MCQ types only: {non_mcq_types}."
+
+    mix_instruction = (
+        f"Try to include about {mcq_count} MCQs and {max(0, n_questions - (mcq_count or 0))} non-MCQs."
+        if mcq_count is not None
+        else "Use a balanced mix of allowed types."
     )
 
     return f"""
@@ -309,6 +320,7 @@ You are an exam-quality quiz generator.
 
 TASK:
 Generate EXACTLY {requested_count} distinct {batch_label} quiz items STRICTLY based on the provided context.
+Generate {n_questions} distinct quiz items STRICTLY based on the provided context.
 Do NOT use outside knowledge.
 OVERALL QUIZ REQUEST: {total_requested_mcq_count} MCQs and {total_requested_theory_count} theory questions.
 THIS BATCH MUST RETURN: exactly {requested_count} {batch_label} items.
@@ -325,6 +337,7 @@ QUALITY RULES:
 - Do not return fewer or more items.
 - Do not include disallowed question types.
 {type_rule}
+- {mix_instruction}
 
 FORMAT RULES:
 - For MCQ (type="mcq"): exactly 4 options and one correct_index.
@@ -975,6 +988,13 @@ async def run():
                 file_id=file_id,
                 recent_quizzes=12,
             )
+            recent_questions = await _fetch_recent_questions(
+                user_id=user_id,
+                file_id=file_id,
+                recent_quizzes=12,
+            )
+
+            await _set_job_progress(job_id, 35)
 
             await _set_job_progress(job_id, 35)
 
@@ -1002,6 +1022,81 @@ async def run():
                 recent_questions=recent_questions,
                 rng=rng,
             )
+            # Keep token usage moderate to avoid provider TPD/TPM spikes.
+            candidate_target = min(36, max(n_questions * 2, n_questions + 6))
+            candidate_mcq_target: Optional[int] = None
+            if mcq_count is not None and n_questions > 0:
+                candidate_mcq_target = max(0, min(candidate_target, round(candidate_target * (mcq_count / n_questions))))
+
+            aggregated_items: List[Dict[str, Any]] = []
+            title_candidates: List[str] = []
+            generation_rounds = 3
+            context_size = min(len(all_chunks), max(12, n_questions * 2))
+            rate_limit_failure_message: Optional[str] = None
+
+            for i in range(generation_rounds):
+                sampled_chunks = _sample_chunks_distributed(all_chunks, context_size, rng)
+                nonce = f"{job_id}-{i}-{rng.randint(1000, 999999)}"
+                prompt = _build_prompt(
+                    sampled_chunks,
+                    n_questions=candidate_target,
+                    mcq_count=candidate_mcq_target,
+                    types=types,
+                    difficulty=difficulty,
+                    variation_nonce=nonce,
+                )
+                try:
+                    result = await gen(prompt)
+                except Exception as round_err:
+                    round_err_text = str(round_err)
+                    if _is_rate_limit_error_message(round_err_text):
+                        retry_after = _extract_retry_after(round_err_text)
+                        rate_limit_failure_message = (
+                            "Quiz generation is temporarily limited by the AI provider (rate limit or billing/quota)."
+                            f"{f' Please try again in about {retry_after}.' if retry_after else ' Please try again later.'}"
+                        )
+                        log.warning(
+                            "[quiz_worker] rate-limited job=%s round=%s; stopping further rounds: %s",
+                            job_id,
+                            i + 1,
+                            round_err_text,
+                        )
+                        break
+                    log.warning(
+                        "[quiz_worker] generation round failed job=%s round=%s error=%s",
+                        job_id,
+                        i + 1,
+                        round_err,
+                    )
+                    continue
+                title_candidates.append(str(result.get("title") or "Quiz"))
+                raw_items = result.get("items", [])
+                aggregated_items.extend(
+                    _sanitize_generated_items(raw_items, allowed_types=types, difficulty=difficulty)
+                )
+                if len(aggregated_items) >= candidate_target * 2:
+                    break
+
+            await _set_job_progress(job_id, 70)
+
+            if not aggregated_items:
+                if rate_limit_failure_message:
+                    raise RuntimeError(rate_limit_failure_message)
+                raise RuntimeError("Quiz model returned no parseable question candidates.")
+
+            items = _assemble_final_questions(
+                candidate_items=aggregated_items,
+                n_questions=n_questions,
+                mcq_count=mcq_count,
+                types=types,
+                recent_fps=recent_fps,
+                recent_questions=recent_questions[:120],
+                rng=rng,
+            )
+            if len(items) < n_questions:
+                raise RuntimeError(f"Could not assemble enough diverse questions ({len(items)}/{n_questions}).")
+
+            title = next((t for t in title_candidates if t and t.strip()), "Quiz")
             quiz_id = await _save_quiz(
                 user_id=user_id,
                 class_id=class_id,
