@@ -276,7 +276,11 @@ async def update_profile(request: Request, payload: ProfileUpdate, user_id: str 
     # We now allow all users to update their profile (display name, avatar)
     data = await _upsert_user_from_firebase(request, user_id)
     updates = {}
-    if payload.display_name is not None:
+    provided_fields = payload.model_fields_set
+
+    if "display_name" in provided_fields:
+        if payload.display_name is None:
+            raise HTTPException(status_code=400, detail="Display name cannot be empty.")
         trimmed_display_name = payload.display_name.strip()
         if not trimmed_display_name:
             raise HTTPException(status_code=400, detail="Display name cannot be empty.")
@@ -284,8 +288,9 @@ async def update_profile(request: Request, payload: ProfileUpdate, user_id: str 
             raise HTTPException(status_code=400, detail="Display name must be 120 characters or fewer.")
         updates["display_name"] = trimmed_display_name
     
-    if payload.avatar_url is not None:
-        val = payload.avatar_url.strip() or None
+    if "avatar_url" in provided_fields:
+        val = payload.avatar_url.strip() if isinstance(payload.avatar_url, str) else None
+        val = val or None
         if val:
             # Setting a custom avatar
             updates["custom_avatar_url"] = val
@@ -296,8 +301,11 @@ async def update_profile(request: Request, payload: ProfileUpdate, user_id: str 
             # Revert to provider avatar
             updates["avatar_url"] = data.get("provider_avatar_url")
 
-    if payload.secondary_email is not None:
-        updates["secondary_email"] = payload.secondary_email.strip() or None
+    if "secondary_email" in provided_fields:
+        if payload.secondary_email is None:
+            updates["secondary_email"] = None
+        else:
+            updates["secondary_email"] = payload.secondary_email.strip() or None
 
     if updates:
         async with db_conn() as (conn, cur):

@@ -1242,6 +1242,12 @@ export type QuizDailyStreakItem = {
   updated_at?: string | null;
 };
 
+export type QuizAnalyticsSummary = {
+  total_attempts: number;
+  passed_attempts: number;
+  failed_attempts: number;
+};
+
 export type QuizAttemptDetail = {
   attempt: QuizHistoryItem;
   questions: Array<{
@@ -1272,6 +1278,16 @@ export async function getQuizDailyStreak(): Promise<QuizDailyStreakItem[]> {
   const headers = await userHeader();
   const { data } = await http.get<QuizDailyStreakItem[]>("/quizzes/streak/daily", { headers });
   return Array.isArray(data) ? data : [];
+}
+
+export async function getQuizAnalyticsSummary(): Promise<QuizAnalyticsSummary> {
+  const headers = await userHeader();
+  const { data } = await http.get<QuizAnalyticsSummary>("/quizzes/analytics/summary", { headers });
+  return {
+    total_attempts: Number(data?.total_attempts ?? 0),
+    passed_attempts: Number(data?.passed_attempts ?? 0),
+    failed_attempts: Number(data?.failed_attempts ?? 0),
+  };
 }
 
 // Get attempt detail

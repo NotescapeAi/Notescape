@@ -256,11 +256,38 @@ class QuizDailyStreakItem(BaseModel):
     status: Literal["passed", "failed"]
     updated_at: Optional[str] = None
 
+
+class QuizAnalyticsSummary(BaseModel):
+    total_attempts: int
+    passed_attempts: int
+    failed_attempts: int
+
 # ---------- endpoints ----------
 
 @router.get("/ping")
 async def ping():
     return {"status": "ok", "router": "quizzes"}
+
+
+async def _ensure_quiz_history_visibility_columns(cur) -> None:
+    await cur.execute(
+        """
+        ALTER TABLE quiz_attempts
+        ADD COLUMN IF NOT EXISTS hidden_from_history BOOLEAN NOT NULL DEFAULT FALSE
+        """
+    )
+    await cur.execute(
+        """
+        ALTER TABLE quiz_attempts
+        ADD COLUMN IF NOT EXISTS hidden_from_history_at TIMESTAMPTZ
+        """
+    )
+    await cur.execute(
+        """
+        CREATE INDEX IF NOT EXISTS quiz_attempts_user_history_visible_idx
+        ON quiz_attempts (user_id, submitted_at DESC, started_at DESC)
+        """
+    )
 
 # 1) Create quiz generation job (worker will process in Step 3)
 @router.post("/jobs", response_model=QuizJobOut)
@@ -311,6 +338,7 @@ async def get_quiz_job(job_id: UUID, user_id: str = Depends(get_request_user_uid
 @router.get("/history", response_model=List[QuizHistoryItem])
 async def get_quiz_history(user_id: str = Depends(get_request_user_uid)):
     async with db_conn() as (conn, cur):
+        await _ensure_quiz_history_visibility_columns(cur)
         await cur.execute(
             """
             SELECT 
@@ -332,7 +360,9 @@ async def get_quiz_history(user_id: str = Depends(get_request_user_uid)):
             FROM quiz_attempts qa
             JOIN quizzes q ON qa.quiz_id = q.id
             JOIN files f ON q.file_id = f.id
-            WHERE qa.user_id = %s AND qa.status = 'submitted'
+            WHERE qa.user_id = %s
+              AND qa.status = 'submitted'
+              AND qa.hidden_from_history = FALSE
             ORDER BY attempted_at DESC
             """,
             (user_id,)
@@ -363,6 +393,7 @@ async def get_quiz_history(user_id: str = Depends(get_request_user_uid)):
 @router.get("/history/{attempt_id}", response_model=QuizAttemptDetail)
 async def get_attempt_detail(attempt_id: UUID, user_id: str = Depends(get_request_user_uid)):
     async with db_conn() as (conn, cur):
+        await _ensure_quiz_history_visibility_columns(cur)
         # 1. Get attempt info
         await cur.execute(
             """
@@ -385,7 +416,9 @@ async def get_attempt_detail(attempt_id: UUID, user_id: str = Depends(get_reques
             FROM quiz_attempts qa
             JOIN quizzes q ON qa.quiz_id = q.id
             JOIN files f ON q.file_id = f.id
-            WHERE qa.id = %s AND qa.user_id = %s
+            WHERE qa.id = %s
+              AND qa.user_id = %s
+              AND qa.hidden_from_history = FALSE
             """,
             (str(attempt_id), user_id)
         )
@@ -455,14 +488,45 @@ async def get_attempt_detail(attempt_id: UUID, user_id: str = Depends(get_reques
 @router.delete("/history/{attempt_id}")
 async def delete_attempt(attempt_id: UUID, user_id: str = Depends(get_request_user_uid)):
     async with db_conn() as (conn, cur):
+        await _ensure_quiz_history_visibility_columns(cur)
         await cur.execute(
-            "DELETE FROM quiz_attempts WHERE id=%s AND user_id=%s",
+            """
+            UPDATE quiz_attempts
+            SET hidden_from_history=TRUE,
+                hidden_from_history_at=COALESCE(hidden_from_history_at, now())
+            WHERE id=%s AND user_id=%s AND status='submitted' AND hidden_from_history=FALSE
+            """,
             (str(attempt_id), user_id)
         )
         if cur.rowcount == 0:
              raise HTTPException(status_code=404, detail="Attempt not found")
         await conn.commit()
     return {"status": "deleted"}
+
+
+@router.get("/analytics/summary", response_model=QuizAnalyticsSummary)
+async def get_quiz_analytics_summary(user_id: str = Depends(get_request_user_uid)):
+    async with db_conn() as (conn, cur):
+        await _ensure_quiz_history_visibility_columns(cur)
+        await cur.execute(
+            """
+            SELECT
+                COUNT(*)::int AS total_attempts,
+                COUNT(*) FILTER (WHERE COALESCE(passed, FALSE) = TRUE)::int AS passed_attempts,
+                COUNT(*) FILTER (WHERE COALESCE(passed, FALSE) = FALSE)::int AS failed_attempts
+            FROM quiz_attempts
+            WHERE user_id = %s
+              AND status = 'submitted'
+            """,
+            (user_id,),
+        )
+        row = await cur.fetchone()
+
+    return QuizAnalyticsSummary(
+        total_attempts=int(row[0] or 0),
+        passed_attempts=int(row[1] or 0),
+        failed_attempts=int(row[2] or 0),
+    )
 
 
 @router.get("/streak/daily", response_model=List[QuizDailyStreakItem])

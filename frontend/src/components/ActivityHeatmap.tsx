@@ -1,9 +1,9 @@
 import { useMemo, useState } from "react";
 import { format, subDays, eachDayOfInterval, startOfYear, endOfYear, getDay } from "date-fns";
-import { QuizDailyStreakItem, QuizHistoryItem } from "../lib/api";
+import { QuizAnalyticsSummary, QuizDailyStreakItem } from "../lib/api";
 
 type ActivityHeatmapProps = {
-  history: QuizHistoryItem[];
+  summary: QuizAnalyticsSummary;
   streakDays: QuizDailyStreakItem[];
 };
 
@@ -23,7 +23,7 @@ function karachiDayKey(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-export default function ActivityHeatmap({ history, streakDays }: ActivityHeatmapProps) {
+export default function ActivityHeatmap({ summary, streakDays }: ActivityHeatmapProps) {
   const [selectedYear, setSelectedYear] = useState(Number(karachiDayKey(new Date()).slice(0, 4)));
 
   // Bubble color source of truth: persisted daily streak records.
@@ -39,9 +39,9 @@ export default function ActivityHeatmap({ history, streakDays }: ActivityHeatmap
 
   // 2. Calculate stats
   const stats = useMemo(() => {
-    const totalAttempts = history.length;
-    const passed = history.filter(h => h.passed).length;
-    const failed = totalAttempts - passed;
+    const totalAttempts = summary.total_attempts;
+    const passed = summary.passed_attempts;
+    const failed = summary.failed_attempts;
 
     // Consecutive days streak
     // Check backwards from today (or last active day)
@@ -70,7 +70,7 @@ export default function ActivityHeatmap({ history, streakDays }: ActivityHeatmap
     }
 
     return { totalAttempts, passed, failed, streak };
-  }, [history, activityMap]);
+  }, [summary, activityMap]);
 
   // 3. Generate grid for selected year
   const grid = useMemo(() => {
