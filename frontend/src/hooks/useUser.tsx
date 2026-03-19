@@ -4,6 +4,7 @@ import { auth } from "../firebase/firebase";
 import { getProfile, updateProfile, type ProfileData } from "../lib/api";
 
 type UserState = {
+  user: FirebaseUser | null;
   profile: ProfileData | null;
   loading: boolean;
   refresh: () => Promise<void>;
@@ -15,7 +16,7 @@ const UserContext = createContext<UserState | null>(null);
 function mapFirebaseUser(user: FirebaseUser): ProfileData {
   const providerData = user.providerData?.[0];
   const providerId = providerData?.providerId ?? "google.com";
-  const provider = providerId === "github.com" ? "github" : "google";
+  const provider = providerData?.providerId === "github.com" ? "github" : "google";
   return {
     id: user.uid,
     email: user.email ?? "",
@@ -41,6 +42,7 @@ function mergeProfiles(current: ProfileData | null, incoming: ProfileData): Prof
 }
 
 export function UserProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<FirebaseUser | null>(null);
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -62,21 +64,22 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (user) => {
-      if (!user) {
+    const unsub = onAuthStateChanged(auth, async (u) => {
+      setUser(u);
+      if (!u) {
         setProfile(null);
         setLoading(false);
         return;
       }
-      setProfile(mapFirebaseUser(user));
+      setProfile(mapFirebaseUser(u));
       await refresh();
     });
     return () => unsub();
   }, [refresh]);
 
   const value = useMemo(
-    () => ({ profile, loading, refresh, saveProfile }),
-    [profile, loading, refresh, saveProfile]
+    () => ({ user, profile, loading, refresh, saveProfile }),
+    [user, profile, loading, refresh, saveProfile]
   );
 
   return <UserContext.Provider value={value}>{children}</UserContext.Provider>;

@@ -18,7 +18,7 @@ def test_fake_quiz_generator_produces_items(monkeypatch):
         "Remaining must be subjective types\n"
     )
 
-    data = asyncio.get_event_loop().run_until_complete(gen(prompt))
+    data = asyncio.run(gen(prompt))
     assert isinstance(data, dict)
     assert "items" in data and isinstance(data["items"], list)
     assert len(data["items"]) == 6

@@ -4,6 +4,7 @@ import { useLocation, useParams } from "react-router-dom";
 import AppShell from "../layouts/AppShell";
 import Button from "../components/Button";
 import { listClasses, listFlashcards, type Flashcard } from "../lib/api";
+import { SessionManager } from "../components/SessionManager";
 
 
 type LocationState = { cards?: Flashcard[]; className?: string; startIndex?: number };
@@ -58,6 +59,7 @@ export default function FlashcardsViewMode() {
   }, [classId, state.cards, className]);
 
   useEffect(() => {
+    if (!classId) return;
     const n = Number(classId);
     if (!Number.isFinite(n) || !n) return;
     localStorage.setItem("last_class_id", String(n));
@@ -70,6 +72,31 @@ export default function FlashcardsViewMode() {
   }, [idx]);
 
   const current = useMemo<Flashcard | undefined>(() => cards[idx], [cards, idx]);
+  const interactionsKey = useMemo(() => {
+    const n = Number(classId);
+    if (!Number.isFinite(n) || !n) return null;
+    return `notescape.flashcards.session.${n}`;
+  }, [classId]);
+
+  useEffect(() => {
+    if (!interactionsKey || !current) return;
+    try {
+      const raw = sessionStorage.getItem(interactionsKey);
+      const parsed = raw ? (JSON.parse(raw) as any) : null;
+      const ids = Array.isArray(parsed?.card_ids) ? parsed.card_ids.map(String) : [];
+      const set = new Set(ids);
+      set.add(String(current.id));
+      sessionStorage.setItem(
+        interactionsKey,
+        JSON.stringify({
+          started_at: typeof parsed?.started_at === "number" ? parsed.started_at : Date.now(),
+          card_ids: Array.from(set),
+        })
+      );
+    } catch {
+      void 0;
+    }
+  }, [current, interactionsKey]);
 
   function next() {
     if (!cards.length) return;
@@ -93,6 +120,7 @@ export default function FlashcardsViewMode() {
       backLabel="Back to Flashcards"
       backTo={classId ? `/classes/${classId}/flashcards` : "/classes"}
     >
+      {classId && <SessionManager mode="Flashcards" classId={Number(classId)} endOnUnmount={false} />}
       <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6">
         <div className="rounded-[24px] surface p-6 shadow-[0_12px_30px_rgba(15,16,32,0.08)] min-h-[360px]">
           {loading ? (

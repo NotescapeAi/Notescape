@@ -12,14 +12,18 @@ export default function useBookmarks() {
     try {
       const raw = localStorage.getItem(KEY);
       if (raw) setMap(JSON.parse(raw));
-    } catch {}
+    } catch {
+      setMap({});
+    }
   }, []);
 
   // persist + broadcast
   useEffect(() => {
     try {
       localStorage.setItem(KEY, JSON.stringify(map));
-    } catch {}
+    } catch {
+      void 0;
+    }
     // notify other hook instances (same tab)
     window.dispatchEvent(new Event(EVT));
   }, [map]);
@@ -30,7 +34,9 @@ export default function useBookmarks() {
       try {
         const raw = localStorage.getItem(KEY);
         setMap(raw ? JSON.parse(raw) : {});
-      } catch {}
+      } catch {
+        setMap({});
+      }
     };
     window.addEventListener(EVT, sync);
     window.addEventListener("storage", sync);

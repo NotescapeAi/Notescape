@@ -4,13 +4,23 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import Chatbot from "./Chatbot";
 
 // Mock API
-vi.mock("../lib/api", () => ({
-  listClasses: vi.fn(),
-  listFiles: vi.fn(),
-  listChatSessions: vi.fn().mockResolvedValue([]),
-  listChatSessionMessages: vi.fn().mockResolvedValue([]),
-  createChatSession: vi.fn().mockResolvedValue({ id: "test-session-id", title: "Test Session" }),
-}));
+vi.mock("../lib/api", () => {
+  const cache: Record<string, any> = {
+    listClasses: vi.fn(),
+    listFiles: vi.fn(),
+    listChatSessions: vi.fn().mockResolvedValue([]),
+    listChatSessionMessages: vi.fn().mockResolvedValue([]),
+    createChatSession: vi.fn().mockResolvedValue({ id: "test-session-id", title: "Test Session" }),
+  };
+  return new Proxy(cache, {
+    get(target, prop) {
+      if (prop === "__esModule") return true;
+      if (typeof prop !== "string") return (target as any)[prop];
+      if (!(prop in target)) target[prop] = vi.fn();
+      return target[prop];
+    },
+  });
+});
 
 // Mock useChatSession hook
 const mockUseChatSession = vi.fn();

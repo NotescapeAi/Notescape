@@ -2,7 +2,11 @@ import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { MoreVertical } from "lucide-react";
 
-export type KebabItem = { label: string; onClick: () => void };
+export type KebabItem = { 
+  label: string; 
+  onClick: () => void;
+  className?: string;
+};
 
 export default function KebabMenu({ items }: { items: KebabItem[] }) {
   const [open, setOpen] = useState(false);
@@ -99,20 +103,19 @@ export default function KebabMenu({ items }: { items: KebabItem[] }) {
             style={style}
             className="rounded-xl border border-token surface shadow-lg p-1"
           >
-            {items.map((it, idx) => (
+            {items.map((item, index) => (
               <button
-                key={idx}
-                type="button"
-                onClick={() => {
-                  setOpen(false);
-                  // Use a small timeout to allow the menu to close before action triggers (e.g. dialogs)
-                  setTimeout(() => it.onClick(), 0);
-                }}
-                className="block w-full rounded-lg px-3 py-2 text-left text-[14px] hover:bg-[var(--surface-2)]"
-                role="menuitem"
-              >
-                {it.label}
-              </button>
+                  key={index}
+                  type="button"
+                  onClick={() => {
+                    setOpen(false);
+                    setTimeout(() => item.onClick(), 0);
+                  }}
+                  role="menuitem"
+                  className={`w-full text-left px-4 py-2 text-sm hover:bg-[var(--surface-hover)] transition-colors first:rounded-t-lg last:rounded-b-lg ${item.className || 'text-[var(--text-main)]'}`}
+                >
+                  {item.label}
+                </button>
             ))}
           </div>,
           document.body

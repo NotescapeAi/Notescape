@@ -1,6 +1,6 @@
 // src/pages/FlashcardsPage.tsx
 import { DateDisplay } from "../components/DateDisplay";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   listFlashcards,
@@ -8,7 +8,7 @@ import {
   listClasses,
   listFiles,
   getFlashcardProgress,
-  getMasteryStats,
+  getReviewStats,
   getWeakTags,
   createFlashcard,
   updateFlashcard,
@@ -18,6 +18,9 @@ import {
 import AppShell from "../layouts/AppShell";
 import Button from "../components/Button";
 import KebabMenu from "../components/KebabMenu";
+import { SessionManager } from "../components/SessionManager";
+import { useActivity } from "../contexts/ActivityContext";
+import { formatDuration } from "../lib/utils";
 
 type Diff = "all" | "hard" | "medium" | "easy";
 
@@ -70,6 +73,8 @@ export default function FlashcardsPage() {
   const id = Number(classId);
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const { currentSessionDuration } = useActivity();
+  const interactedInitRef = useRef(false);
 
   const [cardsRaw, setCardsRaw] = useState<Flashcard[]>([]);
   const [className, setClassName] = useState<string>("");
@@ -82,13 +87,39 @@ export default function FlashcardsPage() {
   const [tagFilter, setTagFilter] = useState<string>(() => (searchParams.get("tag") || "all").toLowerCase());
   const [weakTags, setWeakTags] = useState<WeakTag[]>([]);
   const [progress, setProgress] = useState<{ total: number; due_now: number; due_today: number; learning: number } | null>(null);
-  const [masteryStats, setMasteryStats] = useState<{
+  const [reviewStats, setReviewStats] = useState<{
     total_unique: number;
-    mastered_count: number;
-    mastery_percent: number;
+    reviewed_count: number;
+    reviewed_percent: number;
     total_reviews: number;
     average_rating: number;
   } | null>(null);
+
+  const interactionsKey = useMemo(() => {
+    if (!Number.isFinite(id) || !id) return null;
+    return `notescape.flashcards.session.${id}`;
+  }, [id]);
+  const [interactedCount, setInteractedCount] = useState<number>(0);
+
+  useEffect(() => {
+    interactedInitRef.current = false;
+  }, [interactionsKey]);
+
+  useEffect(() => {
+    if (!interactionsKey) return;
+    try {
+      if (currentSessionDuration <= 1 && !interactedInitRef.current) {
+        sessionStorage.setItem(interactionsKey, JSON.stringify({ started_at: Date.now(), card_ids: [] }));
+        interactedInitRef.current = true;
+      }
+      const raw = sessionStorage.getItem(interactionsKey);
+      const parsed = raw ? (JSON.parse(raw) as any) : null;
+      const ids = Array.isArray(parsed?.card_ids) ? parsed.card_ids.map(String) : [];
+      setInteractedCount(new Set(ids).size);
+    } catch {
+      setInteractedCount(0);
+    }
+  }, [currentSessionDuration, interactionsKey]);
 
   const [formOpen, setFormOpen] = useState(false);
   const [editingCard, setEditingCard] = useState<Flashcard | null>(null);
@@ -104,12 +135,12 @@ export default function FlashcardsPage() {
 
   async function loadData(currentFileFilter: string) {
     if (!id) return;
-    const [cards, classes, filesRes, prog, mastery] = await Promise.all([
+    const [cards, classes, filesRes, prog, review] = await Promise.all([
       listFlashcards(id, currentFileFilter === "all" ? undefined : currentFileFilter),
       listClasses(),
       listFiles(id),
       getFlashcardProgress(id, currentFileFilter === "all" ? undefined : currentFileFilter),
-      getMasteryStats(id, currentFileFilter === "all" ? undefined : currentFileFilter),
+      getReviewStats(id, currentFileFilter === "all" ? undefined : currentFileFilter),
     ]);
 
     setCardsRaw(Array.isArray(cards) ? cards : []);
@@ -117,7 +148,7 @@ export default function FlashcardsPage() {
     setClassName(cls?.name || `Class #${id}`);
     setFiles((filesRes ?? []).map((f) => ({ id: f.id, filename: f.filename })));
     setProgress(prog ?? null);
-    setMasteryStats(mastery ?? null);
+    setReviewStats(review ?? null);
   }
 
   useEffect(() => {
@@ -292,12 +323,16 @@ export default function FlashcardsPage() {
 
   return (
     <AppShell title="Flashcards" breadcrumbs={["Flashcards"]} subtitle={className || undefined}>
+      {id ? <SessionManager mode="Flashcards" classId={id} endOnUnmount={false} /> : null}
       <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <div className="text-xs uppercase tracking-[0.3em] text-[var(--primary)]">Flashcards</div>
             <h1 className="mt-2 text-3xl font-semibold text-main">Practice with intent</h1>
             <div className="text-sm text-muted">{className}</div>
+            <div className="mt-1 text-xs text-[var(--text-secondary)]">
+              Session time: {formatDuration(currentSessionDuration)} · Interacted: {interactedCount}
+            </div>
           </div>
           <div className="flex items-center gap-3">
             <Button variant="primary" onClick={openCreate} className="rounded-full px-5">
@@ -384,10 +419,10 @@ export default function FlashcardsPage() {
 
         <div className="mt-2 grid grid-cols-1 md:grid-cols-4 gap-3">
           {[
-            { label: "Mastery", value: `${masteryStats?.mastery_percent ?? 0}%` },
-            { label: "Mastered cards", value: masteryStats?.mastered_count ?? 0 },
-            { label: "Avg rating", value: masteryStats?.average_rating?.toFixed?.(2) ?? "0.00" },
-            { label: "Reviews", value: masteryStats?.total_reviews ?? 0 },
+            { label: "Reviewed", value: `${reviewStats?.reviewed_percent ?? 0}%` },
+            { label: "Interacted (session)", value: interactedCount },
+            { label: "Avg rating", value: reviewStats?.average_rating?.toFixed?.(2) ?? "0.00" },
+            { label: "Reviews", value: reviewStats?.total_reviews ?? 0 },
           ].map((stat) => (
             <div
               key={stat.label}

@@ -166,6 +166,8 @@ describe("Signup Component", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Sign Up/i }));
 
-    expect(await screen.findByText(/Failed to sign up. Please try again./i)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/(Failed to sign up|Signup failed)\. Please try again\./i)
+    ).toBeInTheDocument();
   });
 });

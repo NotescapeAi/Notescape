@@ -15,8 +15,12 @@ import { auth } from "./firebase/firebase";
 import RequireAuth from "./components/RequireAuth";
 import ScrollToTop from "./components/ScrollToTop";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { UserProvider } from "./hooks/useUser";
+import ClickEffects from "./components/ClickEffects";
+import { UserProvider, useUser } from "./hooks/useUser";
 import { ThemeProvider } from "./hooks/useTheme";
+import { ActivityProvider } from "./contexts/ActivityContext";
+import { SessionManager } from "./components/SessionManager";
+import RevisionNotifications from "./components/RevisionNotifications";
 
 /* =========================
    Lazy-loaded Pages
@@ -34,6 +38,8 @@ const Dashboard          = lazy(() => import("./pages/Dashboard"));
 const Settings           = lazy(() => import("./pages/Settings"));
 const Profile            = lazy(() => import("./pages/Profile"));
 const Chatbot            = lazy(() => import("./pages/Chatbot"));
+const AnalyticsDashboard = lazy(() => import("./pages/AnalyticsDashboard"));
+const RevisionPlanner    = lazy(() => import("./pages/RevisionPlanner"));
 
 const FlashcardsPage     = lazy(() => import("./pages/FlashcardsPage"));
 const FlashcardsHub      = lazy(() => import("./pages/FlashcardsHub"));
@@ -83,11 +89,18 @@ function NotFound() {
   );
 }
 
-import ClickEffects from "./components/ClickEffects";
-
 function AppLayout({ children }: { children: React.ReactNode }) {
+  const { profile } = useUser();
+  const location = useLocation();
+
+  const isStudyRoute = 
+    /^\/classes\/[^/]+\/flashcards\/study/.test(location.pathname) ||
+    /^\/quizzes\/[^/]+/.test(location.pathname);
+
   return (
     <div className="app-shell">
+      <RevisionNotifications />
+      {profile && !isStudyRoute && <SessionManager mode="app_usage" endOnUnmount={false} />}
       <ClickEffects />
       <div id="app-scroll-container" className="app-content">
         {children}
@@ -181,6 +194,22 @@ function AppRoutes() {
         }
       />
       <Route
+        path="/analytics"
+        element={
+          <RequireAuth>
+            <AnalyticsDashboard />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/revision"
+        element={
+          <RequireAuth>
+            <RevisionPlanner />
+          </RequireAuth>
+        }
+      />
+      <Route
         path="/settings"
         element={
           <RequireAuth>
@@ -231,16 +260,18 @@ export default function App() {
   return (
     <ThemeProvider>
       <UserProvider>
-        <BrowserRouter>
-          <ScrollToTop />
-          <AppLayout>
+        <ActivityProvider>
+          <BrowserRouter>
+            <ScrollToTop />
             <ErrorBoundary>
-              <Suspense fallback={<div style={{ padding: 24 }}>Loading…</div>}>
-                <AppRoutes />
-              </Suspense>
+              <AppLayout>
+                <Suspense fallback={<div style={{ padding: 24 }}>Loading…</div>}>
+                  <AppRoutes />
+                </Suspense>
+              </AppLayout>
             </ErrorBoundary>
-          </AppLayout>
-        </BrowserRouter>
+          </BrowserRouter>
+        </ActivityProvider>
       </UserProvider>
     </ThemeProvider>
   );

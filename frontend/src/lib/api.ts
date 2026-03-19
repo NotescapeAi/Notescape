@@ -5,14 +5,33 @@ import { auth } from "../firebase/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 
 /** Base URL: prefer Vite env, else relative /api */
-const API_BASE =
+export const API_BASE_URL =
   (import.meta as any)?.env?.VITE_API_BASE_URL?.toString() ?? "http://localhost:8000/api";
+const API_BASE = API_BASE_URL;
 
 
 const http = axios.create({
   baseURL: API_BASE,
   withCredentials: false,
 });
+
+http.interceptors.response.use(
+  (response) => {
+    try {
+      const method = String(response?.config?.method || "").toLowerCase();
+      const url = String(response?.config?.url || "");
+      const isWrite = method && method !== "get";
+      const isHeartbeat = url.includes("/heartbeat");
+      if (isWrite && !isHeartbeat && typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("notescape:activity"));
+      }
+    } catch {
+      return response;
+    }
+    return response;
+  },
+  (error) => Promise.reject(error)
+);
 
 
 
@@ -21,17 +40,54 @@ async function userHeader(): Promise<Record<string, string>> {
   let user = auth.currentUser;
   if (!user) {
     user = await new Promise((resolve) => {
-      const unsub = onAuthStateChanged(auth, (next) => {
+      let settled = false;
+      let unsub = () => {};
+      const timeout = setTimeout(() => {
+        if (settled) return;
+        settled = true;
         unsub();
-        resolve(next);
+        resolve(null);
+      }, 800);
+      unsub = onAuthStateChanged(auth, (next) => {
+        if (next) {
+          if (!settled) {
+            settled = true;
+            clearTimeout(timeout);
+          }
+          unsub();
+          resolve(next);
+          return;
+        }
       });
     });
   }
+  const tz = (() => {
+    try {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+    } catch {
+      return "";
+    }
+  })();
+  const tzOffsetMinutes = String(new Date().getTimezoneOffset());
+  const tzHeaders: Record<string, string> = {
+    ...(tz ? { "X-Timezone": tz } : {}),
+    "X-Timezone-Offset": tzOffsetMinutes,
+  };
+
   if (!user) {
-    return { "X-User-Id": "dev-user" };
+    if ((import.meta as any)?.env?.DEV) {
+      return { ...tzHeaders, "X-User-Id": "dev-user" };
+    }
+    throw new Error("Not authenticated");
   }
-  const token = await user.getIdToken();
-  return { Authorization: `Bearer ${token}` };
+  try {
+    const token = await user.getIdToken();
+    // console.log("userHeader: Got token for user", user.uid);
+    return { ...tzHeaders, Authorization: `Bearer ${token}` };
+  } catch (err) {
+    console.error("userHeader: Failed to get token", err);
+    throw err;
+  }
 }
 
 /* =========================
@@ -100,7 +156,30 @@ export type AnalyticsOverview = {
   reviews_today: number;
   reviews_last_7_days: number;
   avg_response_time: number;
+  avg_session_duration: number;
   upcoming_reviews_count: number;
+  total_study_time: number;
+  study_time_today: number;
+  study_activity_time: number;
+  study_duration_time: number;
+  engagement_score: number;
+};
+
+export type StudySession = {
+  id: string;
+  user_id: string;
+  class_id?: number;
+  class_name?: string;
+  mode: string;
+  started_at: string;
+  ended_at?: string;
+  duration_seconds: number;
+  active_seconds: number;
+  cards_seen?: number;
+  cards_completed?: number;
+  correct_count?: number;
+  incorrect_count?: number;
+  created_at: string;
 };
 
 export type WeakTopic = {
@@ -133,6 +212,31 @@ export type StudyTrendPoint = {
   day: string;
   total_reviews: number;
   avg_response_time: number;
+  study_time: number;
+  duration_seconds?: number;
+};
+
+export type StreaksResponse = {
+  current_streak: number;
+  longest_streak: number;
+  total_active_days: number;
+  last_activity_date: string | null;
+};
+
+export type ActivityTimelineItem = {
+  id: string;
+  kind: "study_session" | "document_upload" | "quiz_attempt" | "class_created" | string;
+  occurred_at: string;
+  title: string;
+  detail?: string | null;
+  class_id?: number | null;
+  class_name?: string | null;
+  meta?: Record<string, any>;
+};
+
+export type MyInspoImage = {
+  url: string;
+  filename: string;
 };
 
 export type WeakTag = {
@@ -163,7 +267,7 @@ export type QuizBreakdown = {
   by_tag: QuizTagBreakdown[];
 };
 
-export type MasteryCard = {
+export type ReviewCard = {
   id: string;
   question: string;
   answer: string;
@@ -172,19 +276,19 @@ export type MasteryCard = {
   tags?: string[] | null;
 };
 
-export type MasterySession = {
+export type ReviewSession = {
   session_id: string;
   current_index?: number;
   total_cards?: number;
   total_unique?: number;
-  mastered_count?: number;
-  mastery_percent?: number;
+  reviewed_count?: number;
+  reviewed_percent?: number;
   total_reviews?: number;
   average_rating?: number;
   session_seconds?: number;
   done?: boolean;
   ended?: boolean;
-  current_card?: MasteryCard | null;
+  current_card?: ReviewCard | null;
 };
 
 export type StudySession = {
@@ -201,6 +305,8 @@ export type StudySession = {
 };
 
 export type StudySessionOverview = {
+  total_seconds_today?: number;
+  total_duration_today?: number;
   total_seconds_7d: number;
   total_seconds_30d: number;
   total_seconds_all: number;
@@ -225,13 +331,35 @@ export type ContactPayload = {
   subject?: string;
 };
 
+export type ClassProgress = {
+  class_id: number;
+  class_name: string;
+  total_cards: number;
+  reviewed_cards: number;
+  study_time_seconds: number;
+  reviewed_percentage: number;
+};
+
 /* =========================
    Classes API
 ========================= */
+export async function getClassesProgress(): Promise<ClassProgress[]> {
+  const headers = await userHeader();
+  const { data } = await http.get<ClassProgress[]>("/analytics/classes", { headers });
+  return Array.isArray(data) ? data : [];
+}
+
 export async function listClasses(): Promise<ClassRow[]> {
   const headers = await userHeader();
-  const { data } = await http.get<ClassRow[]>("/classes", { headers });
-  return Array.isArray(data) ? data : [];
+  console.log("listClasses: Fetching classes with headers:", headers);
+  try {
+    const { data } = await http.get<ClassRow[]>("/classes", { headers });
+    console.log("listClasses: Received data:", data);
+    return Array.isArray(data) ? data : [];
+  } catch (err: any) {
+    console.error("listClasses: Error fetching classes:", err);
+    throw err;
+  }
 }
 
 export async function createClass(payload: {
@@ -679,18 +807,18 @@ export async function clearEmbeddings(): Promise<{ ok: boolean }> {
   return { ok: data?.ok ?? true };
 }
 
-export async function startMasterySession(payload: {
+export async function startReviewSession(payload: {
   class_id: number;
   file_ids?: string[];
-}): Promise<MasterySession> {
+}): Promise<ReviewSession> {
   const headers = await userHeader();
-  const { data } = await http.post<MasterySession>("/flashcards/mastery/session/start", payload, { headers });
+  const { data } = await http.post<ReviewSession>("/flashcards/review/session/start", payload, { headers });
   return data;
 }
 
 export async function startStudySession(payload: {
   class_id?: number;
-  mode?: "study" | "view";
+  mode?: string;
 }): Promise<StudySession> {
   const headers = await userHeader();
   const { data } = await http.post<StudySession>("/study-sessions/start", payload, { headers });
@@ -700,6 +828,7 @@ export async function startStudySession(payload: {
 export async function heartbeatStudySession(payload: {
   session_id: string;
   accumulated_seconds: number;
+  duration_seconds?: number;
   cards_seen?: number;
   cards_completed?: number;
   correct_count?: number;
@@ -713,15 +842,19 @@ export async function heartbeatStudySession(payload: {
 export async function endStudySession(payload: {
   session_id: string;
   accumulated_seconds?: number;
+  duration_seconds?: number;
 }): Promise<StudySession> {
   const headers = await userHeader();
   const { data } = await http.post<StudySession>(`/study-sessions/${payload.session_id}/end`, payload, { headers });
   return data;
 }
 
-export async function getStudySessionOverview(): Promise<StudySessionOverview> {
+export async function getStudySessionOverview(todayStart?: string): Promise<StudySessionOverview> {
   const headers = await userHeader();
-  const { data } = await http.get<StudySessionOverview>("/study-sessions/overview", { headers });
+  const url = todayStart
+    ? `/study-sessions/overview?from_date=${encodeURIComponent(todayStart)}`
+    : "/study-sessions/overview";
+  const { data } = await http.get<StudySessionOverview>(url, { headers });
   return data;
 }
 
@@ -737,21 +870,21 @@ export async function getStudySessionTrends(days = 14): Promise<StudySessionTren
   return Array.isArray(data) ? data : [];
 }
 
-export async function getMasterySession(sessionId: string): Promise<MasterySession> {
+export async function getReviewSession(sessionId: string): Promise<ReviewSession> {
   const headers = await userHeader();
-  const { data } = await http.get<MasterySession>(`/flashcards/mastery/session/${sessionId}`, { headers });
+  const { data } = await http.get<ReviewSession>(`/flashcards/review/session/${sessionId}`, { headers });
   return data;
 }
 
-export async function reviewMasteryCard(payload: {
+export async function reviewSessionCard(payload: {
   session_id: string;
   card_id: string;
   rating: 1 | 2 | 3 | 4 | 5;
   response_time_ms?: number;
-}): Promise<MasterySession> {
+}): Promise<ReviewSession> {
   const headers = await userHeader();
-  const { data } = await http.post<MasterySession>(
-    `/flashcards/mastery/session/${payload.session_id}/review`,
+  const { data } = await http.post<ReviewSession>(
+    `/flashcards/review/session/${payload.session_id}/review`,
     {
       card_id: payload.card_id,
       rating: payload.rating,
@@ -762,20 +895,20 @@ export async function reviewMasteryCard(payload: {
   return data;
 }
 
-export async function endMasterySession(sessionId: string): Promise<{ ok: boolean; session_id: string }> {
+export async function endReviewSession(sessionId: string): Promise<{ ok: boolean; session_id: string }> {
   const headers = await userHeader();
   const { data } = await http.post<{ ok: boolean; session_id: string }>(
-    `/flashcards/mastery/session/${sessionId}/end`,
+    `/flashcards/review/session/${sessionId}/end`,
     {},
     { headers }
   );
   return data;
 }
 
-export async function resetMasteryProgress(classId: number): Promise<{ ok: boolean }> {
+export async function resetReviewProgress(classId: number): Promise<{ ok: boolean }> {
   const headers = await userHeader();
   const { data } = await http.post<{ ok: boolean }>(
-    `/flashcards/mastery/reset?class_id=${classId}`,
+    `/flashcards/review/reset?class_id=${classId}`,
     {},
     { headers }
   );
@@ -861,15 +994,15 @@ export async function getFlashcardProgress(classId: number, fileId?: string) {
   return response.json();
 }
 
-export async function getMasteryStats(classId: number, fileId?: string) {
+export async function getReviewStats(classId: number, fileId?: string) {
   const params = new URLSearchParams({ class_id: String(classId) });
   if (fileId) params.set("file_id", fileId);
   const headers = await userHeader();
-  const { data } = await http.get(`/flashcards/mastery/stats?${params.toString()}`, { headers });
+  const { data } = await http.get(`/flashcards/review/stats?${params.toString()}`, { headers });
   return data as {
     total_unique: number;
-    mastered_count: number;
-    mastery_percent: number;
+    reviewed_count: number;
+    reviewed_percent: number;
     total_reviews: number;
     average_rating: number;
   };
@@ -879,39 +1012,62 @@ export async function getMasteryStats(classId: number, fileId?: string) {
    Analytics
 ========================= */
 
-export async function getAnalyticsOverview(): Promise<AnalyticsOverview> {
+export async function getAnalyticsOverview(todayStart?: string): Promise<AnalyticsOverview> {
   const headers = await userHeader();
-  const { data } = await http.get<AnalyticsOverview>("/analytics/overview", { headers });
+  const url = todayStart
+    ? `/analytics/overview?today_start=${encodeURIComponent(todayStart)}`
+    : "/analytics/overview";
+  const { data } = await http.get<AnalyticsOverview>(url, { headers });
   return data;
 }
 
-export async function getWeakTopics(params?: { days?: number; limit?: number }): Promise<WeakTopic[]> {
+export async function getRecentSessions(limit: number = 10): Promise<StudySession[]> {
   const headers = await userHeader();
-  const search = new URLSearchParams();
-  if (params?.days != null) search.set("days", String(params.days));
-  if (params?.limit != null) search.set("limit", String(params.limit));
-  const q = search.toString();
-  const { data } = await http.get<WeakTopic[]>(`/analytics/weak-topics${q ? `?${q}` : ""}`, { headers });
+  const { data } = await http.get<StudySession[]>(`/study-sessions/recent?limit=${limit}`, { headers });
   return Array.isArray(data) ? data : [];
 }
 
-export async function getWeakCards(params?: { days?: number; limit?: number; deck_id?: number }): Promise<WeakCard[]> {
+export async function getStreaks(): Promise<StreaksResponse> {
   const headers = await userHeader();
-  const search = new URLSearchParams();
-  if (params?.days != null) search.set("days", String(params.days));
-  if (params?.limit != null) search.set("limit", String(params.limit));
-  if (params?.deck_id != null) search.set("deck_id", String(params.deck_id));
-  const q = search.toString();
-  const { data } = await http.get<WeakCard[]>(`/analytics/weak-cards${q ? `?${q}` : ""}`, { headers });
+  const { data } = await http.get<StreaksResponse>("/analytics/streaks", { headers });
+  return data;
+}
+
+export async function getMyInspoImages(): Promise<MyInspoImage[]> {
+  const headers = await userHeader();
+  const { data } = await http.get<MyInspoImage[]>("/analytics/myinspo", { headers });
   return Array.isArray(data) ? data : [];
 }
 
-export async function getStudyTrends(params?: { days?: number }): Promise<StudyTrendPoint[]> {
+export async function getStudyTrends(params: { days: number }): Promise<StudyTrendPoint[]> {
   const headers = await userHeader();
-  const search = new URLSearchParams();
-  if (params?.days != null) search.set("days", String(params.days));
-  const q = search.toString();
-  const { data } = await http.get<StudyTrendPoint[]>(`/analytics/study-trends${q ? `?${q}` : ""}`, { headers });
+  const { data } = await http.get<StudyTrendPoint[]>(`/analytics/trends?days=${params.days}`, { headers });
+  return Array.isArray(data) ? data : [];
+}
+
+export async function getActivityTimeline(params?: {
+  limit?: number;
+  trace?: boolean;
+}): Promise<ActivityTimelineItem[]> {
+  const headers = await userHeader();
+  const limit = Math.max(1, Math.min(50, params?.limit ?? 25));
+  const trace = params?.trace ? "true" : "false";
+  const { data } = await http.get<ActivityTimelineItem[]>(
+    `/analytics/activity-timeline?limit=${limit}&trace=${trace}`,
+    { headers }
+  );
+  return Array.isArray(data) ? data : [];
+}
+
+export async function getWeakTopics(): Promise<WeakTopic[]> {
+  const headers = await userHeader();
+  const { data } = await http.get<WeakTopic[]>("/analytics/weak-topics", { headers });
+  return Array.isArray(data) ? data : [];
+}
+
+export async function getWeakCards(): Promise<WeakCard[]> {
+  const headers = await userHeader();
+  const { data } = await http.get<WeakCard[]>("/analytics/weak-cards", { headers });
   return Array.isArray(data) ? data : [];
 }
 
@@ -1026,6 +1182,7 @@ export async function createQuizJob(payload: {
   mcq_count?: number;  // NEW: Optional specific MCQ count
   types: Array<"mcq" | "conceptual" | "definition" | "scenario" | "short_qa">;
   difficulty: "easy" | "medium" | "hard";
+  source_type?: "file" | "topic";
 }): Promise<QuizJobResponse> {
   const headers = await userHeader();
   const { data } = await http.post<QuizJobResponse>("/quizzes/jobs", payload, { headers });

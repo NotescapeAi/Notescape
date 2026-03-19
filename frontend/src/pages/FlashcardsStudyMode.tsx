@@ -1,34 +1,26 @@
-import {
-  forwardRef,
-  useEffect,
-  useImperativeHandle,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import AppShell from "../layouts/AppShell";
 import Button from "../components/Button";
+import { SessionManager } from "../components/SessionManager";
 import {
-  endMasterySession,
-  getMasterySession,
+  endReviewSession,
+  getReviewSession,
   listFiles,
-  startStudySession,
-  heartbeatStudySession,
-  endStudySession,
-  resetMasteryProgress,
-  reviewMasteryCard,
-  startMasterySession,
-  type MasteryCard,
-  type MasterySession,
+  resetReviewProgress,
+  reviewSessionCard,
+  startReviewSession,
+  type ReviewCard,
+  type ReviewSession,
 } from "../lib/api";
+import { useActivity } from "../contexts/ActivityContext";
+import { formatDuration } from "../lib/utils";
 
 type SessionStats = {
   total_cards: number;
   total_unique: number;
-  mastered_count: number;
-  mastery_percent: number;
+  reviewed_count: number;
+  reviewed_percent: number;
   total_reviews: number;
   average_rating: number;
   session_seconds: number;
@@ -37,12 +29,12 @@ type SessionStats = {
   ended: boolean;
 };
 
-function normalizeStats(data: MasterySession): SessionStats {
+function normalizeStats(data: ReviewSession): SessionStats {
   return {
     total_cards: data.total_cards ?? 0,
     total_unique: data.total_unique ?? 0,
-    mastered_count: data.mastered_count ?? 0,
-    mastery_percent: data.mastery_percent ?? 0,
+    reviewed_count: data.reviewed_count ?? 0,
+    reviewed_percent: data.reviewed_percent ?? 0,
     total_reviews: data.total_reviews ?? 0,
     average_rating: data.average_rating ?? 0,
     session_seconds: data.session_seconds ?? 0,
@@ -61,143 +53,36 @@ function sanitizeText(value?: string | null) {
   return text;
 }
 
-function formatDuration(seconds: number) {
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins}:${secs.toString().padStart(2, "0")}`;
-}
-
-type SessionTimerHandle = {
-  flush: () => void;
-  reset: () => void;
+type CardStudyEvent = {
+  opened_at: string;
+  viewed_ms: number;
+  completed: boolean;
+  completed_at?: string;
 };
 
-const SessionTimer = forwardRef<
-  SessionTimerHandle,
-  { sessionId: string | null; baseSeconds: number; active: boolean; onSave?: (seconds: number) => void }
->(function SessionTimer({ sessionId, baseSeconds, active, onSave }, ref) {
-  const [displaySeconds, setDisplaySeconds] = useState(0);
-  const accumulatedRef = useRef(0);
-  const lastResumedRef = useRef<number | null>(null);
-  const intervalRef = useRef<number | null>(null);
-  const lastSaveRef = useRef<number>(0);
-  const activeRef = useRef(active);
-  const sessionIdRef = useRef<string | null>(sessionId);
-
-  const storageKey = useMemo(
-    () => (sessionId ? `mastery_session_time_${sessionId}` : "mastery_session_time_unknown"),
-    [sessionId]
-  );
-
-  function computeSeconds(now = Date.now()) {
-    if (lastResumedRef.current === null) return accumulatedRef.current;
-    return accumulatedRef.current + Math.max(0, (now - lastResumedRef.current) / 1000);
-  }
-
-  function persist() {
-    if (!sessionId) return;
-    const seconds = Math.floor(computeSeconds());
-    localStorage.setItem(
-      storageKey,
-      JSON.stringify({ accumulatedSeconds: seconds, lastUpdatedAt: Date.now() })
-    );
-    onSave?.(seconds);
-    lastSaveRef.current = Date.now();
-  }
-
-  function pause() {
-    if (lastResumedRef.current !== null) {
-      accumulatedRef.current = computeSeconds();
-      lastResumedRef.current = null;
-    }
-    setDisplaySeconds(Math.floor(accumulatedRef.current));
-    persist();
-  }
-
-  function resume() {
-    if (!sessionId) return;
-    if (lastResumedRef.current === null) {
-      lastResumedRef.current = Date.now();
-    }
-  }
-
-  useImperativeHandle(ref, () => ({
-    flush: () => persist(),
-    reset: () => {
-      accumulatedRef.current = 0;
-      lastResumedRef.current = Date.now();
-      setDisplaySeconds(0);
-      persist();
-    },
-  }));
-
-  useEffect(() => {
-    activeRef.current = active;
-  }, [active]);
-
-  useEffect(() => {
-    sessionIdRef.current = sessionId;
-  }, [sessionId]);
-
-  useEffect(() => {
-    const storedRaw = sessionId ? localStorage.getItem(storageKey) : null;
-    const storedSeconds = storedRaw ? Number(JSON.parse(storedRaw)?.accumulatedSeconds ?? 0) : 0;
-    const seedSeconds = Math.max(baseSeconds || 0, storedSeconds || 0);
-    accumulatedRef.current = seedSeconds;
-    lastResumedRef.current = null;
-    setDisplaySeconds(Math.floor(seedSeconds));
-    lastSaveRef.current = Date.now();
-  }, [sessionId, storageKey, baseSeconds]);
-
-  useEffect(() => {
-    if (!sessionId) return;
-    const storedRaw = localStorage.getItem(storageKey);
-    const storedSeconds = storedRaw ? Number(JSON.parse(storedRaw)?.accumulatedSeconds ?? 0) : 0;
-    const next = Math.max(accumulatedRef.current, baseSeconds || 0, storedSeconds || 0);
-    if (next !== accumulatedRef.current) {
-      accumulatedRef.current = next;
-      setDisplaySeconds(Math.floor(next));
-    }
-  }, [baseSeconds, sessionId, storageKey]);
-
-  useEffect(() => {
-    if (intervalRef.current) return;
-    intervalRef.current = window.setInterval(() => {
-      const now = Date.now();
-      const isActive = activeRef.current && !!sessionIdRef.current && document.visibilityState === "visible";
-      if (!isActive) {
-        if (lastResumedRef.current !== null) {
-          pause();
-        }
-        return;
-      }
-      resume();
-      setDisplaySeconds(Math.floor(computeSeconds(now)));
-      if (now - lastSaveRef.current >= 15000) {
-        persist();
-      }
-    }, 1000);
-    return () => {
-      if (intervalRef.current) {
-        window.clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-    };
-  }, []);
-
-  return <span>{formatDuration(displaySeconds)}</span>;
-});
+type CardStudyHistory = {
+  first_opened_at: string;
+  last_opened_at: string;
+  question_preview: string;
+  total_view_ms: number;
+  last_view_ms: number;
+  completed: boolean;
+  completed_at?: string;
+  events: CardStudyEvent[];
+};
 
 export default function FlashcardsStudyMode() {
   const { classId } = useParams();
-  const classNum = Number(classId);
+  const classNum = classId ? Number(classId) : undefined;
+  const { currentSessionDuration, registerStreakActivity } = useActivity();
+
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [currentCard, setCurrentCard] = useState<MasteryCard | null>(null);
+  const [currentCard, setCurrentCard] = useState<ReviewCard | null>(null);
   const [stats, setStats] = useState<SessionStats>({
     total_cards: 0,
     total_unique: 0,
-    mastered_count: 0,
-    mastery_percent: 0,
+    reviewed_count: 0,
+    reviewed_percent: 0,
     total_reviews: 0,
     average_rating: 0,
     session_seconds: 0,
@@ -213,230 +98,382 @@ export default function FlashcardsStudyMode() {
   const [error, setError] = useState<string | null>(null);
   const [reviewToast, setReviewToast] = useState<string | null>(null);
   const responseStart = useRef<number | null>(null);
-  const scrollRestoreRef = useRef<number | null>(null);
-  const timerRef = useRef<SessionTimerHandle | null>(null);
-  const studySecondsRef = useRef(0);
-  const [studySessionId, setStudySessionId] = useState<string | null>(null);
-  const [studyBaseSeconds, setStudyBaseSeconds] = useState(0);
+  const activeViewRef = useRef<{ card_id: string; started_at_ms: number } | null>(null);
+  const [studyHistory, setStudyHistory] = useState<Record<string, CardStudyHistory>>({});
 
-  const sessionKey = classNum
-    ? `mastery_session_${classNum}_${fileFilter}`
-    : "mastery_session_unknown";
+  const interactionsKey = useMemo(
+    () => (classNum ? `notescape.flashcards.session.${classNum}` : null),
+    [classNum]
+  );
 
-  useEffect(() => {
-    if (!classNum) return;
-    (async () => {
-      const fs = await listFiles(classNum);
-      setFiles((fs ?? []).map((f) => ({ id: f.id, filename: f.filename })));
-    })();
-  }, [classNum]);
+  const recordInteraction = useCallback(
+    (cardId: string) => {
+      if (!interactionsKey) return;
+      try {
+        const raw = sessionStorage.getItem(interactionsKey);
+        const parsed = raw ? (JSON.parse(raw) as any) : null;
+        const ids = Array.isArray(parsed?.card_ids) ? parsed.card_ids.map(String) : [];
+        const set = new Set(ids);
+        set.add(String(cardId));
+        sessionStorage.setItem(
+          interactionsKey,
+          JSON.stringify({
+            started_at: typeof parsed?.started_at === "number" ? parsed.started_at : Date.now(),
+            card_ids: Array.from(set),
+          })
+        );
+      } catch {
+        void 0;
+      }
+    },
+    [interactionsKey]
+  );
 
-  function applySession(data: MasterySession) {
-    setSessionId(data.session_id);
-    setCurrentCard(data.current_card ?? null);
+  const sessionKey = useMemo(
+    () => (classNum ? `review_session_${classNum}_${fileFilter}` : "review_session_unknown"),
+    [classNum, fileFilter]
+  );
+
+  const historyKey = useMemo(
+    () => (sessionId ? `notescape.flashcards.study_history.${sessionId}` : null),
+    [sessionId]
+  );
+
+  const persistHistory = useCallback(
+    (next: Record<string, CardStudyHistory>) => {
+      if (!historyKey) return;
+      try {
+        localStorage.setItem(historyKey, JSON.stringify(next));
+      } catch {
+        void 0;
+      }
+    },
+    [historyKey]
+  );
+
+  const finalizeActiveView = useCallback(
+    (endAtMs: number) => {
+      const active = activeViewRef.current;
+      if (!active) return;
+      activeViewRef.current = null;
+      const durationMs = Math.max(0, endAtMs - active.started_at_ms);
+      setStudyHistory((prev) => {
+        const existing = prev[active.card_id];
+        if (!existing) return prev;
+        const events = Array.isArray(existing.events) ? [...existing.events] : [];
+        if (events.length > 0) {
+          const last = events[events.length - 1];
+          events[events.length - 1] = {
+            ...last,
+            viewed_ms: (last.viewed_ms ?? 0) + durationMs,
+          };
+        }
+        const next = {
+          ...prev,
+          [active.card_id]: {
+            ...existing,
+            total_view_ms: existing.total_view_ms + durationMs,
+            last_view_ms: durationMs,
+            events,
+          },
+        };
+        persistHistory(next);
+        return next;
+      });
+    },
+    [persistHistory]
+  );
+
+  const applySession = (data: ReviewSession) => {
+    setSessionId(data.session_id ?? null);
     setStats(normalizeStats(data));
+    setCurrentCard(data.current_card ?? null);
     setRevealed(false);
-    if (data.current_card) {
-      responseStart.current = Date.now();
-    }
-  }
+    responseStart.current = Date.now();
+    if (data.session_id) localStorage.setItem(sessionKey, data.session_id);
+  };
 
-  async function startSession() {
+  const startNewSession = async () => {
+    if (!classNum) return;
+    const payload = {
+      class_id: classNum,
+      file_ids: fileFilter === "all" ? undefined : [fileFilter],
+    };
+    const data = await startReviewSession(payload);
+    applySession(data);
+  };
+
+  const loadSession = async () => {
     if (!classNum) return;
     setLoading(true);
-    setSubmitting(false);
     setError(null);
     try {
-      const payload = {
-        class_id: classNum,
-        file_ids: fileFilter === "all" ? undefined : [fileFilter],
-      };
-      const data = await startMasterySession(payload);
-      localStorage.setItem(sessionKey, data.session_id);
-      applySession(data);
-    } catch (err: any) {
-      setError(err?.message || "Failed to start session");
+      const filesRes = await listFiles(classNum);
+      setFiles((filesRes ?? []).map((f) => ({ id: f.id, filename: f.filename })));
+
+      const stored = localStorage.getItem(sessionKey);
+      if (stored) {
+        try {
+          const data = await getReviewSession(stored);
+          applySession(data);
+          return;
+        } catch {
+          localStorage.removeItem(sessionKey);
+        }
+      }
+      await startNewSession();
+    } catch (e: any) {
+      setError(e?.message || "Failed to load study session");
     } finally {
       setLoading(false);
     }
-  }
-
-  async function loadOrCreateSession() {
-    if (!classNum) return;
-    setLoading(true);
-    setSubmitting(false);
-    setError(null);
-    try {
-      const stored = localStorage.getItem(sessionKey);
-      if (stored) {
-        const data = await getMasterySession(stored);
-        applySession(data);
-        setLoading(false);
-        return;
-      }
-      await startSession();
-    } catch (err: any) {
-      localStorage.removeItem(sessionKey);
-      setSessionId(null);
-      setCurrentCard(null);
-      setError(err?.message || "Failed to load session");
-      setLoading(false);
-    }
-  }
+  };
 
   useEffect(() => {
-    if (!classNum) return;
-    loadOrCreateSession();
+    loadSession();
   }, [classNum, fileFilter]);
 
   useEffect(() => {
-    setStudySessionId(null);
-    setStudyBaseSeconds(0);
-    studySecondsRef.current = 0;
-  }, [sessionId]);
-
-  useEffect(() => {
-    if (!classNum || !sessionId || stats.ended) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const sess = await startStudySession({ class_id: classNum, mode: "study" });
-        if (cancelled) return;
-        setStudySessionId(sess.id);
-        const base = sess.active_seconds ?? sess.duration_seconds ?? 0;
-        setStudyBaseSeconds(base);
-        studySecondsRef.current = base;
-      } catch {
-        // keep timer local if session logging fails
+    activeViewRef.current = null;
+    if (!historyKey) {
+      setStudyHistory({});
+      return;
+    }
+    try {
+      const raw = localStorage.getItem(historyKey);
+      if (!raw) {
+        setStudyHistory({});
+        return;
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [classNum, sessionId, stats.ended]);
+      const parsed = JSON.parse(raw) as any;
+      const entries = parsed && typeof parsed === "object" ? Object.entries(parsed) : [];
+      const migrated: Record<string, CardStudyHistory> = {};
+      for (const [cardId, value] of entries) {
+        if (!value || typeof value !== "object") continue;
+        const v: any = value;
+        const events: CardStudyEvent[] = Array.isArray(v.events)
+          ? v.events
+              .filter((e: any) => e && typeof e === "object")
+              .map((e: any) => ({
+                opened_at: String(e.opened_at ?? ""),
+                viewed_ms: Number(e.viewed_ms ?? 0) || 0,
+                completed: Boolean(e.completed),
+                completed_at: typeof e.completed_at === "string" ? e.completed_at : undefined,
+              }))
+              .filter((e) => Boolean(e.opened_at))
+          : [];
+
+        if (events.length === 0 && (v.first_opened_at || v.last_opened_at)) {
+          events.push({
+            opened_at: String(v.last_opened_at ?? v.first_opened_at),
+            viewed_ms: Number(v.last_view_ms ?? 0) || 0,
+            completed: Boolean(v.completed),
+            completed_at: typeof v.completed_at === "string" ? v.completed_at : undefined,
+          });
+        }
+
+        const firstOpenedAt = String(v.first_opened_at ?? events[0]?.opened_at ?? "");
+        const lastOpenedAt = String(v.last_opened_at ?? events[events.length - 1]?.opened_at ?? firstOpenedAt);
+
+        migrated[String(cardId)] = {
+          first_opened_at: firstOpenedAt,
+          last_opened_at: lastOpenedAt,
+          question_preview: String(v.question_preview ?? ""),
+          total_view_ms: Number(v.total_view_ms ?? 0) || 0,
+          last_view_ms: Number(v.last_view_ms ?? 0) || 0,
+          completed: Boolean(v.completed),
+          completed_at: typeof v.completed_at === "string" ? v.completed_at : undefined,
+          events,
+        };
+      }
+
+      setStudyHistory(migrated);
+    } catch {
+      setStudyHistory({});
+    }
+  }, [historyKey]);
 
   useEffect(() => {
-    if (!classNum) return;
-    localStorage.setItem("last_class_id", String(classNum));
-  }, [classNum]);
+    const now = Date.now();
+    finalizeActiveView(now);
 
-  async function handleReview(confidence: 1 | 2 | 3 | 4 | 5) {
-    if (!currentCard || !sessionId) return;
-    const start = responseStart.current;
-    const responseTime = start ? Date.now() - start : undefined;
-    scrollRestoreRef.current = window.scrollY;
+    if (!sessionId || !currentCard) return;
+
+    const cardId = currentCard.id;
+    activeViewRef.current = { card_id: cardId, started_at_ms: now };
+    setStudyHistory((prev) => {
+      const iso = new Date(now).toISOString();
+      const existing = prev[cardId];
+      const existingEvents = existing && Array.isArray(existing.events) ? existing.events : [];
+      const nextEntry: CardStudyHistory = existing
+        ? {
+            ...existing,
+            last_opened_at: iso,
+            question_preview: existing.question_preview || sanitizeText(currentCard.question).slice(0, 110),
+            events: [...existingEvents, { opened_at: iso, viewed_ms: 0, completed: false }],
+          }
+        : {
+            first_opened_at: iso,
+            last_opened_at: iso,
+            question_preview: sanitizeText(currentCard.question).slice(0, 110),
+            total_view_ms: 0,
+            last_view_ms: 0,
+            completed: false,
+            events: [{ opened_at: iso, viewed_ms: 0, completed: false }],
+          };
+      const next = { ...prev, [cardId]: nextEntry };
+      persistHistory(next);
+      return next;
+    });
+    recordInteraction(cardId);
+    registerStreakActivity();
+  }, [currentCard, finalizeActiveView, persistHistory, recordInteraction, registerStreakActivity, sessionId]);
+
+
+  const handleFileChange = (value: string) => {
+    finalizeActiveView(Date.now());
+    setReviewToast(null);
+    setError(null);
+    setSessionId(null);
+    setCurrentCard(null);
+    setStats({
+      total_cards: 0,
+      total_unique: 0,
+      reviewed_count: 0,
+      reviewed_percent: 0,
+      total_reviews: 0,
+      average_rating: 0,
+      session_seconds: 0,
+      current_index: 0,
+      done: false,
+      ended: false,
+    });
+    setRevealed(false);
+    setFileFilter(value);
+  };
+
+  const handleReview = async (rating: 1 | 2 | 3 | 4 | 5) => {
+    if (!sessionId || !currentCard) return;
+    if (!revealed) {
+      setReviewToast("Reveal the answer before rating.");
+      return;
+    }
+    registerStreakActivity();
     setSubmitting(true);
+    setReviewToast(null);
     setError(null);
     try {
-      const data = await reviewMasteryCard({
+      const startedAt = responseStart.current;
+      const responseTimeMs = startedAt ? Math.max(0, Date.now() - startedAt) : undefined;
+      const data = await reviewSessionCard({
         session_id: sessionId,
         card_id: currentCard.id,
-        rating: confidence,
-        response_time_ms: responseTime,
+        rating,
+        response_time_ms: responseTimeMs,
+      });
+      setStudyHistory((prev) => {
+        const iso = new Date().toISOString();
+        const existing = prev[currentCard.id];
+        if (!existing) return prev;
+        const events = Array.isArray(existing.events) ? [...existing.events] : [];
+        if (events.length > 0) {
+          const last = events[events.length - 1];
+          events[events.length - 1] = {
+            ...last,
+            completed: true,
+            completed_at: last.completed_at ?? iso,
+          };
+        }
+        const next = {
+          ...prev,
+          [currentCard.id]: {
+            ...existing,
+            completed: true,
+            completed_at: existing.completed_at ?? iso,
+            events,
+          },
+        };
+        persistHistory(next);
+        return next;
       });
       applySession(data);
-      timerRef.current?.flush();
-      setReviewToast(
-        confidence <= 2 ? "Saved: keep practicing this card." : confidence === 3 ? "Saved: getting better." : "Saved: great recall."
-      );
-      window.setTimeout(() => setReviewToast(null), 1400);
-    } catch (err: any) {
-      setError(err?.message || "Failed to save review");
+    } catch (e: any) {
+      setError(e?.message || "Failed to submit review");
     } finally {
       setSubmitting(false);
     }
-  }
-
-  async function handleEndSession() {
-    if (!sessionId) return;
-    try {
-      if (studySessionId) {
-        await endStudySession({
-          session_id: studySessionId,
-          accumulated_seconds: Math.floor(studySecondsRef.current || 0),
-        });
-      }
-      await endMasterySession(sessionId);
-    } finally {
-      timerRef.current?.flush();
-      localStorage.removeItem(sessionKey);
-      setStats((prev) => ({ ...prev, ended: true }));
-      setCurrentCard(null);
-    }
-  }
-
-  async function handleResetProgress() {
-    if (!classNum) return;
-    setLoading(true);
-    setSubmitting(false);
-    try {
-      await resetMasteryProgress(classNum);
-      localStorage.removeItem(sessionKey);
-      setSessionId(null);
-      setCurrentCard(null);
-      await startSession();
-    } catch (err: any) {
-      setError(err?.message || "Failed to reset mastery");
-      setLoading(false);
-    }
-  }
-
-  async function handleFileChange(next: string) {
-    if (sessionId) {
-      await endMasterySession(sessionId).catch(() => undefined);
-    }
-    timerRef.current?.flush();
-    localStorage.removeItem(sessionKey);
-    setSessionId(null);
-    setCurrentCard(null);
-    setFileFilter(next);
-  }
-
-  useLayoutEffect(() => {
-    if (scrollRestoreRef.current === null) return;
-    window.scrollTo({ top: scrollRestoreRef.current, behavior: "auto" });
-    scrollRestoreRef.current = null;
-  }, [currentCard?.id]);
-
-  const masteryPct =
-    stats.mastery_percent ||
-    (stats.total_unique ? Math.round((stats.mastered_count / stats.total_unique) * 100) : 0);
-  const timerActive = Boolean(sessionId) && !loading && !stats.ended;
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      if (!currentCard || loading || stats.ended || stats.done || submitting) return;
-      if (e.key === " " && !e.repeat) {
-        e.preventDefault();
-        setRevealed((prev) => !prev);
-        return;
-      }
-      if (revealed && ["1", "2", "3", "4", "5"].includes(e.key)) {
-        e.preventDefault();
-        handleReview(Number(e.key) as 1 | 2 | 3 | 4 | 5);
-      }
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [currentCard?.id, loading, revealed, stats.ended, stats.done, submitting]);
-
-  const handleSessionSave = (seconds: number) => {
-    studySecondsRef.current = seconds;
-    if (!studySessionId) return;
-    heartbeatStudySession({
-      session_id: studySessionId,
-      accumulated_seconds: Math.floor(seconds),
-      cards_seen: stats.total_reviews,
-    }).catch(() => undefined);
   };
 
+  const handleEndSession = async () => {
+    if (!sessionId) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      finalizeActiveView(Date.now());
+      await endReviewSession(sessionId);
+      localStorage.removeItem(sessionKey);
+      setStats((s) => ({ ...s, ended: true }));
+    } catch (e: any) {
+      setError(e?.message || "Failed to end session");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleResetProgress = async () => {
+    if (!classNum) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      finalizeActiveView(Date.now());
+      await resetReviewProgress(classNum);
+      localStorage.removeItem(sessionKey);
+      await startNewSession();
+    } catch (e: any) {
+      setError(e?.message || "Failed to reset progress");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const tag = (target?.tagName ?? "").toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select") return;
+
+      if (e.code === "Space") {
+        e.preventDefault();
+        if (!loading && !stats.ended && !stats.done && currentCard) {
+          setRevealed((v) => !v);
+        }
+        return;
+      }
+      const digit = e.key;
+      if (digit >= "1" && digit <= "5") {
+        if (!submitting && revealed) {
+          handleReview(Number(digit) as 1 | 2 | 3 | 4 | 5);
+        }
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [loading, stats.ended, stats.done, currentCard, submitting, revealed, sessionId]);
+
+  const studiedCount = useMemo(() => Object.keys(studyHistory).length, [studyHistory]);
+  const completedCount = useMemo(
+    () => Object.values(studyHistory).filter((h) => h.completed).length,
+    [studyHistory]
+  );
+  const recentHistory = useMemo(() => {
+    return Object.entries(studyHistory)
+      .sort((a, b) => new Date(b[1].last_opened_at).getTime() - new Date(a[1].last_opened_at).getTime())
+      .slice(0, 6);
+  }, [studyHistory]);
+
   return (
-    <AppShell
-      title="Flashcards"
-      breadcrumbs={["Flashcards", "Study"]}
-      subtitle="Study mode"
-      backLabel="Back to Flashcards"
-      backTo={classId ? `/classes/${classId}/flashcards` : "/classes"}
-    >
+    <AppShell title="Flashcards Study Mode" backTo={`/classes/${classNum}/flashcards`}>
+      {classNum && <SessionManager mode="Flashcards" classId={classNum} endOnUnmount={false} />}
       <div className="mx-auto flex w-full max-w-[980px] flex-col gap-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
@@ -446,7 +483,7 @@ export default function FlashcardsStudyMode() {
             <h1 className="mt-1 text-3xl font-semibold text-main">Flashcards</h1>
           </div>
           <div className="flex items-center gap-2">
-            <Button className="rounded-full" onClick={startSession}>
+            <Button className="rounded-full" onClick={startNewSession}>
               Study again
             </Button>
             <Button className="rounded-full" onClick={handleResetProgress}>
@@ -473,10 +510,10 @@ export default function FlashcardsStudyMode() {
         <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-4 shadow-sm">
           <div className="flex items-center justify-between text-xs text-[var(--text-secondary)]">
             <span>
-              Progress {stats.total_cards ? stats.current_index + 1 : 0} / {stats.total_cards || 0}
+              Opened {studiedCount}
             </span>
             <span>
-              Mastery {masteryPct}% · {stats.mastered_count}/{stats.total_unique} mastered
+              Completed {completedCount}
             </span>
           </div>
           <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-[var(--surface-2)]">
@@ -489,14 +526,7 @@ export default function FlashcardsStudyMode() {
           </div>
           <div className="mt-3 grid gap-2 text-xs text-[var(--text-secondary)] sm:grid-cols-3">
             <div>
-              Study time:{" "}
-              <SessionTimer
-                ref={timerRef}
-                sessionId={studySessionId ?? sessionId}
-                baseSeconds={studyBaseSeconds || stats.session_seconds}
-                active={timerActive}
-                onSave={handleSessionSave}
-              />
+              Session time: {formatDuration(currentSessionDuration)}
             </div>
             <div>Avg rating: {stats.total_reviews ? stats.average_rating.toFixed(2) : "0.00"}</div>
             <div>Total reviews: {stats.total_reviews}</div>
@@ -594,6 +624,34 @@ export default function FlashcardsStudyMode() {
                   <span>1 = Again · 5 = Mastered</span>
                 </div>
               </div>
+
+              {recentHistory.length > 0 && (
+                <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-4">
+                  <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-muted-soft)]">
+                    Study history (this session)
+                  </div>
+                  <div className="mt-3 space-y-2 text-xs text-[var(--text-secondary)]">
+                    {recentHistory.map(([cardId, h]) => {
+                      const lastEvent = h.events?.[h.events.length - 1];
+                      const lastViewMs =
+                        typeof lastEvent?.viewed_ms === "number" ? lastEvent.viewed_ms : h.last_view_ms;
+                      return (
+                        <div key={cardId} className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="truncate text-[var(--text-main)]">{h.question_preview || "Flashcard"}</div>
+                            <div className="mt-0.5 text-[11px] text-[var(--text-muted-soft)]">
+                              Last view {Math.round(lastViewMs / 1000)}s · Total {Math.round(h.total_view_ms / 1000)}s
+                            </div>
+                          </div>
+                          <div className="shrink-0 rounded-full border border-token px-2 py-0.5 text-[11px]">
+                            {h.completed ? "Completed" : "Opened"}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

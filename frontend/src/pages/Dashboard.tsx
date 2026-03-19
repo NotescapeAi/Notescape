@@ -16,14 +16,7 @@ import {
   type Flashcard,
   type WeakTag,
 } from "../lib/api";
-
-function formatDuration(seconds: number) {
-  const mins = Math.floor(seconds / 60);
-  const hrs = Math.floor(mins / 60);
-  const remMins = mins % 60;
-  if (hrs > 0) return `${hrs}h ${remMins}m`;
-  return `${mins}m`;
-}
+import { formatDuration } from "../lib/utils";
 
 export default function Dashboard() {
   const [classes, setClasses] = useState<ClassRow[]>([]);

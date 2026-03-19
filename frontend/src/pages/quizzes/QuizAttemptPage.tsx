@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import AppShell from "../../layouts/AppShell";
+import { SessionManager } from "../../components/SessionManager";
 import { ArrowLeft, CheckCircle2, XCircle, Send, Clock, BookOpen } from "lucide-react";
 import {
   getQuiz,
@@ -11,6 +12,7 @@ import {
   type QuizDetail,
   type SubmitAttemptResponse,
 } from "../../lib/api";
+import { formatDuration } from "../../lib/utils";
 
 export default function QuizAttemptPage() {
   const { quizId } = useParams();
@@ -59,13 +61,6 @@ export default function QuizAttemptPage() {
     return () => clearInterval(interval);
   }, [startTime, attemptResult]);
 
-  // Format time as MM:SS
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
-
   // -------- fetch quiz ----------
   useEffect(() => {
     if (!quizId) {
@@ -96,6 +91,10 @@ export default function QuizAttemptPage() {
       }
     })();
   }, [quizId]);
+
+  // -------- track session ----------
+  // Removed redundant switchSession call.
+  // Using <SessionManager /> component instead.
 
   // -------- submit attempt ----------
   async function handleSubmit() {
@@ -203,6 +202,7 @@ export default function QuizAttemptPage() {
 
   return (
     <AppShell title="Quizzes" headerMaxWidthClassName="max-w-[1200px]">
+      {quizData && <SessionManager mode="Taking Quiz" classId={quizData.quiz?.class_id} endOnUnmount={false} />}
       <div className="mx-auto w-full max-w-[1200px] px-2 sm:px-0">
         {/* top bar */}
         <div className="mb-6 flex items-center justify-between gap-4">
@@ -220,7 +220,7 @@ export default function QuizAttemptPage() {
             {!attemptResult && (
               <div className="flex items-center gap-2 rounded-full bg-[var(--surface)] px-4 py-2 text-sm font-semibold shadow-[var(--shadow-soft)]">
                 <Clock className="h-4 w-4 text-[var(--primary)]" />
-                <span className="text-[var(--text-main)]">{formatTime(elapsedSeconds)}</span>
+                <span className="text-[var(--text-main)]">{formatDuration(elapsedSeconds)}</span>
               </div>
             )}
             

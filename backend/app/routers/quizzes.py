@@ -124,6 +124,7 @@ class CreateQuizJobReq(BaseModel):
     types: List[QuizType] = Field(default_factory=lambda: ["mcq", "conceptual"])
     difficulty: Difficulty = "medium"
     premium_tier: Optional[str] = None
+    source_type: Literal["file", "topic"] = "file"
 
 class QuizJobOut(BaseModel):
     job_id: str
@@ -190,10 +191,11 @@ async def create_quiz_job(req: CreateQuizJobReq, user_id: str = Depends(get_requ
 
     payload = {
         "n_questions": req.n_questions,
-        "mcq_count": req.mcq_count,  # ← ADD THIS LINE
+        "mcq_count": req.mcq_count,
         "types": req.types,
         "difficulty": req.difficulty,
         "premium_tier": req.premium_tier,
+        "source_type": req.source_type,
     }
 
     # ... rest of the code stays the same

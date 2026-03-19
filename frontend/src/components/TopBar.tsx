@@ -1,9 +1,11 @@
-import { ChevronDown, Moon, Sun } from "lucide-react";
+import { ChevronDown, Moon, Sun, Clock } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import BackLink from "./BackLink";
 import { useUser } from "../hooks/useUser";
 import { useTheme } from "../hooks/useTheme";
+import { useActivity } from "../contexts/ActivityContext";
+import DailyTimer from "./DailyTimer";
 
 type Props = {
   title: string;
@@ -19,6 +21,7 @@ export default function TopBar({ title, breadcrumbs, subtitle, showGreeting, bac
   const navigate = useNavigate();
   const { profile } = useUser();
   const { resolvedTheme, setTheme } = useTheme();
+  const { formattedTime } = useActivity();
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const crumbs = breadcrumbs ?? [];
@@ -60,6 +63,11 @@ export default function TopBar({ title, breadcrumbs, subtitle, showGreeting, bac
         )}
       </div>
       <div className="flex items-center gap-3">
+        <DailyTimer />
+        <div className="hidden sm:flex items-center gap-2 rounded-full border border-[var(--border-soft)] bg-[var(--surface-accent-soft)] px-3 py-1 text-xs font-medium text-[var(--text-muted)]" title="Active time today">
+          <Clock className="h-3.5 w-3.5 text-[var(--primary)]" />
+          <span className="tabular-nums">{formattedTime}</span>
+        </div>
         <button
           type="button"
           onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}

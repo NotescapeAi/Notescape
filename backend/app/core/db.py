@@ -1,9 +1,26 @@
+import logging
 from contextlib import asynccontextmanager
 from typing import Optional
 from psycopg_pool import AsyncConnectionPool
 from app.core.settings import settings
 
+log = logging.getLogger("uvicorn.error")
+
 _pool: Optional[AsyncConnectionPool] = None
+
+class DummyConnection:
+    async def __aenter__(self):
+        raise RuntimeError("Database is not available (connection failed at startup)")
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        pass
+
+class DummyPool:
+    def connection(self):
+        return DummyConnection()
+    async def open(self, wait=True):
+        pass
+    async def close(self):
+        pass
 
 def _normalize_conninfo(url: str) -> str:
     """Normalize the database connection string for psycopg_pool."""
@@ -16,10 +33,19 @@ async def get_pool() -> AsyncConnectionPool:
     global _pool
     if _pool is None:
         conninfo = _normalize_conninfo(settings.database_url)
-        # Ensure the pool is open during initialization
-        _pool = AsyncConnectionPool(conninfo, min_size=1, max_size=10, open=True)
-        await _pool.open(wait=True)  # Wait until connections are ready
+        try:
+            # Ensure the pool is open during initialization
+            _pool = AsyncConnectionPool(conninfo, min_size=1, max_size=10, open=False)
+            await _pool.open(wait=True)  # Wait until connections are ready
+        except Exception as e:
+            log.error(f"Failed to connect to database: {e}. Running in degraded mode.")
+            _pool = DummyPool() # type: ignore
     return _pool
+
+def is_db_available() -> bool:
+    """Check if the database is available."""
+    global _pool
+    return _pool is not None and not isinstance(_pool, DummyPool)
 
 @asynccontextmanager
 async def db_conn():

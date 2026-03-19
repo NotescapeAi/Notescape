@@ -9,6 +9,8 @@ def _fake_chat(system_prompt: str, user_prompt: str) -> str:
     # Health check heuristic: strict match for the health check probe
     if "reply with exactly: ok" in user_prompt.lower():
         return "OK"
+    if "reply with exactly: ok" in system_prompt.lower() and user_prompt.strip().lower() == "ok":
+        return "OK"
 
     # Title generation heuristic (for fake/dev mode)
     if "concise (3-5 words) title" in system_prompt.lower():

@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 import logging
 from pathlib import Path, PurePosixPath
-from app.core.db import db_conn
+from app.core.db import db_conn, is_db_available
 from app.dependencies import get_request_user_uid
 from app.core.settings import settings
 from app.core.storage import presign_get_url
@@ -25,6 +25,14 @@ class ClassUpdate(BaseModel):
 
 @router.get("")  # GET /api/classes
 async def list_classes(user_uid: str = Depends(get_request_user_uid)) -> List[Dict[str, Any]]:
+    if not is_db_available():
+        # Mock data for degraded mode
+        return [
+            {"id": 1, "name": "Mock Class 1", "subject": "Math", "created_at": "2023-10-26T10:00:00"},
+            {"id": 2, "name": "Mock Class 2", "subject": "History", "created_at": "2023-10-25T14:30:00"},
+            {"id": 3, "name": "Mock Class 3", "subject": "Science", "created_at": "2023-10-24T09:15:00"},
+        ]
+        
     async with db_conn() as (conn, cur):
         await cur.execute(
             "SELECT id, name, subject, created_at FROM classes "

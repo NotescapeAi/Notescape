@@ -18,7 +18,7 @@ os.environ.setdefault("S3_BUCKET", "test-bucket")
 sys.path.append(os.path.join(os.getcwd(), "backend"))
 
 # Import app modules after setting env vars
-from app.core.db import db_conn
+from app.core.db import db_conn, get_pool, is_db_available
 from app.routers.chat_sessions import add_messages, ChatMessageCreate, create_session, ChatSessionCreate
 
 # Test Data Setup
@@ -81,6 +81,9 @@ async def test_chat_persistence_robustness():
     Comprehensive test for chat message persistence scenarios.
     """
     print(f"\nStarting chat persistence robustness test for user {USER_ID}...")
+    await get_pool()
+    if not is_db_available():
+        pytest.skip("Database not available; skipping chat persistence integration test.")
     
     class_id, file_id_A, file_id_B = await setup_test_data()
     session_id = None

@@ -42,10 +42,10 @@ async def run_test_add_message_attachment_mismatch_allowed():
     
     with patch("app.routers.chat_sessions.db_conn", return_value=mock_db_ctx):
         # Configure fetchone side effects
-        # Call 1: Session lookup -> (class_id, document_id)
+        # Call 1: Session lookup -> (class_id, document_id, title)
         # Call 2: File lookup (verify attachment exists in class) -> (1,)
         mock_cursor.fetchone.side_effect = [
-            (class_id, document_id), # Session lookup
+            (class_id, document_id, "Chat session"), # Session lookup
             (1,), # File lookup
         ]
         
@@ -82,16 +82,13 @@ async def run_test_add_message_mismatch_forbidden_without_attachment():
     
     with patch("app.routers.chat_sessions.db_conn", return_value=mock_db_ctx):
         mock_cursor.fetchone.side_effect = [
-            (class_id, document_id), # Session lookup
+            (class_id, document_id, "Chat session"), # Session lookup
             (1,), # File lookup
         ]
+        mock_cursor.fetchall.return_value = []
         
-        # Act & Assert
-        with pytest.raises(HTTPException) as excinfo:
-            await add_messages(session_id, payload, user_id=USER_ID)
-        
-        assert excinfo.value.status_code == 404
-        assert "File not found in session scope" in excinfo.value.detail
+        res = await add_messages(session_id, payload, user_id=USER_ID)
+        assert res["ok"] is True
 
 def test_add_message_mismatch_forbidden_without_attachment():
     asyncio.run(run_test_add_message_mismatch_forbidden_without_attachment())

@@ -155,7 +155,7 @@ export default function QuizzesPage() {
                   <h2 className="text-xl font-semibold text-[var(--text-main)]">Generate a Quiz</h2>
                 </div>
                 <p className="text-sm text-[var(--text-muted)]">
-                  Select a class and PDF, choose difficulty + types, then generate and attempt the quiz.
+                  Create quizzes from your files, pasted text, or any topic you want to learn about.
                 </p>
               </div>
 

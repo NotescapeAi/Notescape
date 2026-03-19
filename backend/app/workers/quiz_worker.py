@@ -80,7 +80,8 @@ def _build_prompt(
     n_questions: int,
     mcq_count: Optional[int],
     types: List[str], 
-    difficulty: str
+    difficulty: str,
+    source_type: str = "file"
 ) -> str:
     """
     Build prompt with EXPLICIT instructions for exact MCQ vs subjective counts
@@ -107,14 +108,30 @@ DO NOT DEVIATE FROM THESE COUNTS. If you generate {mcq_count + 1} or {mcq_count 
     else:
         breakdown = f"Generate {n_questions} questions total from types: {types}"
 
-    return f"""
+    if source_type == "topic":
+        base_instructions = f"""
 You are an exam-quality quiz generator.
+The user has provided a TOPIC: "{context.strip()}".
 
-{breakdown}
+TASK:
+Generate an educational quiz based on this TOPIC using your general knowledge.
+Ensure the questions are accurate and relevant to the topic.
+"""
+    else:
+        base_instructions = f"""
+You are an exam-quality quiz generator.
 
 TASK:
 Generate an educational quiz STRICTLY based on the provided context.
 Do NOT use outside knowledge.
+CONTEXT:
+{context}
+"""
+
+    return f"""
+{base_instructions}
+
+{breakdown}
 
 ALLOWED QUESTION TYPES: {types}
 DIFFICULTY: {difficulty}
@@ -372,7 +389,8 @@ async def run():
                 n_questions=n_questions,
                 mcq_count=mcq_count,
                 types=types, 
-                difficulty=difficulty
+                difficulty=difficulty,
+                source_type=settings.get("source_type", "file")
             )
 
             result = await gen(prompt)

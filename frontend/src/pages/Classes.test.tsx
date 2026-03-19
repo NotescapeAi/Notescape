@@ -6,32 +6,41 @@ import { LayoutContext } from "../layouts/LayoutContext";
 import * as api from "../lib/api";
 
 // Mock API modules
-vi.mock("../lib/api", () => ({
-  listClasses: vi.fn(),
-  listFiles: vi.fn().mockResolvedValue([]),
-  listFlashcards: vi.fn().mockResolvedValue([]),
-  getWeakCards: vi.fn().mockResolvedValue([]),
-  createClass: vi.fn(),
-  updateClass: vi.fn(),
-  deleteClass: vi.fn(),
-  uploadFile: vi.fn(),
-  deleteFile: vi.fn(),
-  createChunks: vi.fn(),
-  buildEmbeddings: vi.fn(),
-  generateFlashcardsAsync: vi.fn(),
-  getFlashcardJobStatus: vi.fn(),
-  ocrImageSnippet: vi.fn(),
-  getDocumentViewUrl: vi.fn(),
-  // Chat API
-  listChatSessions: vi.fn().mockResolvedValue([]),
-  createChatSession: vi.fn(),
-  listChatSessionMessages: vi.fn().mockResolvedValue([]),
-  addChatMessages: vi.fn(),
-  chatAsk: vi.fn(),
-  updateChatSession: vi.fn(),
-  deleteChatSession: vi.fn(),
-  clearChatSessionMessages: vi.fn(),
-}));
+vi.mock("../lib/api", () => {
+  const cache: Record<string, any> = {
+    listClasses: vi.fn(),
+    listFiles: vi.fn().mockResolvedValue([]),
+    listFlashcards: vi.fn().mockResolvedValue([]),
+    getWeakCards: vi.fn().mockResolvedValue([]),
+    createClass: vi.fn(),
+    updateClass: vi.fn(),
+    deleteClass: vi.fn(),
+    uploadFile: vi.fn(),
+    deleteFile: vi.fn(),
+    createChunks: vi.fn(),
+    buildEmbeddings: vi.fn(),
+    generateFlashcardsAsync: vi.fn(),
+    getFlashcardJobStatus: vi.fn(),
+    ocrImageSnippet: vi.fn(),
+    getDocumentViewUrl: vi.fn(),
+    listChatSessions: vi.fn().mockResolvedValue([]),
+    createChatSession: vi.fn(),
+    listChatSessionMessages: vi.fn().mockResolvedValue([]),
+    addChatMessages: vi.fn(),
+    chatAsk: vi.fn(),
+    updateChatSession: vi.fn(),
+    deleteChatSession: vi.fn(),
+    clearChatSessionMessages: vi.fn(),
+  };
+  return new Proxy(cache, {
+    get(target, prop) {
+      if (prop === "__esModule") return true;
+      if (typeof prop !== "string") return (target as any)[prop];
+      if (!(prop in target)) target[prop] = vi.fn();
+      return target[prop];
+    },
+  });
+});
 
 // Mock complex child components if needed
 vi.mock("../components/PdfStudyViewer", () => ({
@@ -110,7 +119,7 @@ describe("Classes Page", () => {
 
     // Wait for classes to load
     await waitFor(() => {
-      expect(screen.getByText("Biology 101")).toBeInTheDocument();
+      expect(screen.getAllByText("Biology 101").length).toBeGreaterThan(0);
     });
 
     // Select the first class to trigger file loading
@@ -128,5 +137,25 @@ describe("Classes Page", () => {
     // DateDisplay formats as "Oct 24, 2023" by default in en-US.
     // Let's check for "2023" which is safe.
     expect(screen.getByText(/2023/)).toBeInTheDocument();
+  });
+
+  it("renders upload empty state with icon strip", async () => {
+    (api.listClasses as any).mockResolvedValue(mockClasses);
+    (api.listFiles as any).mockResolvedValue([]);
+
+    renderClasses();
+
+    await waitFor(() => {
+      expect(screen.getAllByText("Biology 101").length).toBeGreaterThan(0);
+    }, { timeout: 3000 });
+
+    const classButtons = screen.getAllByText("Biology 101");
+    fireEvent.click(classButtons[0]);
+
+    await waitFor(() => {
+      expect(screen.getByText("Upload your materials")).toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId("upload-materials-icons")).toBeInTheDocument();
   });
 });

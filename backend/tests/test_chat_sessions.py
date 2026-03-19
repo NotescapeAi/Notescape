@@ -18,6 +18,7 @@ sys.path.append(os.path.join(os.getcwd(), "backend"))
 
 # Import app modules after setting env vars
 from app.core.db import db_conn
+from app.core.db import get_pool, is_db_available
 from app.routers.chat_sessions import list_sessions
 
 async def run_test_chat_session_pdf_filtering():
@@ -25,6 +26,9 @@ async def run_test_chat_session_pdf_filtering():
     Integration test to verify that list_sessions correctly filters by document_id.
     """
     print("Starting chat session PDF filtering verification...")
+    await get_pool()
+    if not is_db_available():
+        pytest.skip("Database not available; skipping chat session integration test.")
     
     user_id = "test_user_pdf_chat_" + str(uuid4())[:8]
     class_name = "Test Class PDF Chat"

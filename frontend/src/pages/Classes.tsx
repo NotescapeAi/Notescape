@@ -39,6 +39,9 @@ import {
 } from "../lib/api";
 import { useChatSession, type Msg } from "../hooks/useChatSession";
 import { ChatInterface } from "../components/chat/ChatInterface";
+import { useActivity } from "../contexts/ActivityContext";
+import { SessionManager } from "../components/SessionManager";
+import { TaskCard, type RevisionTask, EditTaskModal } from "./RevisionPlanner";
 
 const ALLOWED_MIME = new Set<string>([
   "application/pdf",
@@ -65,6 +68,112 @@ function isPdfFile(file?: FileRow | null) {
 }
 
 import { DateDisplay } from "../components/DateDisplay";
+
+type UploadTileVariant = "video" | "audio" | "image" | "pdf" | "doc" | "slides";
+
+function UploadTile({ color, variant }: { color: string; variant: UploadTileVariant }) {
+  const glyph = (() => {
+    const fill = "rgba(25, 28, 38, 0.82)";
+    if (variant === "video") {
+      return <path d="M27 24L43 32L27 40Z" fill={fill} />;
+    }
+    if (variant === "audio") {
+      return (
+        <g fill={fill}>
+          <rect x="24" y="25" width="3" height="14" rx="1.2" />
+          <rect x="30" y="21" width="3" height="22" rx="1.2" />
+          <rect x="36" y="26" width="3" height="12" rx="1.2" />
+        </g>
+      );
+    }
+    if (variant === "image") {
+      return (
+        <g fill="none" stroke={fill} strokeWidth="2.6" strokeLinejoin="round" strokeLinecap="round">
+          <rect x="22.5" y="22.5" width="19" height="19" rx="3.5" />
+          <path d="M25 38L31 31.5L35 36L38 33.5L41 38" />
+          <circle cx="29.5" cy="28.5" r="1.8" fill={fill} stroke="none" />
+        </g>
+      );
+    }
+    if (variant === "pdf") {
+      return (
+        <text
+          x="32"
+          y="38"
+          textAnchor="middle"
+          fontSize="12"
+          fontWeight="800"
+          fill={fill}
+          fontFamily="system-ui, -apple-system, Segoe UI, Roboto, Arial"
+        >
+          PDF
+        </text>
+      );
+    }
+    if (variant === "doc") {
+      return (
+        <text
+          x="32"
+          y="38"
+          textAnchor="middle"
+          fontSize="12"
+          fontWeight="800"
+          fill={fill}
+          fontFamily="system-ui, -apple-system, Segoe UI, Roboto, Arial"
+        >
+          DOC
+        </text>
+      );
+    }
+    return (
+      <g fill="none" stroke={fill} strokeWidth="2.6" strokeLinejoin="round" strokeLinecap="round">
+        <rect x="22.5" y="22.5" width="19" height="19" rx="3.5" />
+        <path d="M26.5 28.5H37.5" />
+        <path d="M26.5 33.5H33.5" />
+      </g>
+    );
+  })();
+
+  return (
+    <svg viewBox="0 0 64 64" className="h-full w-full" aria-hidden="true" focusable="false">
+      <path
+        d="M16 8.5C16 6.6 17.6 5 19.5 5H40.5L53 17.5V56.5C53 58.4 51.4 60 49.5 60H19.5C17.6 60 16 58.4 16 56.5V8.5Z"
+        fill={color}
+      />
+      <path d="M40.5 5V17.5H53" fill="rgba(255,255,255,0.5)" />
+      {glyph}
+    </svg>
+  );
+}
+
+function UploadMaterialsIcons() {
+  return (
+    <div
+      data-testid="upload-materials-icons"
+      className="relative h-16 w-[270px] sm:h-[72px] sm:w-[310px]"
+      aria-hidden="true"
+    >
+      <div className="absolute left-0 top-3 h-12 w-12 -rotate-10 rounded-2xl shadow-[0_14px_28px_rgba(15,16,32,0.18)] transition-transform duration-300 group-hover:-translate-y-0.5 sm:h-14 sm:w-14">
+        <UploadTile color="#B58CFF" variant="video" />
+      </div>
+      <div className="absolute left-[42px] top-1 h-12 w-12 -rotate-6 rounded-2xl shadow-[0_14px_28px_rgba(15,16,32,0.18)] transition-transform duration-300 group-hover:-translate-y-0.5 sm:left-[50px] sm:h-14 sm:w-14">
+        <UploadTile color="#FFB37A" variant="audio" />
+      </div>
+      <div className="absolute left-[86px] top-4 h-12 w-12 -rotate-2 rounded-2xl shadow-[0_14px_28px_rgba(15,16,32,0.18)] transition-transform duration-300 group-hover:-translate-y-0.5 sm:left-[102px] sm:h-14 sm:w-14">
+        <UploadTile color="#5BCDF7" variant="image" />
+      </div>
+      <div className="absolute left-[130px] top-2 h-12 w-12 rotate-3 rounded-2xl shadow-[0_14px_28px_rgba(15,16,32,0.18)] transition-transform duration-300 group-hover:-translate-y-0.5 sm:left-[154px] sm:h-14 sm:w-14">
+        <UploadTile color="#FF6B8B" variant="pdf" />
+      </div>
+      <div className="absolute left-[174px] top-4 h-12 w-12 rotate-8 rounded-2xl shadow-[0_14px_28px_rgba(15,16,32,0.18)] transition-transform duration-300 group-hover:-translate-y-0.5 sm:left-[206px] sm:h-14 sm:w-14">
+        <UploadTile color="#4B7BFF" variant="doc" />
+      </div>
+      <div className="absolute left-[218px] top-2 h-12 w-12 rotate-12 rounded-2xl shadow-[0_14px_28px_rgba(15,16,32,0.18)] transition-transform duration-300 group-hover:-translate-y-0.5 sm:left-[258px] sm:h-14 sm:w-14">
+        <UploadTile color="#FFC857" variant="slides" />
+      </div>
+    </div>
+  );
+}
 
 function prettyBytes(bytes?: number) {
   if (!Number.isFinite(bytes ?? NaN)) return "-";
@@ -102,13 +211,14 @@ function Tabs({
   active,
   onChange,
 }: {
-  active: "documents" | "flashcards" | "chat";
-  onChange: (t: "documents" | "flashcards" | "chat") => void;
+  active: "documents" | "flashcards" | "chat" | "tasks";
+  onChange: (t: "documents" | "flashcards" | "chat" | "tasks") => void;
 }) {
-  const items: Array<["documents" | "flashcards" | "chat", string]> = [
+  const items: Array<["documents" | "flashcards" | "chat" | "tasks", string]> = [
     ["documents", "Documents"],
     ["flashcards", "Flashcards"],
     ["chat", "Chat"],
+    ["tasks", "Tasks"],
   ];
   return (
     <div className="flex flex-wrap gap-2">
@@ -128,12 +238,34 @@ function Tabs({
 
 export function ClassesContent() {
   const [classes, setClasses] = useState<ClassRow[]>([]);
+  const [loadingClasses, setLoadingClasses] = useState(true);
+  const [classesError, setClassesError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   console.log("ClassesContent render selectedId:", selectedId, "classes:", classes.length);
-  const [activeTab, setActiveTab] = useState<"documents" | "flashcards" | "chat">("documents");
+  const [activeTab, setActiveTab] = useState<"documents" | "flashcards" | "chat" | "tasks">("documents");
 
   const [files, setFiles] = useState<FileRow[] | undefined>([]);
+  const [tasks, setTasks] = useState<RevisionTask[]>([]);
+  const [editingTask, setEditingTask] = useState<RevisionTask | null>(null);
   const [sel, setSel] = useState<Record<string, boolean>>({});
+
+  const updateTask = (id: string, updates: Partial<RevisionTask>) => {
+    const saved = localStorage.getItem('revision_tasks');
+    if (!saved) return;
+    const allTasks: RevisionTask[] = JSON.parse(saved);
+    const updated = allTasks.map(t => t.id === id ? { ...t, ...updates } : t);
+    localStorage.setItem('revision_tasks', JSON.stringify(updated));
+    setTasks(updated.filter(t => t.classId === selectedId));
+  };
+
+  const deleteTask = (id: string) => {
+    const saved = localStorage.getItem('revision_tasks');
+    if (!saved) return;
+    const allTasks: RevisionTask[] = JSON.parse(saved);
+    const updated = allTasks.filter(t => t.id !== id);
+    localStorage.setItem('revision_tasks', JSON.stringify(updated));
+    setTasks(updated.filter(t => t.classId === selectedId));
+  };
   const [flashcardSourceIds, setFlashcardSourceIds] = useState<string[]>([]);
 
   const selectedIds = useMemo(
@@ -154,6 +286,32 @@ export function ClassesContent() {
   const [activeFileViewUrl, setActiveFileViewUrl] = useState<string | null>(null);
   const [activeFileViewError, setActiveFileViewError] = useState<string | null>(null);
   const [activeFileViewLoading, setActiveFileViewLoading] = useState(false);
+  const { isReady } = useActivity();
+
+  const sessionConfig = useMemo(() => {
+    if (!selectedId) {
+      return { mode: "Browsing Classes", classId: undefined };
+    }
+    const currentClass = classes.find((c) => c.id === selectedId);
+    const className = currentClass ? currentClass.name : "Class";
+
+    if (activeFile) {
+      let mode = `Viewing ${activeFile.filename}`;
+      if (mode.length > 32) mode = mode.substring(0, 32);
+      return { mode, classId: selectedId };
+    }
+
+    if (activeTab === "chat") {
+      return { mode: `Chatting in ${className}`, classId: selectedId };
+    }
+    if (activeTab === "flashcards") {
+      return { mode: `Flashcards in ${className}`, classId: selectedId };
+    }
+    if (activeTab === "tasks") {
+      return { mode: `Tasks in ${className}`, classId: selectedId };
+    }
+    return { mode: `Browsing ${className}`, classId: selectedId };
+  }, [selectedId, classes, activeFile, activeTab]);
 
   const [chatDockState, setChatDockState] =
     useState<"collapsed" | "docked" | "fullscreen">("docked");
@@ -230,19 +388,28 @@ export function ClassesContent() {
   };
 
   useEffect(() => {
-    (async () => {
-      try {
-        setClasses(await listClasses());
-      } catch (err) {
-        console.error("Failed to load classes", err);
-        toast.error("Could not load classes. Please refresh.");
-      }
-    })();
+    loadClasses();
   }, []);
+
+  const loadClasses = async () => {
+    setLoadingClasses(true);
+    setClassesError(null);
+    try {
+      const data = await listClasses();
+      setClasses(data);
+    } catch (err: any) {
+      console.error("Failed to load classes", err);
+      const msg = err.message || "Could not load classes";
+      setClassesError(msg);
+      toast.error("Could not load classes. Please refresh.");
+    } finally {
+      setLoadingClasses(false);
+    }
+  };
 
   useEffect(() => {
     const tab = searchParams.get("tab");
-    if (tab === "chat" || tab === "documents" || tab === "flashcards") {
+    if (tab === "chat" || tab === "documents" || tab === "flashcards" || tab === "tasks") {
       setActiveTab(tab);
     }
   }, [searchParams]);
@@ -359,6 +526,25 @@ export function ClassesContent() {
   }, [selectedId, activeTab]);
 
   useEffect(() => {
+    if (!selectedId || activeTab !== "tasks") {
+      setTasks([]);
+      return;
+    }
+    const saved = localStorage.getItem('revision_tasks');
+    if (saved) {
+      try {
+        const allTasks: RevisionTask[] = JSON.parse(saved);
+        const classTasks = allTasks.filter(t => t.classId === selectedId);
+        setTasks(classTasks);
+      } catch (e) {
+        console.error("Failed to parse revision tasks", e);
+      }
+    } else {
+      setTasks([]);
+    }
+  }, [selectedId, activeTab]);
+
+  useEffect(() => {
     if (!selectedId || !activeFile) {
       setActiveFileViewUrl(null);
       setActiveFileViewError(null);
@@ -399,6 +585,21 @@ export function ClassesContent() {
       cancelled = true;
     };
   }, [selectedId, activeFile?.id]);
+
+  // Comprehensive study session tracking - Replaced by declarative SessionManager
+  /*
+  useEffect(() => {
+    if (!isReady) return;
+    // ... logic moved to sessionConfig
+  }, [isReady, selectedId, activeFile?.id, activeTab, classes]);
+  */
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      // No automatic switchSession here, SessionManager in AppLayout handles it
+    };
+  }, []);
 
   useEffect(() => {
     if (!selectionMenu) return;
@@ -1534,10 +1735,12 @@ export function ClassesContent() {
                             <tr>
                               <td colSpan={7} className="px-4 py-8">
                                 <button
-                                  className="mx-auto flex w-full max-w-md flex-col items-center rounded-xl border border-dashed border-token px-4 py-6 text-center hover:border-[var(--primary)]"
+                                  className="group mx-auto flex w-full max-w-md flex-col items-center rounded-xl border border-dashed border-token px-4 py-6 text-center transition hover:border-[var(--primary)]"
                                   onClick={() => fileInputRef.current?.click()}
+                                  aria-label="Upload your materials (PDF, PPTX, DOCX)"
                                 >
-                                  <Upload className="h-7 w-7 text-[var(--primary)]" />
+                                  <UploadMaterialsIcons />
+                                  <span className="sr-only">Supported file types: video, audio, image, PDF, DOC, slides.</span>
                                   <div className="mt-2 text-sm font-semibold text-main">Upload your materials</div>
                                   <div className="mt-1 text-xs text-muted">Click to upload - PDF, PPTX, DOCX</div>
                                 </button>
@@ -1656,6 +1859,50 @@ export function ClassesContent() {
                       </div>
                     )}
                   </div>
+                </div>
+              )}
+
+              {activeTab === "tasks" && (
+                <div className="mt-6 rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-5 shadow-sm">
+                  <div className="flex items-center justify-between flex-wrap gap-3 mb-6">
+                    <div>
+                      <h3 className="text-lg font-semibold text-[var(--text-main)]">Class Tasks</h3>
+                      <div className="text-sm text-[var(--text-secondary)]">
+                        Manage tasks specifically for this class.
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {tasks.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-16 text-center rounded-xl border border-dashed border-[var(--border)] bg-[var(--surface-2)]">
+                      <div className="w-12 h-12 rounded-full bg-[var(--surface)] flex items-center justify-center mb-4">
+                        <span className="text-2xl">📝</span>
+                      </div>
+                      <h3 className="text-base font-medium text-[var(--text-main)] mb-2">No tasks yet</h3>
+                      <p className="text-sm text-[var(--text-muted)] max-w-xs mx-auto">
+                        Head over to the Revision Planner to create tasks and link them to this class.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {tasks.map(task => (
+                        <TaskCard 
+                          key={task.id} 
+                          task={task} 
+                          onUpdate={updateTask}
+                          onDelete={deleteTask}
+                          onEdit={(t) => setEditingTask(t)}
+                        />
+                      ))}
+                    </div>
+                  )}
+
+                  <EditTaskModal 
+                    task={editingTask}
+                    isOpen={!!editingTask}
+                    onClose={() => setEditingTask(null)}
+                    onUpdate={updateTask}
+                  />
                 </div>
               )}
 

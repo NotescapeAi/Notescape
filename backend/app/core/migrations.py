@@ -40,10 +40,13 @@ async def ensure_quiz_jobs_schema() -> None:
     if not sql.strip():
         return
 
-    async with db_conn() as (conn, cur):
-        log.info("Ensuring quiz_jobs schema exists using %s", sql_path.name)
-        await cur.execute(sql)
-        await conn.commit()
+    try:
+        async with db_conn() as (conn, cur):
+            log.info("Ensuring quiz_jobs schema exists using %s", sql_path.name)
+            await cur.execute(sql)
+            await conn.commit()
+    except Exception as e:
+        log.error(f"Failed to ensure quiz_jobs schema: {e}")
 
 
 async def ensure_learning_analytics_schema() -> None:
@@ -61,7 +64,10 @@ async def ensure_learning_analytics_schema() -> None:
     if not sql.strip():
         return
 
-    async with db_conn() as (conn, cur):
-        log.info("Ensuring learning analytics schema exists using %s", sql_path.name)
-        await cur.execute(sql)
-        await conn.commit()
+    try:
+        async with db_conn() as (conn, cur):
+            log.info("Ensuring learning analytics schema exists using %s", sql_path.name)
+            await cur.execute(sql)
+            await conn.commit()
+    except Exception as e:
+        log.error(f"Failed to ensure learning analytics schema: {e}")
