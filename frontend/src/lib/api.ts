@@ -1105,12 +1105,14 @@ export type QuizJobResponse = {
   job_id: string;
   status: "queued" | "running" | "completed" | "failed";
   progress: number;
+  status_message?: string | null;
   error_message?: string;
   failure_reason?: string | null;
   requested_mcq_count?: number | null;
   requested_theory_count?: number | null;
   actual_mcq_count?: number | null;
   actual_theory_count?: number | null;
+  timing_ms?: Record<string, number> | null;
 };
 
 export type StartAttemptResponse = {

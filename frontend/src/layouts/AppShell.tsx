@@ -55,13 +55,13 @@ export default function AppShell({
 
   return (
     <LayoutContext.Provider value={layout}>
-      <div className="min-h-screen bg-[var(--bg-page)] text-[var(--text)]">
+      <div className="flex h-screen overflow-hidden bg-[var(--bg-page)] text-[var(--text)]">
         <AppSidebar collapsed={collapsed} onToggle={handleToggle} />
         <div
-          className="min-h-screen px-4 py-6 transition-[margin-left] duration-200 ease-in-out lg:px-6"
+          className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden px-4 py-6 transition-[margin-left] duration-200 ease-in-out lg:px-6"
           style={{ marginLeft: collapsed ? "76px" : "260px" }}
         >
-          <div className="flex min-w-0 flex-col gap-8">
+          <div className="flex min-h-full min-w-0 flex-col gap-8">
             <div className={`mx-auto w-full ${headerMaxWidthClassName}`}>
               <TopBar
                 title={title}
@@ -73,7 +73,7 @@ export default function AppShell({
                 backState={backState}
               />
             </div>
-            <main className="flex-1">{children}</main>
+            <main className="flex-1 min-w-0">{children}</main>
           </div>
         </div>
       </div>

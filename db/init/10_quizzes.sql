@@ -94,7 +94,9 @@ CREATE TABLE IF NOT EXISTS quiz_jobs (
   status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'completed', 'failed')),
   progress INT NOT NULL DEFAULT 0,
   payload JSONB NOT NULL DEFAULT '{}'::jsonb, -- {count, types, difficulty, premium_tier, ...}
+  status_message TEXT,
   error_message TEXT,
+  timing_ms JSONB,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   started_at TIMESTAMPTZ,
   finished_at TIMESTAMPTZ
@@ -108,3 +110,5 @@ ALTER TABLE quiz_jobs ADD COLUMN IF NOT EXISTS requested_theory_count INT;
 ALTER TABLE quiz_jobs ADD COLUMN IF NOT EXISTS actual_mcq_count INT;
 ALTER TABLE quiz_jobs ADD COLUMN IF NOT EXISTS actual_theory_count INT;
 ALTER TABLE quiz_jobs ADD COLUMN IF NOT EXISTS failure_reason TEXT;
+ALTER TABLE quiz_jobs ADD COLUMN IF NOT EXISTS status_message TEXT;
+ALTER TABLE quiz_jobs ADD COLUMN IF NOT EXISTS timing_ms JSONB;

@@ -6,9 +6,9 @@ import math
 import os
 import random
 import re
+import time
 from collections import defaultdict
 from typing import Any, Dict, List, Optional, Set, Tuple
-from typing import Any, Dict, List, Optional, Set
 
 from app.core.db import db_conn
 from app.core.llm import get_quiz_generator  # you will add this in step 3.2
@@ -18,7 +18,9 @@ from app.lib.tags import normalize_tag_names, sync_quiz_question_tags
 
 POLL_SECONDS = 2
 QUIZ_GENERATION_RETRIES = max(1, int(os.environ.get("QUIZ_GENERATION_RETRIES", "2")))
+QUIZ_CHUNK_CACHE_TTL_SECONDS = max(30, int(os.environ.get("QUIZ_CHUNK_CACHE_TTL_SECONDS", "600")))
 log = logging.getLogger("uvicorn.error")
+_QUIZ_CHUNK_CACHE: Dict[str, Tuple[float, List[Dict[str, Any]]]] = {}
 
 
 def _is_rate_limit_error_message(message: str) -> bool:
@@ -57,6 +59,8 @@ async def _ensure_quiz_count_columns(cur) -> None:
     await cur.execute("ALTER TABLE quiz_jobs ADD COLUMN IF NOT EXISTS actual_mcq_count INT")
     await cur.execute("ALTER TABLE quiz_jobs ADD COLUMN IF NOT EXISTS actual_theory_count INT")
     await cur.execute("ALTER TABLE quiz_jobs ADD COLUMN IF NOT EXISTS failure_reason TEXT")
+    await cur.execute("ALTER TABLE quiz_jobs ADD COLUMN IF NOT EXISTS status_message TEXT")
+    await cur.execute("ALTER TABLE quiz_jobs ADD COLUMN IF NOT EXISTS timing_ms JSONB")
     await cur.execute("ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS requested_mcq_count INT")
     await cur.execute("ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS requested_theory_count INT")
     await cur.execute("ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS actual_mcq_count INT")
@@ -198,11 +202,11 @@ def _sample_chunks_distributed(
     return selected_unique
 
 
-async def _fetch_recent_question_fingerprints(
+async def _fetch_recent_question_context(
     user_id: str,
     file_id: str,
     recent_quizzes: int = 12,
-) -> Set[str]:
+) -> Tuple[Set[str], List[str]]:
     async with db_conn() as (conn, cur):
         await cur.execute(
             """
@@ -218,38 +222,27 @@ async def _fetch_recent_question_fingerprints(
         rows = await cur.fetchall()
 
     fingerprints: Set[str] = set()
+    questions: List[str] = []
     for (question_text,) in rows:
-        fp = _question_fingerprint(question_text)
+        normalized_text = str(question_text or "").strip()
+        if not normalized_text:
+            continue
+        questions.append(normalized_text)
+        fp = _question_fingerprint(normalized_text)
         if fp:
             fingerprints.add(fp)
-    return fingerprints
-
-
-async def _fetch_recent_questions(
-    user_id: str,
-    file_id: str,
-    recent_quizzes: int = 12,
-) -> List[str]:
-    async with db_conn() as (conn, cur):
-        await cur.execute(
-            """
-            SELECT qq.question
-            FROM quiz_questions qq
-            JOIN quizzes q ON qq.quiz_id = q.id
-            WHERE q.created_by = %s AND q.file_id = %s
-            ORDER BY q.created_at DESC, qq.position ASC
-            LIMIT %s
-            """,
-            (user_id, file_id, max(20, recent_quizzes * 30)),
-        )
-        rows = await cur.fetchall()
-    return [str(r[0]) for r in rows if r and r[0]]
+    return fingerprints, questions
 
 
 async def _fetch_chunks(file_id: str, limit: int = 500) -> List[Dict[str, Any]]:
     """
     Fetch chunks from the whole file, then sample later for document-wide coverage.
     """
+    cached = _QUIZ_CHUNK_CACHE.get(file_id)
+    now = time.perf_counter()
+    if cached and (now - cached[0]) < QUIZ_CHUNK_CACHE_TTL_SECONDS:
+        return [dict(chunk) for chunk in cached[1][:limit]]
+
     async with db_conn() as (conn, cur):
         await cur.execute(
             """
@@ -273,19 +266,15 @@ async def _fetch_chunks(file_id: str, limit: int = 500) -> List[Dict[str, Any]]:
                 "page_end": r[3],
             }
         )
-    return out
+    _QUIZ_CHUNK_CACHE[file_id] = (now, out)
+    return [dict(chunk) for chunk in out]
 
 def _build_prompt(
     chunks: List[Dict[str, Any]],
     requested_count: int,
-    types: List[str],
-    difficulty: str,
-    variation_nonce: str,
     batch_label: str,
     total_requested_mcq_count: int,
     total_requested_theory_count: int,
-    n_questions: int,
-    mcq_count: Optional[int],
     types: List[str],
     difficulty: str,
     variation_nonce: str,
@@ -308,11 +297,6 @@ def _build_prompt(
         '- Every item must use type "mcq".'
         if is_mcq_batch
         else f"- Every item must use one of these non-MCQ types only: {non_mcq_types}."
-
-    mix_instruction = (
-        f"Try to include about {mcq_count} MCQs and {max(0, n_questions - (mcq_count or 0))} non-MCQs."
-        if mcq_count is not None
-        else "Use a balanced mix of allowed types."
     )
 
     return f"""
@@ -320,7 +304,6 @@ You are an exam-quality quiz generator.
 
 TASK:
 Generate EXACTLY {requested_count} distinct {batch_label} quiz items STRICTLY based on the provided context.
-Generate {n_questions} distinct quiz items STRICTLY based on the provided context.
 Do NOT use outside knowledge.
 OVERALL QUIZ REQUEST: {total_requested_mcq_count} MCQs and {total_requested_theory_count} theory questions.
 THIS BATCH MUST RETURN: exactly {requested_count} {batch_label} items.
@@ -337,7 +320,6 @@ QUALITY RULES:
 - Do not return fewer or more items.
 - Do not include disallowed question types.
 {type_rule}
-- {mix_instruction}
 
 FORMAT RULES:
 - For MCQ (type="mcq"): exactly 4 options and one correct_index.
@@ -878,22 +860,26 @@ async def _set_job_failed(job_id: str, message: str, details: Optional[Dict[str,
             UPDATE quiz_jobs
             SET status='failed',
                 progress=100,
+                status_message=%s,
                 error_message=%s,
                 failure_reason=%s,
                 requested_mcq_count=COALESCE(%s, requested_mcq_count),
                 requested_theory_count=COALESCE(%s, requested_theory_count),
                 actual_mcq_count=%s,
                 actual_theory_count=%s,
+                timing_ms=COALESCE(%s::jsonb, timing_ms),
                 finished_at=now()
             WHERE id=%s
             """,
             (
+                details.get("status_message", "Generation failed"),
                 message[:1000],
                 details.get("failure_reason"),
                 details.get("requested_mcq_count"),
                 details.get("requested_theory_count"),
                 details.get("actual_mcq_count"),
                 details.get("actual_theory_count"),
+                json.dumps(details.get("timing_ms")) if details.get("timing_ms") is not None else None,
                 job_id,
             ),
         )
@@ -908,30 +894,59 @@ async def _set_job_completed(job_id: str, details: Dict[str, Any]):
             UPDATE quiz_jobs
             SET status='completed',
                 progress=100,
+                status_message=%s,
                 error_message=NULL,
                 failure_reason=NULL,
                 requested_mcq_count=COALESCE(%s, requested_mcq_count),
                 requested_theory_count=COALESCE(%s, requested_theory_count),
                 actual_mcq_count=%s,
                 actual_theory_count=%s,
+                timing_ms=COALESCE(%s::jsonb, timing_ms),
                 finished_at=now()
             WHERE id=%s
             """,
             (
+                details.get("status_message", "Quiz ready"),
                 details.get("requested_mcq_count"),
                 details.get("requested_theory_count"),
                 details.get("actual_mcq_count"),
                 details.get("actual_theory_count"),
+                json.dumps(details.get("timing_ms")) if details.get("timing_ms") is not None else None,
                 job_id,
             ),
         )
         await conn.commit()
 
 
-async def _set_job_progress(job_id: str, p: int):
+async def _set_job_progress(
+    job_id: str,
+    p: int,
+    *,
+    status_message: Optional[str] = None,
+    timing_ms: Optional[Dict[str, int]] = None,
+):
     async with db_conn() as (conn, cur):
-        await cur.execute("UPDATE quiz_jobs SET progress=%s WHERE id=%s", (p, job_id))
+        await _ensure_quiz_count_columns(cur)
+        await cur.execute(
+            """
+            UPDATE quiz_jobs
+            SET progress=%s,
+                status_message=COALESCE(%s, status_message),
+                timing_ms=COALESCE(%s::jsonb, timing_ms)
+            WHERE id=%s
+            """,
+            (
+                p,
+                status_message,
+                json.dumps(timing_ms) if timing_ms is not None else None,
+                job_id,
+            ),
+        )
         await conn.commit()
+
+
+def _timing_ms(started_at: float) -> int:
+    return max(0, int((time.perf_counter() - started_at) * 1000))
 
 
 # -------------------------
@@ -957,6 +972,8 @@ async def run():
         payload = job["payload"] or {}
 
         try:
+            job_started_at = time.perf_counter()
+            timing_ms: Dict[str, int] = {}
             settings = payload if isinstance(payload, dict) else json.loads(payload)
             n_questions = int(settings.get("n_questions", 10))
             mcq_count = settings.get("mcq_count")
@@ -971,34 +988,29 @@ async def run():
             )
             theory_types = [str(t).strip().lower() for t in types if str(t).strip().lower() != "mcq"]
 
-            await _set_job_progress(job_id, 15)
+            await _set_job_progress(job_id, 12, status_message="Loading document context")
 
+            load_started_at = time.perf_counter()
             all_chunks = await _fetch_chunks(file_id=file_id, limit=500)
             if not all_chunks:
                 raise RuntimeError("No chunks found for this file.")
+            timing_ms["load_chunks"] = _timing_ms(load_started_at)
 
             rng = random.Random(int.from_bytes(os.urandom(16), byteorder="big"))
-            recent_fps = await _fetch_recent_question_fingerprints(
+            history_started_at = time.perf_counter()
+            recent_fps, recent_questions = await _fetch_recent_question_context(
                 user_id=user_id,
                 file_id=file_id,
                 recent_quizzes=12,
             )
-            recent_questions = await _fetch_recent_questions(
-                user_id=user_id,
-                file_id=file_id,
-                recent_quizzes=12,
+            timing_ms["load_recent_questions"] = _timing_ms(history_started_at)
+
+            await _set_job_progress(
+                job_id,
+                34,
+                status_message="Preparing question plan",
+                timing_ms=timing_ms,
             )
-            recent_questions = await _fetch_recent_questions(
-                user_id=user_id,
-                file_id=file_id,
-                recent_quizzes=12,
-            )
-
-            await _set_job_progress(job_id, 35)
-
-            await _set_job_progress(job_id, 35)
-
-            await _set_job_progress(job_id, 70)
 
             if requested_theory_count > 0 and not theory_types:
                 raise QuizGenerationCountError(
@@ -1011,6 +1023,13 @@ async def run():
                     )
                 )
 
+            generation_started_at = time.perf_counter()
+            await _set_job_progress(
+                job_id,
+                58,
+                status_message="Generating quiz questions",
+                timing_ms=timing_ms,
+            )
             items, title, validation = await _generate_quiz_items_exact(
                 gen=gen,
                 all_chunks=all_chunks,
@@ -1022,81 +1041,15 @@ async def run():
                 recent_questions=recent_questions,
                 rng=rng,
             )
-            # Keep token usage moderate to avoid provider TPD/TPM spikes.
-            candidate_target = min(36, max(n_questions * 2, n_questions + 6))
-            candidate_mcq_target: Optional[int] = None
-            if mcq_count is not None and n_questions > 0:
-                candidate_mcq_target = max(0, min(candidate_target, round(candidate_target * (mcq_count / n_questions))))
+            timing_ms["generate_questions"] = _timing_ms(generation_started_at)
 
-            aggregated_items: List[Dict[str, Any]] = []
-            title_candidates: List[str] = []
-            generation_rounds = 3
-            context_size = min(len(all_chunks), max(12, n_questions * 2))
-            rate_limit_failure_message: Optional[str] = None
-
-            for i in range(generation_rounds):
-                sampled_chunks = _sample_chunks_distributed(all_chunks, context_size, rng)
-                nonce = f"{job_id}-{i}-{rng.randint(1000, 999999)}"
-                prompt = _build_prompt(
-                    sampled_chunks,
-                    n_questions=candidate_target,
-                    mcq_count=candidate_mcq_target,
-                    types=types,
-                    difficulty=difficulty,
-                    variation_nonce=nonce,
-                )
-                try:
-                    result = await gen(prompt)
-                except Exception as round_err:
-                    round_err_text = str(round_err)
-                    if _is_rate_limit_error_message(round_err_text):
-                        retry_after = _extract_retry_after(round_err_text)
-                        rate_limit_failure_message = (
-                            "Quiz generation is temporarily limited by the AI provider (rate limit or billing/quota)."
-                            f"{f' Please try again in about {retry_after}.' if retry_after else ' Please try again later.'}"
-                        )
-                        log.warning(
-                            "[quiz_worker] rate-limited job=%s round=%s; stopping further rounds: %s",
-                            job_id,
-                            i + 1,
-                            round_err_text,
-                        )
-                        break
-                    log.warning(
-                        "[quiz_worker] generation round failed job=%s round=%s error=%s",
-                        job_id,
-                        i + 1,
-                        round_err,
-                    )
-                    continue
-                title_candidates.append(str(result.get("title") or "Quiz"))
-                raw_items = result.get("items", [])
-                aggregated_items.extend(
-                    _sanitize_generated_items(raw_items, allowed_types=types, difficulty=difficulty)
-                )
-                if len(aggregated_items) >= candidate_target * 2:
-                    break
-
-            await _set_job_progress(job_id, 70)
-
-            if not aggregated_items:
-                if rate_limit_failure_message:
-                    raise RuntimeError(rate_limit_failure_message)
-                raise RuntimeError("Quiz model returned no parseable question candidates.")
-
-            items = _assemble_final_questions(
-                candidate_items=aggregated_items,
-                n_questions=n_questions,
-                mcq_count=mcq_count,
-                types=types,
-                recent_fps=recent_fps,
-                recent_questions=recent_questions[:120],
-                rng=rng,
+            await _set_job_progress(
+                job_id,
+                86,
+                status_message="Saving quiz",
+                timing_ms=timing_ms,
             )
-            if len(items) < n_questions:
-                raise RuntimeError(f"Could not assemble enough diverse questions ({len(items)}/{n_questions}).")
-
-            title = next((t for t in title_candidates if t and t.strip()), "Quiz")
+            save_started_at = time.perf_counter()
             quiz_id = await _save_quiz(
                 user_id=user_id,
                 class_id=class_id,
@@ -1109,18 +1062,28 @@ async def run():
                 actual_mcq_count=validation["actual_mcq_count"],
                 actual_theory_count=validation["actual_theory_count"],
             )
+            timing_ms["save_quiz"] = _timing_ms(save_started_at)
+            timing_ms["total"] = _timing_ms(job_started_at)
 
-            await _set_job_progress(job_id, 95)
+            await _set_job_progress(
+                job_id,
+                96,
+                status_message="Finalizing quiz",
+                timing_ms=timing_ms,
+            )
+            validation["timing_ms"] = timing_ms
+            validation["status_message"] = "Quiz ready"
             await _set_job_completed(job_id, validation)
 
             log.info(
-                "[quiz_worker] completed job=%s quiz_id=%s requested_mcq=%s requested_theory=%s actual_mcq=%s actual_theory=%s",
+                "[quiz_worker] completed job=%s quiz_id=%s requested_mcq=%s requested_theory=%s actual_mcq=%s actual_theory=%s timing_ms=%s",
                 job_id,
                 quiz_id,
                 requested_mcq_count,
                 requested_theory_count,
                 validation["actual_mcq_count"],
                 validation["actual_theory_count"],
+                timing_ms,
             )
 
         except Exception as e:
@@ -1132,10 +1095,17 @@ async def run():
                     "Quiz generation is temporarily limited by the AI provider (rate limit or billing/quota)."
                     + (f" Please try again in about {retry_after}." if retry_after else " Please try again later.")
                 )
-                await _set_job_failed(job_id, detail)
+                await _set_job_failed(
+                    job_id,
+                    detail,
+                    {"status_message": "Generation failed", "timing_ms": timing_ms if "timing_ms" in locals() else None},
+                )
                 continue
             if isinstance(e, QuizGenerationCountError):
                 details = e.details
+                details["status_message"] = "Generation failed"
+                if "timing_ms" in locals():
+                    details["timing_ms"] = timing_ms
                 await _set_job_failed(
                     job_id,
                     (
@@ -1151,6 +1121,7 @@ async def run():
             await _set_job_failed(
                 job_id,
                 "Something went wrong while generating quiz. Please try again.",
+                {"status_message": "Generation failed", "timing_ms": timing_ms if "timing_ms" in locals() else None},
             )
 
 

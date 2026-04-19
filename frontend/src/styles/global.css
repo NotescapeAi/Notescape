@@ -136,7 +136,7 @@ p {
 #root,
 .app-shell,
 .app-content {
-  min-height: 100vh;
+  height: 100%;
   width: 100%;
 }
 
@@ -154,15 +154,12 @@ p {
 .route-transition-stage {
   position: relative;
   width: 100%;
-  min-height: 100vh;
+  min-height: 100%;
 }
 
 .route-transition-page {
   width: 100%;
-  min-height: 100vh;
-  will-change: transform, opacity;
-  backface-visibility: hidden;
-  transform: translateZ(0);
+  min-height: 100%;
 }
 
 .route-suspense-fallback {

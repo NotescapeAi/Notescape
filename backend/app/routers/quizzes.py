@@ -169,12 +169,14 @@ class QuizJobOut(BaseModel):
     job_id: str
     status: str
     progress: int
+    status_message: Optional[str] = None
     error_message: Optional[str] = None
     failure_reason: Optional[str] = None
     requested_mcq_count: Optional[int] = None
     requested_theory_count: Optional[int] = None
     actual_mcq_count: Optional[int] = None
     actual_theory_count: Optional[int] = None
+    timing_ms: Optional[Dict[str, int]] = None
 
 class QuizListItem(BaseModel):
     id: str
@@ -309,6 +311,8 @@ async def _ensure_quiz_count_columns(cur) -> None:
     await cur.execute("ALTER TABLE quiz_jobs ADD COLUMN IF NOT EXISTS actual_mcq_count INT")
     await cur.execute("ALTER TABLE quiz_jobs ADD COLUMN IF NOT EXISTS actual_theory_count INT")
     await cur.execute("ALTER TABLE quiz_jobs ADD COLUMN IF NOT EXISTS failure_reason TEXT")
+    await cur.execute("ALTER TABLE quiz_jobs ADD COLUMN IF NOT EXISTS status_message TEXT")
+    await cur.execute("ALTER TABLE quiz_jobs ADD COLUMN IF NOT EXISTS timing_ms JSONB")
     await cur.execute("ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS requested_mcq_count INT")
     await cur.execute("ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS requested_theory_count INT")
     await cur.execute("ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS actual_mcq_count INT")
@@ -347,17 +351,19 @@ async def create_quiz_job(req: CreateQuizJobReq, user_id: str = Depends(get_requ
                 status,
                 progress,
                 payload,
+                status_message,
                 requested_mcq_count,
                 requested_theory_count
             )
-            VALUES (%s, %s, %s, 'queued', 0, %s::jsonb, %s, %s)
-            RETURNING id::text, status, progress, requested_mcq_count, requested_theory_count
+            VALUES (%s, %s, %s, 'queued', 0, %s::jsonb, %s, %s, %s)
+            RETURNING id::text, status, progress, status_message, requested_mcq_count, requested_theory_count
             """,
             (
                 user_id,
                 req.class_id,
                 str(req.file_id),
                 __import__("json").dumps(payload),
+                "Queued for generation",
                 requested_mcq_count,
                 requested_theory_count,
             ),
@@ -369,8 +375,9 @@ async def create_quiz_job(req: CreateQuizJobReq, user_id: str = Depends(get_requ
         job_id=row[0],
         status=row[1],
         progress=row[2],
-        requested_mcq_count=row[3],
-        requested_theory_count=row[4],
+        status_message=row[3],
+        requested_mcq_count=row[4],
+        requested_theory_count=row[5],
     )
 
 # 2) Poll job status
@@ -384,12 +391,14 @@ async def get_quiz_job(job_id: UUID, user_id: str = Depends(get_request_user_uid
                 id::text,
                 status,
                 progress,
+                status_message,
                 error_message,
                 failure_reason,
                 requested_mcq_count,
                 requested_theory_count,
                 actual_mcq_count,
-                actual_theory_count
+                actual_theory_count,
+                timing_ms
             FROM quiz_jobs
             WHERE id=%s AND user_id=%s
             """,
@@ -402,12 +411,14 @@ async def get_quiz_job(job_id: UUID, user_id: str = Depends(get_request_user_uid
         job_id=row[0],
         status=row[1],
         progress=row[2],
-        error_message=row[3],
-        failure_reason=row[4],
-        requested_mcq_count=row[5],
-        requested_theory_count=row[6],
-        actual_mcq_count=row[7],
-        actual_theory_count=row[8],
+        status_message=row[3],
+        error_message=row[4],
+        failure_reason=row[5],
+        requested_mcq_count=row[6],
+        requested_theory_count=row[7],
+        actual_mcq_count=row[8],
+        actual_theory_count=row[9],
+        timing_ms=row[10],
     )
 
 @router.get("/history", response_model=List[QuizHistoryItem])
