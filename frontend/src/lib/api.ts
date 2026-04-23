@@ -86,6 +86,8 @@ export type FileRow = {
   status?: string | null;
   ocr_job_id?: string | null;
   indexed_at?: string | null;
+  last_error?: string | null;
+  chunk_count?: number | null;
 };
 
 export type ChunkPreview = {

@@ -1,0 +1,18 @@
+{
+  "page_number": 1,
+  "page_type": "handwritten_page",
+  "blocks": [
+    {
+      "type": "handwriting",
+      "bbox": null,
+      "raw_text": "mitosis has prophase metaphase anaphase telophase",
+      "normalized_text": "mitosis has prophase metaphase anaphase telophase",
+      "latex": null,
+      "confidence": 0.63,
+      "engine": "trocr",
+      "needs_review": true,
+      "uncertain_spans": []
+    }
+  ],
+  "warnings": ["Handwriting confidence below review threshold; flashcard source is conservative."]
+}

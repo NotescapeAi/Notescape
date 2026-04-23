@@ -42,11 +42,11 @@ export default function ClassSidebar({
 
   return (
     <aside
-      className={`h-full shrink-0 rounded-[28px] surface shadow-token transition-[width] duration-200 ${
+      className={`flex h-full min-h-0 shrink-0 flex-col overflow-hidden rounded-[28px] surface shadow-token transition-[width] duration-200 ${
         collapsed ? "w-[84px]" : "w-[300px]"
       }`}
     >
-      <div className="border-b border-token px-4 py-5">
+      <div className="flex-shrink-0 border-b border-token px-4 py-4">
         <div className="flex items-center justify-between gap-2">
           <div className={`${collapsed ? "text-center w-full" : ""}`}>
             {!collapsed && (
@@ -70,7 +70,7 @@ export default function ClassSidebar({
         </div>
         {!collapsed && (
           <>
-            <div className="mt-4 flex items-center gap-2">
+            <div className="mt-3 flex items-center gap-2">
               <input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
@@ -78,7 +78,7 @@ export default function ClassSidebar({
                 className="h-10 w-full rounded-2xl border border-token surface px-3 text-sm"
               />
             </div>
-            <Button variant="primary" className="mt-4 w-full rounded-2xl" onClick={onNew}>
+            <Button variant="primary" className="mt-3 w-full rounded-2xl" onClick={onNew}>
               New class
             </Button>
           </>
@@ -86,7 +86,7 @@ export default function ClassSidebar({
         {collapsed && (
           <button
             onClick={onNew}
-            className="mt-4 flex h-10 w-full items-center justify-center rounded-2xl border border-token text-base text-[var(--primary)]"
+            className="mt-3 flex h-10 w-full items-center justify-center rounded-2xl border border-token text-base text-[var(--primary)]"
             title="New class"
             type="button"
           >
@@ -95,7 +95,7 @@ export default function ClassSidebar({
         )}
       </div>
 
-      <div className="p-4">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6 pt-4">
         {filtered.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-token surface-2 p-4 text-sm text-muted">
             {q ? "No classes match your search." : "No classes yet."}

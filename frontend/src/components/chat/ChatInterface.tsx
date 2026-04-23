@@ -31,6 +31,7 @@ type Msg = ChatMessageType & {
 };
 
 const MESSAGE_CACHE_PREFIX = "chat_session_messages:";
+const DRAFT_SCOPE_KEY = "__draft__";
 
 function buildSessionKey(sessionId: string) {
   return `${MESSAGE_CACHE_PREFIX}${sessionId}`;
@@ -52,9 +53,93 @@ function clearSessionMessagesCache(sessionId: string | null) {
   if (!sessionId || typeof window === "undefined") return;
   try { window.localStorage.removeItem(buildSessionKey(sessionId)); } catch {}
 }
-function generateSessionTitle() {
-  const date = new Date();
-  return `Chat ${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+const EMPTY_SESSION_TITLE = "New Chat";
+
+const TITLE_STOP_WORDS = new Set([
+  "a",
+  "about",
+  "an",
+  "and",
+  "are",
+  "as",
+  "can",
+  "compare",
+  "contrast",
+  "could",
+  "define",
+  "describe",
+  "difference",
+  "do",
+  "does",
+  "explain",
+  "for",
+  "from",
+  "give",
+  "help",
+  "how",
+  "in",
+  "is",
+  "me",
+  "of",
+  "on",
+  "please",
+  "summarize",
+  "summary",
+  "teach",
+  "tell",
+  "the",
+  "this",
+  "to",
+  "between",
+  "what",
+  "whats",
+  "why",
+  "with",
+]);
+
+function isGenericSessionTitle(title?: string | null) {
+  const clean = (title || "").trim();
+  return (
+    !clean ||
+    clean === EMPTY_SESSION_TITLE ||
+    clean === "New Conversation" ||
+    /^chat\s+\d{1,2}\/\d{1,2}\/\d{2,4}/i.test(clean) ||
+    /^chat\s+\d{1,2}:\d{2}/i.test(clean)
+  );
+}
+
+function toTitleCase(words: string[]) {
+  return words
+    .map((word) => {
+      const lower = word.toLowerCase();
+      if (/^[A-Z0-9]{2,}$/.test(word)) return word;
+      if (lower === "vs") return "vs";
+      if (lower.length <= 3 && /^(ai|os|db|api|pdf|sql|cpu|ram|aws)$/.test(lower)) return lower.toUpperCase();
+      return lower.charAt(0).toUpperCase() + lower.slice(1);
+    })
+    .join(" ");
+}
+
+function generateTopicTitle(text: string) {
+  const cleaned = text
+    .replace(/selected text:\s*["“][\s\S]*?["”]/gi, " ")
+    .replace(/https?:\/\/\S+/gi, " ")
+    .replace(/[^\p{L}\p{N}\s-]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned) return EMPTY_SESSION_TITLE;
+
+  const words = cleaned
+    .split(/\s+/)
+    .map((word) => word.replace(/^-+|-+$/g, ""))
+    .filter(Boolean);
+  const meaningful = words.filter((word) => {
+    const lower = word.toLowerCase();
+    return !TITLE_STOP_WORDS.has(lower) && lower.length > 1;
+  });
+  const chosen = (meaningful.length >= 2 ? meaningful : words).slice(0, 4);
+  const title = toTitleCase(chosen).trim();
+  return title || EMPTY_SESSION_TITLE;
 }
 
 /* ─── Delete Confirm Modal ─────────────────────────────── */
@@ -227,30 +312,14 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
 
   const convoRef = useRef<HTMLDivElement | null>(null);
   const placeholderTitlesRef = useRef<Record<string, string>>({});
-  const LS_LAST_CLASS = "chat_last_class_id";
-  const LS_LAST_SESSION = "chat_last_session_by_class";
 
   /* ─── Data loading ─── */
   useEffect(() => {
     (async () => {
       const cls = await listClasses();
       setClasses(cls);
-      
-      // Only load last class if not locked by prop
-      if (!isClassLocked) {
-        const saved = Number(localStorage.getItem(LS_LAST_CLASS));
-        if (!internalClassId && Number.isFinite(saved) && cls.some(c => c.id === saved)) {
-          setInternalClassId(saved);
-        }
-      }
     })();
-  }, [isClassLocked, internalClassId]);
-
-  useEffect(() => {
-    if (classId && !isClassLocked) {
-      localStorage.setItem(LS_LAST_CLASS, String(classId));
-    }
-  }, [classId, isClassLocked]);
+  }, []);
 
   useEffect(() => {
     if (!classId) { 
@@ -258,6 +327,7 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
       setActiveSessionId(null); 
       setMessages([]); 
       setFiles([]); 
+      setScopeBySession({});
       return; 
     }
     (async () => {
@@ -270,16 +340,10 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
         );
         setSessions(chatOnly);
         
-        // Priority: 1. URL param (session) 2. LocalStorage for this class 3. First available session
+        // Only reopen a session when it is explicitly provided in the URL.
+        // Default entry and manual class changes stay in a clean, unselected state.
         const fromUrl = searchParams.get("session");
-        const stored = JSON.parse(localStorage.getItem(LS_LAST_SESSION) || "{}");
-        
-        // Only use URL param if we haven't already selected a session (on first load)
-        // OR if the URL param changes (handled by deps)
-        const preferred = fromUrl || stored[String(classId)];
-        
-        // Validate preferred exists in fetched sessions
-        const next = sess.find(s => s.id === preferred)?.id ?? sess[0]?.id ?? null;
+        const next = fromUrl ? chatOnly.find(s => s.id === fromUrl)?.id ?? null : null;
         setActiveSessionId(next);
       } finally { setBusySessions(false); }
     })();
@@ -311,6 +375,15 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
         }));
         setMessages(normalized);
         persistSessionMessages(activeSessionId, normalized);
+        const currentSession = sessions.find(s => s.id === activeSessionId);
+        const firstUser = normalized.find(m => m.role === "user" && m.content.trim());
+        if (currentSession && firstUser && isGenericSessionTitle(currentSession.title)) {
+          const title = generateTopicTitle(firstUser.content);
+          if (title !== EMPTY_SESSION_TITLE) {
+            updateChatSession(activeSessionId, { title }).catch(console.error);
+            setSessions(prev => prev.map(s => s.id === activeSessionId ? { ...s, title } : s));
+          }
+        }
       } catch {
         // If fetch fails, keep showing cached
         if (!cached.length) {
@@ -319,11 +392,6 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
       }
     })();
 
-    // Update LocalStorage for last session
-    const stored = JSON.parse(localStorage.getItem(LS_LAST_SESSION) || "{}");
-    stored[String(classId ?? "")] = activeSessionId;
-    localStorage.setItem(LS_LAST_SESSION, JSON.stringify(stored));
-    
     // Update URL without full reload
     setSearchParams(prev => { 
       const newParams = new URLSearchParams(prev);
@@ -387,21 +455,43 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
   }
 
   /* ─── Derived state ─── */
+  const scopeKey = activeSessionId ?? DRAFT_SCOPE_KEY;
   const scopeFileIds = useMemo(() => {
-    if (!activeSessionId) return [];
-    return scopeBySession[activeSessionId] ?? [];
-  }, [activeSessionId, scopeBySession]);
+    return scopeBySession[scopeKey] ?? [];
+  }, [scopeBySession, scopeKey]);
 
   const filteredFiles = useMemo(() => {
     const q = fileSearch.trim().toLowerCase();
     return q ? files.filter(f => f.filename.toLowerCase().includes(q)) : files;
   }, [files, fileSearch]);
 
+  function handleClassChange(nextClassId: number | null) {
+    setInternalClassId(nextClassId);
+    setActiveSessionId(null);
+    setMessages([]);
+    setSelectedText("");
+    setFileSearch("");
+    setScopeBySession({});
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.delete("session");
+      if (!isClassLocked) next.delete("classId");
+      return next;
+    }, { replace: true });
+  }
+
   /* ─── Session management ─── */
   async function startNewSession() {
-    if (!classId) return;
-    const s = await createChatSession({ class_id: classId, title: generateSessionTitle() });
+    if (!classId) {
+      setErrorBanner("Choose a class context before starting a chat.");
+      return;
+    }
+    const draftScope = scopeBySession[DRAFT_SCOPE_KEY] ?? [];
+    const s = await createChatSession({ class_id: classId, title: EMPTY_SESSION_TITLE });
     setSessions(prev => [s, ...prev]);
+    if (draftScope.length) {
+      setScopeBySession(prev => ({ ...prev, [s.id]: draftScope, [DRAFT_SCOPE_KEY]: [] }));
+    }
     setActiveSessionId(s.id);
   }
 
@@ -445,7 +535,10 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
 
   /* ─── Send message ─── */
   async function onAsk() {
-    if (!classId) { alert("Pick a class first."); return; }
+    if (!classId) {
+      setErrorBanner("Choose a class context before asking Study Assistant.");
+      return;
+    }
     if (!input.trim()) return;
     if (isListening) stopListening();
     stopSpeech();
@@ -461,11 +554,14 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
 
     let sessionId = activeSessionId;
     if (!sessionId) {
-      const placeholderTitle = generateSessionTitle();
+      const placeholderTitle = EMPTY_SESSION_TITLE;
       const s = await createChatSession({ class_id: classId, title: placeholderTitle });
       placeholderTitlesRef.current[s.id] = placeholderTitle;
       setSessions(prev => [s, ...prev]);
       sessionId = s.id;
+      if (scopeFileIds.length) {
+        setScopeBySession(prev => ({ ...prev, [s.id]: scopeFileIds, [DRAFT_SCOPE_KEY]: [] }));
+      }
       setActiveSessionId(s.id);
     }
 
@@ -530,13 +626,13 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
       setSessions(prev => prev.map(s => {
         if (s.id !== sessionId) return s;
         const placeholder = placeholderTitlesRef.current[sessionId!];
-        const isDefault = s.title.startsWith("Chat ") || (placeholder && s.title === placeholder);
+        const isDefault = isGenericSessionTitle(s.title) || (placeholder && s.title === placeholder);
         if (isDefault) {
-          const snippet = userMsg.content.trim().split(/\s+/).slice(0, 6).join(" ");
-          if (snippet) {
-            updateChatSession(sessionId!, { title: snippet }).catch(console.error);
+          const title = generateTopicTitle(userMsg.content);
+          if (title && title !== EMPTY_SESSION_TITLE) {
+            updateChatSession(sessionId!, { title }).catch(console.error);
             delete placeholderTitlesRef.current[sessionId!];
-            return { ...s, title: snippet, updated_at: new Date().toISOString() };
+            return { ...s, title, updated_at: new Date().toISOString() };
           }
         }
         return { ...s, updated_at: new Date().toISOString() };
@@ -550,11 +646,10 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
   }
 
   function toggleFileScope(fileId: string) {
-    if (!activeSessionId) return;
     setScopeBySession(prev => {
-      const next = new Set(prev[activeSessionId] ?? []);
+      const next = new Set(prev[scopeKey] ?? []);
       if (next.has(fileId)) next.delete(fileId); else next.add(fileId);
-      return { ...prev, [activeSessionId]: Array.from(next) };
+      return { ...prev, [scopeKey]: Array.from(next) };
     });
   }
 
@@ -624,7 +719,7 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
 
 
 
-      <div className="flex h-full overflow-hidden bg-[var(--surface-2,#f4f4f6)] dark:bg-[var(--bg,#0d0d10)]">
+      <div className="flex h-full min-h-0 overflow-hidden bg-[var(--surface-2,#f4f4f6)] dark:bg-[var(--bg,#0d0d10)]">
 
         {/* ── LEFT SIDEBAR ── */}
         <aside className="w-[268px] flex-shrink-0 border-r border-[var(--border)] bg-[var(--surface)] hidden md:flex flex-col overflow-hidden">
@@ -640,7 +735,7 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
         </aside>
 
         {/* ── MAIN CHAT ── */}
-        <main className="relative flex-1 flex flex-col min-w-0 bg-[var(--bg,#ffffff)] dark:bg-[var(--bg)]">
+        <main className="relative flex-1 flex min-h-0 flex-col min-w-0 bg-[var(--bg,#ffffff)] dark:bg-[var(--bg)]">
 
           {/* Floating Voice Player Bar */}
           {showVoiceBar && (
@@ -668,7 +763,7 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
 
               <div className="min-w-0 flex-1">
                 <h2 className="text-sm font-semibold text-[var(--text-main)] truncate leading-tight">
-                  {activeSession?.title || "New Conversation"}
+                  {activeSession?.title || EMPTY_SESSION_TITLE}
                 </h2>
                 <div className="flex items-center gap-1.5 mt-0.5">
                   <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${classId ? "bg-emerald-500" : "bg-amber-400"}`} />
@@ -679,7 +774,7 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
                   ) : (
                     <select
                       value={classId ?? ""}
-                      onChange={e => setInternalClassId(e.target.value ? Number(e.target.value) : null)}
+                      onChange={e => handleClassChange(e.target.value ? Number(e.target.value) : null)}
                       className="text-[11px] text-[var(--text-secondary)] bg-transparent border-none p-0 focus:ring-0 cursor-pointer appearance-none max-w-[200px] truncate"
                       style={{ backgroundImage: "none" }}
                     >
@@ -763,7 +858,7 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
           {/* Messages */}
           <div
             ref={convoRef}
-            className="flex-1 overflow-y-auto chat-scrollbar px-4 md:px-8 py-6"
+            className="min-h-0 flex-1 overflow-y-auto chat-scrollbar px-4 py-4 md:px-8"
             onMouseUp={() => {
               const sel = window.getSelection()?.toString().trim() || "";
               setSelectedText(sel.length > 0 ? sel : "");
@@ -819,7 +914,7 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
               </div>
             ) : (
               /* Message list */
-              <div className="max-w-3xl mx-auto w-full space-y-1 pb-4">
+              <div className="max-w-3xl mx-auto w-full space-y-1 pb-2">
                 {messages.map((m, idx) => (
                   <div key={m.id} className="msg-appear" style={{ animationDelay: `${Math.min(idx * 0.016, 0.08)}s` }}>
                     <ChatMessage
@@ -892,7 +987,7 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
           </div>
 
           {/* Input area */}
-          <div className="flex-shrink-0 border-t border-[var(--border)] bg-[var(--surface)]/95 backdrop-blur-sm px-4 pt-3 pb-4">
+          <div className="flex-shrink-0 bg-transparent px-4 pt-2 pb-1">
             {/* Selected context */}
             {selectedText && (
               <div className="mb-3 max-w-3xl mx-auto flex items-center gap-3 rounded-xl border border-[var(--primary)]/25 bg-[var(--primary)]/5 px-3.5 py-2.5 msg-appear">
@@ -924,7 +1019,7 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
             </div>
 
             {/* Mode hint bar */}
-            <div className="mt-2 max-w-3xl mx-auto flex items-center justify-center gap-2">
+            <div className="mt-0.5 max-w-3xl mx-auto flex items-center justify-center gap-2">
               <span className={`inline-flex items-center gap-1 text-[9px] font-semibold uppercase tracking-widest px-2 py-0.5 rounded-full border transition-all ${
                 chatMode === "auto"
                   ? "bg-[var(--primary)]/8 text-[var(--primary)] border-[var(--primary)]/20"

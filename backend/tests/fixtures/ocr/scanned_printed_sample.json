@@ -1,0 +1,20 @@
+{
+  "page_number": 1,
+  "page_type": "printed_text_page",
+  "blocks": [
+    {
+      "type": "text",
+      "bbox": null,
+      "raw_text": "A vector has magnitude and direction.",
+      "normalized_text": "A vector has magnitude and direction.",
+      "latex": null,
+      "confidence": 0.91,
+      "engine": "paddleocr",
+      "needs_review": false
+    }
+  ],
+  "metrics": {
+    "ocr_confidence": 0.91,
+    "flashcard_eligibility_score": 0.86
+  }
+}

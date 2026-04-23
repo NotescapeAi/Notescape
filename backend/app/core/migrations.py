@@ -7,18 +7,24 @@ from app.core.db import db_conn
 
 log = logging.getLogger("uvicorn.error")
 _REPO_ROOT = Path(__file__).resolve().parents[3]
+_DOCKER_DB_INIT = Path("/workspace/db/init")
 _DEFAULT_SQL_PATH = _REPO_ROOT / "db" / "init" / "10_quizzes.sql"
-_DEFAULT_LEARNING_ANALYTICS_SQL_PATH = (
-    _REPO_ROOT / "db" / "init" / "11_learning_analytics_tags.sql"
-)
+_DEFAULT_LEARNING_ANALYTICS_SQL_PATH = _REPO_ROOT / "db" / "init" / "11_learning_analytics_tags.sql"
+_DEFAULT_OCR_PIPELINE_SQL_PATH = _REPO_ROOT / "db" / "init" / "20_ocr_pipeline.sql"
+
+
+def _migration_candidates(env_var: str, filename: str, default_path: Path) -> list[Path]:
+    candidates: list[Path] = []
+    env_path = os.environ.get(env_var)
+    if env_path:
+        candidates.append(Path(env_path))
+    candidates.append(_DOCKER_DB_INIT / filename)
+    candidates.append(default_path)
+    return candidates
 
 
 def _sql_candidates() -> tuple[list[Path], Optional[Path]]:
-    env_path = os.environ.get("QUIZ_MIGRATION_FILE")
-    candidates: list[Path] = []
-    if env_path:
-        candidates.append(Path(env_path))
-    candidates.append(_DEFAULT_SQL_PATH)
+    candidates = _migration_candidates("QUIZ_MIGRATION_FILE", "10_quizzes.sql", _DEFAULT_SQL_PATH)
 
     for candidate in candidates:
         if candidate.exists():
@@ -47,14 +53,17 @@ async def ensure_quiz_jobs_schema() -> None:
 
 
 async def ensure_learning_analytics_schema() -> None:
-    sql_path = Path(
-        os.environ.get(
-            "LEARNING_ANALYTICS_MIGRATION_FILE",
-            str(_DEFAULT_LEARNING_ANALYTICS_SQL_PATH),
-        )
+    candidates = _migration_candidates(
+        "LEARNING_ANALYTICS_MIGRATION_FILE",
+        "11_learning_analytics_tags.sql",
+        _DEFAULT_LEARNING_ANALYTICS_SQL_PATH,
     )
-    if not sql_path.exists():
-        log.warning("Learning analytics migration file not found at %s", sql_path)
+    sql_path = next((candidate for candidate in candidates if candidate.exists()), None)
+    if not sql_path:
+        log.warning(
+            "Learning analytics migration file not found, tried %s",
+            ", ".join(str(p) for p in candidates),
+        )
         return
 
     sql = sql_path.read_text()
@@ -63,5 +72,29 @@ async def ensure_learning_analytics_schema() -> None:
 
     async with db_conn() as (conn, cur):
         log.info("Ensuring learning analytics schema exists using %s", sql_path.name)
+        await cur.execute(sql)
+        await conn.commit()
+
+
+async def ensure_ocr_pipeline_schema() -> None:
+    candidates = _migration_candidates(
+        "OCR_PIPELINE_MIGRATION_FILE",
+        "20_ocr_pipeline.sql",
+        _DEFAULT_OCR_PIPELINE_SQL_PATH,
+    )
+    sql_path = next((candidate for candidate in candidates if candidate.exists()), None)
+    if not sql_path:
+        log.warning(
+            "OCR pipeline migration file not found, tried %s",
+            ", ".join(str(p) for p in candidates),
+        )
+        return
+
+    sql = sql_path.read_text()
+    if not sql.strip():
+        return
+
+    async with db_conn() as (conn, cur):
+        log.info("Ensuring OCR pipeline schema exists using %s", sql_path.name)
         await cur.execute(sql)
         await conn.commit()

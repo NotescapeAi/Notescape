@@ -318,11 +318,116 @@ async def _ensure_quiz_count_columns(cur) -> None:
     await cur.execute("ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS actual_mcq_count INT")
     await cur.execute("ALTER TABLE quizzes ADD COLUMN IF NOT EXISTS actual_theory_count INT")
 
+async def _repair_completed_quiz_attempts(cur, user_id: str) -> None:
+    await cur.execute(
+        """
+        UPDATE quiz_attempts qa
+        SET status = 'submitted',
+            submitted_at = COALESCE(qa.submitted_at, qa.started_at, now()),
+            current_section = 'completed',
+            mcq_completed = CASE
+                WHEN NOT EXISTS (
+                    SELECT 1 FROM quiz_questions qq
+                    WHERE qq.quiz_id = qa.quiz_id AND qq.qtype = 'mcq'
+                )
+                THEN TRUE
+                ELSE qa.mcq_completed
+            END,
+            theory_completed = CASE
+                WHEN NOT EXISTS (
+                    SELECT 1 FROM quiz_questions qq
+                    WHERE qq.quiz_id = qa.quiz_id AND qq.qtype != 'mcq'
+                )
+                THEN TRUE
+                ELSE qa.theory_completed
+            END
+        WHERE qa.user_id = %s
+          AND qa.status = 'in_progress'
+          AND (
+              qa.mcq_completed = TRUE
+              OR NOT EXISTS (
+                  SELECT 1 FROM quiz_questions qq
+                  WHERE qq.quiz_id = qa.quiz_id AND qq.qtype = 'mcq'
+              )
+          )
+          AND (
+              qa.theory_completed = TRUE
+              OR NOT EXISTS (
+                  SELECT 1 FROM quiz_questions qq
+                  WHERE qq.quiz_id = qa.quiz_id AND qq.qtype != 'mcq'
+              )
+          )
+        """,
+        (user_id,),
+    )
+
+
+async def _ensure_file_ready_for_quiz(file_id: UUID, class_id: int) -> None:
+    async with db_conn() as (conn, cur):
+        await cur.execute(
+            """
+            SELECT
+                files.status,
+                files.last_error,
+                files.filename,
+                files.mime_type,
+                files.storage_key,
+                COUNT(file_chunks.id)::int AS chunk_count
+            FROM files
+            LEFT JOIN file_chunks ON file_chunks.file_id = files.id
+            WHERE files.id=%s AND files.class_id=%s
+            GROUP BY files.id
+            """,
+            (str(file_id), class_id),
+        )
+        row = await cur.fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="File not found in class")
+
+    status = str(row[0] or "").upper()
+    last_error = str(row[1] or "").strip()
+    filename = str(row[2] or "")
+    mime_type = str(row[3] or "")
+    storage_key = row[4]
+    chunk_count = int(row[5] or 0)
+
+    if chunk_count > 0:
+        return
+
+    is_pdf = filename.lower().endswith(".pdf") or "pdf" in mime_type.lower()
+    if is_pdf and storage_key:
+        return
+
+    if status in {"UPLOADING", "PROCESSING", "OCR_QUEUED", "OCR_RUNNING", "RUNNING"}:
+        raise HTTPException(
+            status_code=409,
+            detail="This document is still being processed. Please try generating the quiz again in a moment.",
+        )
+    if status == "FAILED":
+        log.warning(
+            "[quizzes] source file has no chunks and processing failed file_id=%s class_id=%s error=%s",
+            file_id,
+            class_id,
+            last_error[:500],
+        )
+        raise HTTPException(
+            status_code=409,
+            detail="This document could not be prepared for quiz generation. Please re-upload it or choose another indexed PDF.",
+        )
+
+    raise HTTPException(
+        status_code=409,
+        detail="This document does not have indexed text yet. Please wait for document processing to finish or choose another PDF.",
+    )
+
+
 # 1) Create quiz generation job (worker will process in Step 3)
 @router.post("/jobs", response_model=QuizJobOut)
 async def create_quiz_job(req: CreateQuizJobReq, user_id: str = Depends(get_request_user_uid)):
     await _ensure_class_owner(req.class_id, user_id)
     await _ensure_file_in_class(req.file_id, req.class_id)
+    await _ensure_file_ready_for_quiz(req.file_id, req.class_id)
     requested_mcq_count, requested_theory_count = resolve_requested_counts(
         n_questions=req.n_questions,
         mcq_count=req.mcq_count,
@@ -426,6 +531,7 @@ async def get_quiz_history(user_id: str = Depends(get_request_user_uid)):
     async with db_conn() as (conn, cur):
         await _ensure_quiz_history_visibility_columns(cur)
         await _ensure_quiz_count_columns(cur)
+        await _repair_completed_quiz_attempts(cur, user_id)
         await cur.execute(
             """
             SELECT 
@@ -448,16 +554,16 @@ async def get_quiz_history(user_id: str = Depends(get_request_user_uid)):
                 qa.total_attempt_time
             FROM quiz_attempts qa
             JOIN quizzes q ON qa.quiz_id = q.id
-            JOIN files f ON q.file_id = f.id
+            LEFT JOIN files f ON q.file_id = f.id
             WHERE qa.user_id = %s
               AND qa.status = 'submitted'
               AND qa.hidden_from_history = FALSE
-            WHERE qa.user_id = %s AND qa.status = 'submitted'
             ORDER BY attempted_at DESC
             """,
             (user_id,)
         )
         rows = await cur.fetchall()
+        await conn.commit()
 
     return [
         QuizHistoryItem(
@@ -490,6 +596,7 @@ async def get_attempt_detail(attempt_id: UUID, user_id: str = Depends(get_reques
     async with db_conn() as (conn, cur):
         await _ensure_quiz_history_visibility_columns(cur)
         await _ensure_quiz_count_columns(cur)
+        await _repair_completed_quiz_attempts(cur, user_id)
         # 1. Get attempt info
         await cur.execute(
             """
@@ -513,9 +620,10 @@ async def get_attempt_detail(attempt_id: UUID, user_id: str = Depends(get_reques
                 qa.total_attempt_time
             FROM quiz_attempts qa
             JOIN quizzes q ON qa.quiz_id = q.id
-            JOIN files f ON q.file_id = f.id
+            LEFT JOIN files f ON q.file_id = f.id
             WHERE qa.id = %s
               AND qa.user_id = %s
+              AND qa.status = 'submitted'
               AND qa.hidden_from_history = FALSE
             """,
             (str(attempt_id), user_id)
@@ -585,6 +693,7 @@ async def get_attempt_detail(attempt_id: UUID, user_id: str = Depends(get_reques
                 "marks_awarded": qr[9] or 0,
                 "max_marks": 1 if qr[1] == 'mcq' else 2
             })
+        await conn.commit()
 
     return QuizAttemptDetail(attempt=history_item, questions=questions)
 
@@ -1066,6 +1175,11 @@ async def submit_attempt(
         # Calculate totals
         total_mcqs = sum(1 for k in key.values() if k["qtype"] == "mcq")
         total_theory = sum(1 for k in key.values() if k["qtype"] != "mcq")
+
+        if total_mcqs == 0:
+            new_mcq_done = True
+        if total_theory == 0:
+            new_theory_done = True
         
         total_possible = (total_mcqs * 1) + (total_theory * 2)
         total_earned = mcq_score + theory_score
@@ -1075,6 +1189,9 @@ async def submit_attempt(
             percentage = (total_earned / total_possible) * 100
             if percentage >= 70:
                 passed = True
+
+        if new_mcq_done and new_theory_done:
+            current_section = "completed"
 
         status = 'submitted' if (new_mcq_done and new_theory_done) else 'in_progress'
         

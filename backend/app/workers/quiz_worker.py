@@ -8,11 +8,18 @@ import random
 import re
 import time
 from collections import defaultdict
+from io import BytesIO
+from pathlib import Path, PurePosixPath
 from typing import Any, Dict, List, Optional, Set, Tuple
+
+from pypdf import PdfReader
 
 from app.core.db import db_conn
 from app.core.llm import get_quiz_generator  # you will add this in step 3.2
+from app.core.settings import settings
+from app.core.storage import get_object_bytes
 from app.core.migrations import ensure_learning_analytics_schema, ensure_quiz_jobs_schema
+from app.lib.chunking import chunk_by_pages
 from app.lib.quiz_counts import count_items_by_type, resolve_requested_counts, validate_quiz_counts
 from app.lib.tags import normalize_tag_names, sync_quiz_question_tags
 
@@ -51,6 +58,10 @@ class QuizGenerationCountError(RuntimeError):
     def __init__(self, details: Dict[str, Any]):
         self.details = details
         super().__init__(details.get("failure_reason") or "quiz_generation_count_validation_failed")
+
+
+class QuizSourceUnavailableError(RuntimeError):
+    pass
 
 
 async def _ensure_quiz_count_columns(cur) -> None:
@@ -266,8 +277,111 @@ async def _fetch_chunks(file_id: str, limit: int = 500) -> List[Dict[str, Any]]:
                 "page_end": r[3],
             }
         )
+    if not out:
+        out = await _build_chunks_from_pdf_source(file_id)
+
     _QUIZ_CHUNK_CACHE[file_id] = (now, out)
     return [dict(chunk) for chunk in out]
+
+
+def _local_path_for_storage_key(storage_key: str) -> Path:
+    rel = PurePosixPath(storage_key)
+    return (Path(settings.upload_root) / Path(rel.as_posix())).resolve()
+
+
+def _extract_pdf_pages(data: bytes) -> List[str]:
+    reader = PdfReader(BytesIO(data))
+    if getattr(reader, "is_encrypted", False):
+        try:
+            reader.decrypt("")
+        except Exception:
+            pass
+    pages: List[str] = []
+    for page in reader.pages:
+        try:
+            pages.append(" ".join((page.extract_text() or "").split()))
+        except Exception:
+            pages.append("")
+    return pages
+
+
+async def _build_chunks_from_pdf_source(file_id: str) -> List[Dict[str, Any]]:
+    async with db_conn() as (conn, cur):
+        await cur.execute(
+            """
+            SELECT filename, mime_type, storage_backend, storage_key
+            FROM files
+            WHERE id=%s
+            """,
+            (file_id,),
+        )
+        row = await cur.fetchone()
+
+    if not row:
+        return []
+
+    filename, mime_type, storage_backend, storage_key = row
+    is_pdf = str(filename or "").lower().endswith(".pdf") or "pdf" in str(mime_type or "").lower()
+    if not is_pdf or not storage_key:
+        return []
+
+    try:
+        backend = str(storage_backend or settings.storage_backend).lower()
+        if backend == "local":
+            data = _local_path_for_storage_key(str(storage_key)).read_bytes()
+        else:
+            data = get_object_bytes(str(storage_key))
+        page_texts = _extract_pdf_pages(data)
+    except Exception as err:
+        log.warning("[quiz_worker] on-demand PDF text extraction failed file_id=%s error=%s", file_id, err)
+        return []
+
+    chunks = [c for c in chunk_by_pages(page_texts, pages_per_chunk=1, overlap_pages=0) if str(c.get("content") or "").strip()]
+    if not chunks:
+        return []
+
+    saved: List[Dict[str, Any]] = []
+    async with db_conn() as (conn, cur):
+        await cur.execute("DELETE FROM file_chunks WHERE file_id=%s", (file_id,))
+        for chunk in chunks:
+            await cur.execute(
+                """
+                INSERT INTO file_chunks (file_id, idx, content, char_len, page_start, page_end)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING id, content, page_start, page_end
+                """,
+                (
+                    file_id,
+                    chunk.get("idx", len(saved)),
+                    chunk.get("content"),
+                    chunk.get("char_len", len(str(chunk.get("content") or ""))),
+                    chunk.get("page_start"),
+                    chunk.get("page_end"),
+                ),
+            )
+            inserted = await cur.fetchone()
+            saved.append(
+                {
+                    "chunk_id": inserted[0],
+                    "text": inserted[1],
+                    "page_start": inserted[2],
+                    "page_end": inserted[3],
+                }
+            )
+        await cur.execute(
+            """
+            UPDATE files
+            SET status='INDEXED',
+                indexed_at=COALESCE(indexed_at, now()),
+                last_error=NULL
+            WHERE id=%s
+            """,
+            (file_id,),
+        )
+        await conn.commit()
+
+    log.info("[quiz_worker] built %s chunks on demand for file_id=%s", len(saved), file_id)
+    return saved
 
 def _build_prompt(
     chunks: List[Dict[str, Any]],
@@ -323,6 +437,7 @@ QUALITY RULES:
 
 FORMAT RULES:
 - For MCQ (type="mcq"): exactly 4 options and one correct_index.
+- MCQ options must be a valid JSON array of four plain strings, for example ["option one","option two","option three","option four"]. Do not write ["A"] "text" or separate A/B/C/D labels.
 - For non-MCQ types ({non_mcq_types}): answer_key required, options=null, correct_index=null.
 - Include source chunk_id/page_start/page_end for every question.
 
@@ -993,7 +1108,9 @@ async def run():
             load_started_at = time.perf_counter()
             all_chunks = await _fetch_chunks(file_id=file_id, limit=500)
             if not all_chunks:
-                raise RuntimeError("No chunks found for this file.")
+                raise QuizSourceUnavailableError(
+                    "This document does not have indexed text yet. Please wait for document processing to finish or choose another PDF."
+                )
             timing_ms["load_chunks"] = _timing_ms(load_started_at)
 
             rng = random.Random(int.from_bytes(os.urandom(16), byteorder="big"))
@@ -1116,6 +1233,17 @@ async def run():
                         f"{details.get('actual_theory_count', 0)} theory questions."
                     ),
                     details,
+                )
+                continue
+            if isinstance(e, QuizSourceUnavailableError):
+                await _set_job_failed(
+                    job_id,
+                    str(e),
+                    {
+                        "status_message": "Document not ready",
+                        "failure_reason": "source_document_not_indexed",
+                        "timing_ms": timing_ms if "timing_ms" in locals() else None,
+                    },
                 )
                 continue
             await _set_job_failed(

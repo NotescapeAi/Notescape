@@ -211,13 +211,14 @@ export default function FlashcardsStudyMode() {
   const [files, setFiles] = useState<{ id: string; filename: string }[]>([]);
   const [fileFilter, setFileFilter] = useState<string>("all");
   const [error, setError] = useState<string | null>(null);
-  const [reviewToast, setReviewToast] = useState<string | null>(null);
   const responseStart = useRef<number | null>(null);
   const scrollRestoreRef = useRef<number | null>(null);
+  const reviewInFlightRef = useRef(false);
   const timerRef = useRef<SessionTimerHandle | null>(null);
   const studySecondsRef = useRef(0);
   const [studySessionId, setStudySessionId] = useState<string | null>(null);
   const [studyBaseSeconds, setStudyBaseSeconds] = useState(0);
+  const [displayStudySeconds, setDisplayStudySeconds] = useState(0);
 
   const sessionKey = classNum
     ? `mastery_session_${classNum}_${fileFilter}`
@@ -293,6 +294,7 @@ export default function FlashcardsStudyMode() {
     setStudySessionId(null);
     setStudyBaseSeconds(0);
     studySecondsRef.current = 0;
+    setDisplayStudySeconds(0);
   }, [sessionId]);
 
   useEffect(() => {
@@ -306,6 +308,7 @@ export default function FlashcardsStudyMode() {
         const base = sess.active_seconds ?? sess.duration_seconds ?? 0;
         setStudyBaseSeconds(base);
         studySecondsRef.current = base;
+        setDisplayStudySeconds(base);
       } catch {
         // keep timer local if session logging fails
       }
@@ -322,6 +325,8 @@ export default function FlashcardsStudyMode() {
 
   async function handleReview(confidence: 1 | 2 | 3 | 4 | 5) {
     if (!currentCard || !sessionId) return;
+    if (reviewInFlightRef.current) return;
+    reviewInFlightRef.current = true;
     const start = responseStart.current;
     const responseTime = start ? Date.now() - start : undefined;
     scrollRestoreRef.current = window.scrollY;
@@ -336,13 +341,10 @@ export default function FlashcardsStudyMode() {
       });
       applySession(data);
       timerRef.current?.flush();
-      setReviewToast(
-        confidence <= 2 ? "Saved: keep practicing this card." : confidence === 3 ? "Saved: getting better." : "Saved: great recall."
-      );
-      window.setTimeout(() => setReviewToast(null), 1400);
     } catch (err: any) {
       setError(err?.message || "Failed to save review");
     } finally {
+      reviewInFlightRef.current = false;
       setSubmitting(false);
     }
   }
@@ -401,7 +403,7 @@ export default function FlashcardsStudyMode() {
   const masteryPct =
     stats.mastery_percent ||
     (stats.total_unique ? Math.round((stats.mastered_count / stats.total_unique) * 100) : 0);
-  const timerActive = Boolean(sessionId) && !loading && !stats.ended;
+  const timerActive = Boolean(sessionId) && !loading && !stats.ended && !stats.done;
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (!currentCard || loading || stats.ended || stats.done || submitting) return;
@@ -421,6 +423,7 @@ export default function FlashcardsStudyMode() {
 
   const handleSessionSave = (seconds: number) => {
     studySecondsRef.current = seconds;
+    setDisplayStudySeconds(seconds);
     if (!studySessionId) return;
     heartbeatStudySession({
       session_id: studySessionId,
@@ -432,117 +435,167 @@ export default function FlashcardsStudyMode() {
   return (
     <AppShell
       title="Flashcards"
-      breadcrumbs={["Flashcards", "Study"]}
       subtitle="Study mode"
       backLabel="Back to Flashcards"
       backTo={classId ? `/classes/${classId}/flashcards` : "/classes"}
+      contentGapClassName="gap-2"
+      contentOverflowClassName="overflow-hidden"
+      contentHeightClassName="h-full"
+      mainClassName="min-h-0 overflow-hidden"
     >
-      <div className="mx-auto flex w-full max-w-[980px] flex-col gap-6">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <div className="text-xs uppercase tracking-[0.25em] text-[var(--text-muted-soft)]">
-              {fileFilter === "all" ? "All files" : files.find((f) => f.id === fileFilter)?.filename || "Selected file"}
-            </div>
-            <h1 className="mt-1 text-3xl font-semibold text-main">Flashcards</h1>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button className="rounded-full" onClick={startSession}>
-              Study again
-            </Button>
-            <Button className="rounded-full" onClick={handleResetProgress}>
-              Reset progress
-            </Button>
-            <Button className="rounded-full" onClick={handleEndSession}>
-              End session
-            </Button>
-          </div>
-        </div>
-
+      <div className="mx-auto -mt-3 flex h-full min-h-0 w-full max-w-[980px] flex-col gap-3 overflow-hidden">
         {error && (
           <div className="rounded-2xl border border-accent bg-accent-soft px-4 py-3 text-sm text-accent">
             {error}
           </div>
         )}
 
-        {reviewToast && (
-          <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] px-3 py-2 text-xs text-[var(--text-secondary)] shadow-[var(--shadow-soft)]">
-            {reviewToast}
-          </div>
-        )}
+        <span className="sr-only" aria-hidden="true">
+          <SessionTimer
+            ref={timerRef}
+            sessionId={studySessionId ?? sessionId}
+            baseSeconds={studyBaseSeconds || stats.session_seconds}
+            active={timerActive}
+            onSave={handleSessionSave}
+          />
+        </span>
 
-        <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-4 shadow-sm">
-          <div className="flex items-center justify-between text-xs text-[var(--text-secondary)]">
-            <span>
+        <div className="rounded-[22px] border border-[var(--border)] bg-[var(--bg-surface)] px-4 py-3 shadow-[0_12px_28px_rgba(15,16,32,0.06)] dark:shadow-none">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--text-secondary)]">
+            <span className="font-semibold text-main">
               Progress {stats.total_cards ? stats.current_index + 1 : 0} / {stats.total_cards || 0}
             </span>
-            <span>
-              Mastery {masteryPct}% · {stats.mastered_count}/{stats.total_unique} mastered
+            <span className="truncate">
+              {fileFilter === "all" ? "All files" : files.find((f) => f.id === fileFilter)?.filename || "Selected file"}
             </span>
           </div>
-          <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-[var(--surface-2)]">
-            <div
-              className="h-full rounded-full bg-[var(--primary)] transition-all duration-300"
-              style={{
-                width: `${stats.total_cards ? Math.round(((stats.current_index + (revealed ? 1 : 0)) / Math.max(stats.total_cards, 1)) * 100) : 0}%`,
-              }}
-            />
-          </div>
-          <div className="mt-3 grid gap-2 text-xs text-[var(--text-secondary)] sm:grid-cols-3">
-            <div>
-              Study time:{" "}
-              <SessionTimer
-                ref={timerRef}
-                sessionId={studySessionId ?? sessionId}
-                baseSeconds={studyBaseSeconds || stats.session_seconds}
-                active={timerActive}
-                onSave={handleSessionSave}
-              />
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <Button className="rounded-full px-4 py-2 text-xs" onClick={startSession}>
+              Study again
+            </Button>
+            <Button className="rounded-full px-4 py-2 text-xs" onClick={handleResetProgress}>
+              Reset progress
+            </Button>
+            <Button className="rounded-full px-4 py-2 text-xs" onClick={handleEndSession}>
+              End session
+            </Button>
+            <div className="relative min-w-[220px]">
+              <select
+                value={fileFilter}
+                onChange={(e) => handleFileChange(e.target.value)}
+                className="h-10 w-full appearance-none rounded-full border border-token bg-[var(--surface)] px-4 pr-12 text-sm font-semibold text-main shadow-sm transition hover:border-[var(--primary)] focus:border-[var(--primary)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]/15"
+              >
+                <option value="all">All files</option>
+                {files.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.filename}
+                  </option>
+                ))}
+              </select>
+              <span className="pointer-events-none absolute right-5 top-1/2 -translate-y-1/2 text-muted">
+                <svg width="13" height="13" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                  <path d="M2.5 4.5 6 8l3.5-3.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </span>
             </div>
-            <div>Avg rating: {stats.total_reviews ? stats.average_rating.toFixed(2) : "0.00"}</div>
-            <div>Total reviews: {stats.total_reviews}</div>
           </div>
         </div>
 
-        <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-surface)] p-5 shadow-sm">
-          <div className="mb-4 flex items-center justify-between gap-2">
-            <select
-              value={fileFilter}
-              onChange={(e) => handleFileChange(e.target.value)}
-              className="h-10 rounded-2xl border border-token surface px-3 text-sm text-muted"
-            >
-              <option value="all">All files</option>
-              {files.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.filename}
-                </option>
-              ))}
-            </select>
-            <div className="text-xs text-[var(--text-secondary)]">Space: flip · 1-5: rate</div>
-          </div>
+        <div className="min-h-0 flex-1 overflow-hidden rounded-[24px] border border-[var(--border)] bg-[var(--bg-surface)] p-4 shadow-[0_16px_38px_rgba(15,16,32,0.08)] dark:shadow-none">
+          {!stats.ended && !stats.done && (
+            <div className="mb-3 flex items-center justify-end gap-2">
+              <div className="text-xs text-[var(--text-secondary)]">Space: flip / 1-5: rate</div>
+            </div>
+          )}
 
           {loading ? (
             <div className="text-sm text-muted">Loading session...</div>
-          ) : stats.ended ? (
-            <div className="text-sm text-muted">Session ended. Start a new session to continue.</div>
-          ) : stats.done ? (
-            <div className="text-sm text-muted">You cleared the queue. End the session or start again.</div>
+          ) : stats.ended || stats.done ? (
+            <div className="flex h-full min-h-0 items-center justify-center">
+              <div className="w-full max-w-[760px] rounded-[26px] border border-[var(--border)] bg-[var(--surface)] p-5 shadow-[0_20px_48px_rgba(15,16,32,0.10)] dark:shadow-none sm:p-7">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--text-muted-soft)]">
+                      Session summary
+                    </div>
+                    <h2 className="mt-2 text-2xl font-semibold text-main sm:text-3xl">
+                      {stats.done ? "Study queue complete" : "Session ended"}
+                    </h2>
+                    <p className="mt-2 max-w-[520px] text-sm leading-6 text-[var(--text-secondary)]">
+                      Your review progress has been saved. Start a new round when you are ready to continue.
+                    </p>
+                  </div>
+                  <div className="rounded-full border border-[var(--border-subtle)] bg-[var(--surface-2)] px-4 py-2 text-sm font-semibold text-main">
+                    {masteryPct}% mastery
+                  </div>
+                </div>
+
+                <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <div className="rounded-[18px] border border-[var(--border)] bg-[var(--bg-surface)] px-4 py-4 shadow-sm">
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-muted-soft)]">
+                      Study time
+                    </div>
+                    <div className="mt-2 text-xl font-semibold text-main">
+                      {formatDuration(Math.floor(displayStudySeconds || studySecondsRef.current || studyBaseSeconds || stats.session_seconds || 0))}
+                    </div>
+                  </div>
+                  <div className="rounded-[18px] border border-[var(--border)] bg-[var(--bg-surface)] px-4 py-4 shadow-sm">
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-muted-soft)]">
+                      Mastered
+                    </div>
+                    <div className="mt-2 text-xl font-semibold text-main">
+                      {stats.mastered_count}/{stats.total_unique}
+                    </div>
+                  </div>
+                  <div className="rounded-[18px] border border-[var(--border)] bg-[var(--bg-surface)] px-4 py-4 shadow-sm">
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-muted-soft)]">
+                      Avg rating
+                    </div>
+                    <div className="mt-2 text-xl font-semibold text-main">
+                      {stats.total_reviews ? stats.average_rating.toFixed(2) : "0.00"}
+                    </div>
+                  </div>
+                  <div className="rounded-[18px] border border-[var(--border)] bg-[var(--bg-surface)] px-4 py-4 shadow-sm">
+                    <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-muted-soft)]">
+                      Reviews
+                    </div>
+                    <div className="mt-2 text-xl font-semibold text-main">{stats.total_reviews}</div>
+                  </div>
+                </div>
+
+                <div className="mt-6 flex flex-wrap gap-2">
+                  <Button className="rounded-full px-5" onClick={startSession}>
+                    Study again
+                  </Button>
+                  <Button className="rounded-full px-5" onClick={handleResetProgress}>
+                    Reset progress
+                  </Button>
+                </div>
+              </div>
+            </div>
           ) : !currentCard ? (
             <div className="text-sm text-muted">No cards available in this session.</div>
           ) : (
-            <div className="space-y-6">
+            <div className={`flex h-full min-h-0 flex-col gap-3 ${revealed ? "overflow-y-auto pr-1" : "overflow-hidden"}`}>
               <div className="mx-auto w-full max-w-[760px]">
-                <div className="min-h-[340px] rounded-3xl border border-neutral-200 bg-white p-6 shadow-sm sm:p-8">
+                <div className="rounded-[24px] border border-[var(--border)] bg-[var(--surface)] p-5 shadow-[0_18px_42px_rgba(15,16,32,0.08)] transition-shadow duration-200 dark:shadow-none sm:p-6">
                   <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--text-muted-soft)]">
-                    {revealed ? "Answer" : "Question"}
+                    Question
                   </div>
-                  <div
-                    className={`mt-5 text-lg font-semibold leading-relaxed text-[var(--text-main)] sm:text-2xl transition-all duration-300 ${
-                      revealed ? "translate-y-0 opacity-100" : "translate-y-0 opacity-100"
-                    }`}
-                  >
-                    {revealed ? sanitizeText(currentCard.answer) : sanitizeText(currentCard.question)}
+                  <div className="mt-3 text-lg font-semibold leading-relaxed text-[var(--text-main)] sm:text-2xl">
+                    {sanitizeText(currentCard.question)}
                   </div>
-                  <div className="mt-8 flex flex-wrap items-center gap-2">
+                  {revealed && (
+                    <div className="mt-4 max-h-[210px] overflow-y-auto rounded-[18px] border border-[var(--border-subtle)] bg-[var(--surface-2)] px-4 py-3">
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted-soft)]">
+                        Answer
+                      </div>
+                      <div className="mt-2 text-sm font-medium leading-6 text-neutral-700 dark:text-neutral-300">
+                        {sanitizeText(currentCard.answer)}
+                      </div>
+                    </div>
+                  )}
+                  <div className="mt-4 flex flex-wrap items-center gap-2">
                     <Button
                       variant="primary"
                       className="rounded-full px-5"
@@ -558,40 +611,33 @@ export default function FlashcardsStudyMode() {
               <div>
                 <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
                   {[
-                    { score: 1, label: "Again", color: "border-neutral-200 bg-white text-[var(--text-main)]" },
-                    { score: 2, label: "Hard", color: "border-neutral-200 bg-white text-[var(--text-main)]" },
-                    {
-                      score: 3,
-                      label: "Good",
-                      color: "border-neutral-200 bg-white text-[var(--text-main)]",
-                    },
-                    {
-                      score: 4,
-                      label: "Easy",
-                      color: "border-neutral-200 bg-white text-[var(--text-main)]",
-                    },
-                    {
-                      score: 5,
-                      label: "Mastered",
-                      color: "border-neutral-200 bg-white text-[var(--text-main)]",
-                    },
+                    { score: 1, label: "Again" },
+                    { score: 2, label: "Hard" },
+                    { score: 3, label: "Good" },
+                    { score: 4, label: "Easy" },
+                    { score: 5, label: "Mastered" },
                   ].map((opt) => (
                     <button
                       key={opt.score}
                       onClick={() => handleReview(opt.score as 1 | 2 | 3 | 4 | 5)}
                       disabled={submitting || !revealed}
-                      className={`h-11 rounded-xl border px-3 text-sm font-semibold transition ${
+                      className={`h-11 rounded-[14px] border px-3 text-sm font-semibold transition-all ${
                         submitting ? "cursor-not-allowed opacity-60" : ""
-                      } ${!revealed ? "opacity-50" : ""} ${opt.color} hover:border-[var(--primary)] hover:text-[var(--primary)]`}
+                      } ${
+                        revealed
+                          ? "border-neutral-950 bg-neutral-950 text-white shadow-[0_10px_22px_rgba(15,23,42,0.16)] hover:-translate-y-0.5 hover:bg-neutral-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]/35 dark:border-white dark:bg-white dark:text-neutral-950 dark:hover:bg-neutral-200"
+                          : "border-token bg-[var(--surface)] text-[var(--text-main)] opacity-45"
+                      }`}
                     >
                       {opt.label}{" "}
-                      <span className="ml-1 text-[11px] text-[var(--text-muted-soft)]">{opt.score}</span>
+                      <span className={`ml-1 text-[11px] ${revealed ? "opacity-70" : "text-[var(--text-muted-soft)]"}`}>
+                        {opt.score}
+                      </span>
                     </button>
                   ))}
                 </div>
-                <div className="mt-2 flex items-center justify-between text-xs text-[var(--text-secondary)]">
-                  <span>Reveal the answer, then rate recall quality.</span>
-                  <span>1 = Again · 5 = Mastered</span>
+                <div className="mt-2 flex items-center justify-end text-xs text-[var(--text-secondary)]">
+                  <span>1 = Again / 5 = Mastered</span>
                 </div>
               </div>
             </div>

@@ -37,7 +37,7 @@ export default function ChatInput({
   }
 
   return (
-    <div className="relative flex items-end gap-2 rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-2 py-2 shadow-sm focus-within:border-[var(--primary)] focus-within:ring-1 focus-within:ring-[var(--primary)]/20 transition-all">
+    <div className="relative flex items-center gap-2 rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 shadow-sm focus-within:border-[var(--primary)] focus-within:ring-1 focus-within:ring-[var(--primary)]/20 transition-all">
       <style>{`
         .no-scrollbar::-webkit-scrollbar {
           width: 0px;
@@ -59,7 +59,7 @@ export default function ChatInput({
       `}</style>
 
       {/* Mic button on the LEFT */}
-      <div className="flex items-center pb-1">
+      <div className="flex items-center">
         <button
           onClick={onToggleListening}
           className={`flex-shrink-0 h-9 w-9 rounded-xl flex items-center justify-center transition-all duration-200 ${
@@ -73,7 +73,7 @@ export default function ChatInput({
         </button>
       </div>
 
-      <div className="flex-1 min-w-0 py-2">
+      <div className="flex min-w-0 flex-1 items-center py-1.5">
         <textarea
           ref={textareaRef}
           value={value}
@@ -81,13 +81,13 @@ export default function ChatInput({
           onKeyDown={handleKeyDown}
           placeholder={isListening ? "Listening..." : "Ask a question..."}
           rows={1}
-          className="w-full resize-none bg-transparent text-sm text-[var(--text-main)] placeholder:text-[var(--text-secondary)] focus:outline-none max-h-[200px] custom-scrollbar"
+          className="w-full resize-none bg-transparent text-sm leading-6 text-[var(--text-main)] placeholder:text-[var(--text-secondary)] focus:outline-none max-h-[200px] custom-scrollbar"
           style={{ minHeight: "24px" }}
         />
       </div>
 
       {/* Send button on the RIGHT */}
-      <div className="flex items-center pb-1">
+      <div className="flex items-center">
         <button
           onClick={onSend}
           disabled={!value.trim() || isLoading}

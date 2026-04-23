@@ -12,6 +12,10 @@ type Props = {
   backTo?: string;
   backState?: Record<string, unknown>;
   headerMaxWidthClassName?: string;
+  contentGapClassName?: string;
+  contentOverflowClassName?: string;
+  contentHeightClassName?: string;
+  mainClassName?: string;
   children: React.ReactNode;
 };
 
@@ -24,6 +28,10 @@ export default function AppShell({
   backTo,
   backState,
   headerMaxWidthClassName = "max-w-none",
+  contentGapClassName = "gap-8",
+  contentOverflowClassName = "overflow-y-auto",
+  contentHeightClassName = "min-h-full",
+  mainClassName = "",
   children,
 }: Props) {
   const [collapsed, setCollapsed] = useState(false);
@@ -58,10 +66,10 @@ export default function AppShell({
       <div className="flex h-screen overflow-hidden bg-[var(--bg-page)] text-[var(--text)]">
         <AppSidebar collapsed={collapsed} onToggle={handleToggle} />
         <div
-          className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden px-4 py-6 transition-[margin-left] duration-200 ease-in-out lg:px-6"
+          className={`min-w-0 flex-1 overflow-x-hidden px-4 py-6 transition-[margin-left] duration-200 ease-in-out lg:px-6 ${contentOverflowClassName}`}
           style={{ marginLeft: collapsed ? "76px" : "260px" }}
         >
-          <div className="flex min-h-full min-w-0 flex-col gap-8">
+          <div className={`flex min-w-0 flex-col ${contentHeightClassName} ${contentGapClassName}`}>
             <div className={`mx-auto w-full ${headerMaxWidthClassName}`}>
               <TopBar
                 title={title}
@@ -73,7 +81,7 @@ export default function AppShell({
                 backState={backState}
               />
             </div>
-            <main className="flex-1 min-w-0">{children}</main>
+            <main className={`flex-1 min-w-0 ${mainClassName}`}>{children}</main>
           </div>
         </div>
       </div>

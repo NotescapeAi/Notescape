@@ -25,7 +25,7 @@ from app.routers import subscribe
 from app.routers.analytics import router as analytics_router
 from app.routers.study_sessions import router as study_sessions_router
 from app.routers.quizzes import router as quizzes_router
-from app.core.migrations import ensure_quiz_jobs_schema, ensure_learning_analytics_schema
+from app.core.migrations import ensure_quiz_jobs_schema, ensure_learning_analytics_schema, ensure_ocr_pipeline_schema
 from app.routers.chat_ask import router as chat_ask_router
 
 
@@ -78,6 +78,7 @@ app.include_router(chat_ask_router)
 async def startup_hooks():
     await ensure_quiz_jobs_schema()
     await ensure_learning_analytics_schema()
+    await ensure_ocr_pipeline_schema()
     log = logging.getLogger("uvicorn.error")
     for r in app.routes:
         if isinstance(r, APIRoute):

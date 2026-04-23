@@ -1,6 +1,6 @@
 // src/pages/Classes.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Download, MessageCircle, Upload, X } from "lucide-react";
 
 import ClassSidebar from "../components/ClassSidebar";
@@ -10,7 +10,6 @@ import Button from "../components/Button";
 import KebabMenu from "../components/KebabMenu";
 import PdfStudyViewer, { type PdfSelection, type PdfSnip } from "../components/PdfStudyViewer";
 import { useLayout } from "../layouts/LayoutContext";
-import ChatInterface from "../components/chat/ChatInterface";
 
 import {
   listClasses,
@@ -108,17 +107,19 @@ function StatusPill({ status }: { status?: string | null }) {
   return <span className={`${base} ${map[s] || map.UPLOADED}`}>{label}</span>;
 }
 
+type ClassTab = "documents" | "flashcards";
+const DOCUMENTS_PAGE_SIZE = 5;
+
 function Tabs({
   active,
   onChange,
 }: {
-  active: "documents" | "flashcards" | "chat";
-  onChange: (t: "documents" | "flashcards" | "chat") => void;
+  active: ClassTab;
+  onChange: (t: ClassTab) => void;
 }) {
-  const items: Array<["documents" | "flashcards" | "chat", string]> = [
+  const items: Array<[ClassTab, string]> = [
     ["documents", "Documents"],
     ["flashcards", "Flashcards"],
-    ["chat", "Chat"],
   ];
   return (
     <div className="flex flex-wrap gap-2">
@@ -139,14 +140,26 @@ function Tabs({
 function ClassesContent() {
   const [classes, setClasses] = useState<ClassRow[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
-  const [activeTab, setActiveTab] = useState<"documents" | "flashcards" | "chat">("documents");
+  const [activeTab, setActiveTab] = useState<ClassTab>("documents");
 
   const [files, setFiles] = useState<FileRow[] | undefined>([]);
+  const [documentsPage, setDocumentsPage] = useState(0);
   const [sel, setSel] = useState<Record<string, boolean>>({});
   const [flashcardSourceIds, setFlashcardSourceIds] = useState<string[]>([]);
+  const documentRows = useMemo(() => files ?? [], [files]);
+  const documentsPageCount = Math.max(1, Math.ceil(documentRows.length / DOCUMENTS_PAGE_SIZE));
+  const currentDocumentsPage = Math.min(documentsPage, documentsPageCount - 1);
+  const visibleDocuments = useMemo(
+    () =>
+      documentRows.slice(
+        currentDocumentsPage * DOCUMENTS_PAGE_SIZE,
+        currentDocumentsPage * DOCUMENTS_PAGE_SIZE + DOCUMENTS_PAGE_SIZE
+      ),
+    [documentRows, currentDocumentsPage]
+  );
   const selectedIds = useMemo(
-    () => (files ?? []).filter((f) => sel[f.id]).map((f) => f.id),
-    [files, sel]
+    () => documentRows.filter((f) => sel[f.id]).map((f) => f.id),
+    [documentRows, sel]
   );
 
   const [busyUpload, setBusyUpload] = useState(false);
@@ -183,13 +196,17 @@ function ClassesContent() {
   const [studyBusy, setStudyBusy] = useState(false);
   const [studySelectedQuote, setStudySelectedQuote] = useState<{ text: string; fileId?: string | null; pageNumber?: number | null } | null>(null);
   const studyChatScrollRef = useRef<HTMLDivElement | null>(null);
+  const activeStudyDocumentRef = useRef<{ classId: number | null; fileId: string | null }>({
+    classId: null,
+    fileId: null,
+  });
 
   const location = useLocation();
+  const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const documentListRef = useRef<HTMLDivElement | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [newClassName, setNewClassName] = useState("");
-  const [manualDocumentClose, setManualDocumentClose] = useState(false);
 
   const { sidebar, setSidebar } = useLayout();
   const prevSidebarRef = useRef(sidebar);
@@ -225,10 +242,17 @@ function ClassesContent() {
       setCards([]);
       setActiveTab("documents");
       setActiveFile(null);
-      setManualDocumentClose(false);
+      setDocumentsPage(0);
       return;
     }
-    setManualDocumentClose(false);
+    setActiveTab("documents");
+    setActiveFile(null);
+    setDocumentsPage(0);
+    setActiveFileViewUrl(null);
+    setActiveFileViewError(null);
+    setActiveFileViewLoading(false);
+    setSelectionMenu(null);
+    setPendingSnip(null);
     localStorage.setItem("last_class_id", String(selectedId));
     (async () => {
       const fs = await listFiles(selectedId);
@@ -259,16 +283,14 @@ function ClassesContent() {
   }, [selectedId, files]);
 
   useEffect(() => {
-    if (!selectedId || !files?.length || activeFile || manualDocumentClose) return;
-    const stored = localStorage.getItem(`chat_last_file_${selectedId}`);
-    if (!stored) return;
-    const match = (files ?? []).find((f) => f.id === stored);
-    if (match) setActiveFile(match);
-  }, [selectedId, files, activeFile, manualDocumentClose]);
+    setDocumentsPage((page) => Math.min(page, Math.max(0, documentsPageCount - 1)));
+  }, [documentsPageCount]);
 
   useEffect(() => {
-    if (!selectedId || !activeFile) return;
-    localStorage.setItem(`chat_last_file_${selectedId}`, activeFile.id);
+    activeStudyDocumentRef.current = {
+      classId: selectedId ?? null,
+      fileId: activeFile?.id ?? null,
+    };
   }, [selectedId, activeFile?.id]);
 
   // Load study sessions when active file changes
@@ -277,29 +299,62 @@ function ClassesContent() {
       setStudySessions([]);
       setStudySessionId(null);
       setStudyMessages([]);
+      setStudyBusy(false);
+      setStudySelectedQuote(null);
+      setPendingSnip(null);
       return;
     }
+    let cancelled = false;
+    const fileId = activeFile.id;
+    setStudySessions([]);
+    setStudySessionId(null);
+    setStudyMessages([]);
+    setStudyBusy(false);
+    setStudySelectedQuote(null);
+    setPendingSnip(null);
     (async () => {
       try {
-        const sess = await listChatSessions(selectedId, activeFile.id);
+        const sess = await listChatSessions(selectedId, fileId);
+        if (
+          cancelled ||
+          activeStudyDocumentRef.current.classId !== selectedId ||
+          activeStudyDocumentRef.current.fileId !== fileId
+        ) {
+          return;
+        }
         setStudySessions(sess);
-        const stored = localStorage.getItem(`study_session_${selectedId}_${activeFile.id}`);
+        const stored = localStorage.getItem(`study_session_${selectedId}_${fileId}`);
         const preferred = stored ? sess.find((s) => s.id === stored)?.id : null;
         setStudySessionId(preferred ?? sess[0]?.id ?? null);
       } catch { /* ignore */ }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [selectedId, activeFile?.id]);
 
   // Load messages when study session changes
   useEffect(() => {
     if (!studySessionId) { setStudyMessages([]); return; }
+    let cancelled = false;
+    const fileId = activeFile?.id ?? null;
     (async () => {
       try {
         const msgs = await listChatSessionMessages(studySessionId);
+        if (
+          cancelled ||
+          activeStudyDocumentRef.current.classId !== (selectedId ?? null) ||
+          activeStudyDocumentRef.current.fileId !== fileId
+        ) {
+          return;
+        }
         setStudyMessages((msgs || []).map((m) => ({ ...m, citations: m.citations ?? undefined })));
       } catch { /* ignore */ }
     })();
-  }, [studySessionId]);
+    return () => {
+      cancelled = true;
+    };
+  }, [studySessionId, selectedId, activeFile?.id]);
 
   // Auto-scroll study chat
   useEffect(() => {
@@ -493,6 +548,7 @@ function ClassesContent() {
         const row = await uploadFile(selectedId, f);
         setFiles((xs) => [row, ...(xs ?? [])]);
       }
+      setDocumentsPage(0);
     } catch (err: unknown) {
       showToastMessage("Upload failed. Please try again.");
     } finally {
@@ -521,9 +577,14 @@ function ClassesContent() {
   }
 
   function toggleAll(checked: boolean) {
-    const m: Record<string, boolean> = {};
-    if (checked) (files ?? []).forEach((f) => (m[f.id] = true));
-    setSel(m);
+    setSel((prev) => {
+      const next = { ...prev };
+      visibleDocuments.forEach((f) => {
+        if (checked) next[f.id] = true;
+        else delete next[f.id];
+      });
+      return next;
+    });
   }
   function toggleOne(id: string, checked: boolean) {
     setSel((prev) => ({ ...prev, [id]: checked }));
@@ -545,13 +606,15 @@ function ClassesContent() {
   }
 
   function openDocumentInWorkspace(file: FileRow) {
-    setManualDocumentClose(false);
     setActiveTab("documents");
     setActiveFile(file);
   }
 
+  function handleStudyAssistantClick() {
+    navigate(selectedId ? `/chatbot?classId=${selectedId}` : "/chatbot");
+  }
+
   function closeActiveDocument() {
-    setManualDocumentClose(true);
     setActiveFile(null);
     setActiveFileViewUrl(null);
     setActiveFileViewError(null);
@@ -712,17 +775,20 @@ function ClassesContent() {
 
   async function onStudyAsk(overrideContent?: string) {
     if (!selectedId || !activeFile) return;
+    const requestClassId = selectedId;
+    const requestFile = activeFile;
+    const requestDocumentKey = `${requestClassId}:${requestFile.id}`;
     const content = (overrideContent ?? studyInput).trim();
     if (!content && !pendingSnip) return;
     const finalContent = content || "Explain this snippet.";
 
     let sessionId = studySessionId;
     if (!sessionId) {
-      const s = await createChatSession({ class_id: selectedId, document_id: activeFile.id, title: "New chat" });
+      const s = await createChatSession({ class_id: requestClassId, document_id: requestFile.id, title: "New chat" });
       setStudySessions((prev) => [s, ...prev]);
       sessionId = s.id;
       setStudySessionId(s.id);
-      localStorage.setItem(`study_session_${selectedId}_${activeFile.id}`, s.id);
+      localStorage.setItem(`study_session_${requestClassId}_${requestFile.id}`, s.id);
     }
 
     const snip = pendingSnip;
@@ -734,7 +800,7 @@ function ClassesContent() {
       selected_text: quote?.text ?? null,
       page_number: snip?.page ?? null,
       bounding_box: null,
-      file_id: activeFile.id,
+      file_id: requestFile.id,
       image_attachment: snip ?? null,
     };
     setStudyMessages((prev) => [...prev, userMsg]);
@@ -746,20 +812,33 @@ function ClassesContent() {
     let assistantText = "Sorry, I couldn't finish that response. Please try again.";
     let citations: any = null;
     try {
-      let question = quote?.text ? `Selected text:
+      let question = quote?.text
+        ? `Selected text from "${requestFile.filename}":
 "${quote.text}"
 
-${finalContent}` : finalContent;
+${finalContent}`
+        : `Current document: "${requestFile.filename}"
+Use this document as the primary context unless I explicitly ask for something else.
+
+${finalContent}`;
       if (snip?.data_url && !quote?.text) {
         try {
           const ocr = await ocrImageSnippet(snip.data_url);
-          if (ocr?.text) question = `Snippet text:
+          if (ocr?.text) {
+            question = `Snippet text from "${requestFile.filename}":
 "${ocr.text}"
 
 ${finalContent}`;
+          }
         } catch { /* ignore */ }
       }
-      const res = await chatAsk({ class_id: selectedId, question, top_k: 8, file_ids: [activeFile.id] });
+      const res = await chatAsk({
+        class_id: requestClassId,
+        question,
+        top_k: 8,
+        file_ids: [requestFile.id],
+        mode: "rag",
+      });
       assistantText = (res.answer || "").trim() || "Not found in the uploaded material.";
       citations = res.citations ?? null;
     } catch { /* ignore */ }
@@ -770,7 +849,12 @@ ${finalContent}`;
       content: assistantText,
       citations: citations ?? undefined,
     };
-    setStudyMessages((prev) => [...prev, botMsg]);
+    if (
+      activeStudyDocumentRef.current.classId === requestClassId &&
+      activeStudyDocumentRef.current.fileId === requestFile.id
+    ) {
+      setStudyMessages((prev) => [...prev, botMsg]);
+    }
 
     try {
       await addChatMessages({
@@ -781,17 +865,29 @@ ${finalContent}`;
         selected_text: quote?.text ?? null,
         page_number: userMsg.page_number ?? null,
         bounding_box: null,
-        file_id: activeFile.id,
-        file_scope: [activeFile.id],
+        file_id: requestFile.id,
+        file_scope: [requestFile.id],
         image_attachment: snip ?? null,
       });
     } catch { /* ignore */ }
-    setStudyBusy(false);
+    if (
+      activeStudyDocumentRef.current.classId === requestClassId &&
+      activeStudyDocumentRef.current.fileId === requestFile.id
+    ) {
+      setStudyBusy(false);
+    }
   }
 
   const currentClass = selectedId
     ? classes.find((c) => c.id === selectedId)?.name
     : null;
+  const currentStudyScopeLabel = studySelectedQuote
+    ? "Using selected text"
+    : pendingSnip
+      ? `Using page ${pendingSnip.page} snippet`
+      : activeFile
+        ? "Using full document"
+        : null;
   const isWorkspaceWide = activeTab === "documents" && !!activeFile;
   const layoutClass = pdfFocusMode
     ? "grid-cols-1"
@@ -821,9 +917,9 @@ ${finalContent}`;
 
   return (
     <>
-      <div className="min-h-screen bg-[var(--bg-page)]">
+      <div className="h-full min-h-0 overflow-hidden bg-[var(--bg-page)]">
         <div
-          className="grid"
+          className="grid h-full min-h-0 gap-3"
           style={{
             gridTemplateColumns: classesPanelCollapsed ? "84px minmax(0,1fr)" : "300px minmax(0,1fr)",
             transition: "grid-template-columns 0.25s ease",
@@ -840,9 +936,9 @@ ${finalContent}`;
             onToggleCollapse={toggleClassesPanel}
           />
 
-        <section className="p-6 lg:p-8 h-screen overflow-y-auto">
+        <section className="h-full min-h-0 overflow-hidden">
           <div
-            className={`mx-auto flex w-full flex-col gap-6 h-full ${
+            className={`mx-auto flex h-full min-h-0 w-full flex-col gap-3 ${
               isWorkspaceWide ? "max-w-none" : "max-w-[1200px]"
             }`}
           >
@@ -867,39 +963,30 @@ ${finalContent}`;
               )
             ) : (
               <>
-                <div className="panel panel-compact flex-shrink-0">
-                  <div className="flex items-center justify-between gap-4 flex-wrap">
-                    <div>
-                      <div className="text-sm font-semibold text-main">{currentClass}</div>
+                <div className="flex flex-shrink-0 flex-col gap-2.5 border-b border-token pb-3">
+                  <div className="min-w-0">
+                    <h2 className="truncate text-2xl font-semibold leading-tight text-main">{currentClass}</h2>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <Tabs active={activeTab} onChange={setActiveTab} />
+                    <div className="flex flex-wrap items-center justify-end gap-3">
+                      {busyUpload && <span className="text-xs text-muted">Uploading...</span>}
+                      {busyFlow && <span className="text-xs text-muted">Processing...</span>}
+                      <button
+                        type="button"
+                        onClick={handleStudyAssistantClick}
+                        className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm font-semibold text-[var(--text-main)] transition-all hover:border-violet-500 hover:text-violet-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30"
+                      >
+                        <MessageCircle className="h-4 w-4 flex-shrink-0" />
+                        Study Assistant
+                      </button>
                     </div>
                   </div>
                 </div>
-
-                <div className="flex items-center justify-between flex-wrap gap-4 flex-shrink-0">
-                  <Tabs active={activeTab} onChange={setActiveTab} />
-                  <div className="flex items-center gap-3">
-                    {busyUpload && <span className="text-xs text-muted">Uploading...</span>}
-                    {busyFlow && <span className="text-xs text-muted">Processing...</span>}
-                    <button
-                      onClick={() => setStudyAssistantOpen((v) => !v)}
-                      className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-semibold transition-all ${
-                        studyAssistantOpen
-                          ? "border-violet-500 bg-violet-600 text-white shadow-md"
-                          : "border-[var(--border)] bg-[var(--surface)] text-[var(--text-main)] hover:border-violet-500 hover:text-violet-500"
-                      }`}
-                    >
-                      <MessageCircle className="h-4 w-4" />
-                      Study Assistant
-                    </button>
-                    </div>
-                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto pr-1">
                 {activeTab === "documents" && (
-                  <div className="mt-6 space-y-4">
-                    {!activeFile ? (
-                      <div className="panel panel-muted text-sm text-[var(--text-secondary)]">
-                        Select a document to open the study workspace.
-                      </div>
-                    ) : (
+                  <div className="space-y-3">
+                    {activeFile ? (
                       <div className="relative">
                         <div className={`grid gap-4 ${layoutClass}`}>
                       {/* PDF Viewer */}
@@ -1009,6 +1096,17 @@ ${finalContent}`;
                                 Close
                               </button>
                             </div>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2 border-b border-[var(--border)] px-5 py-3 surface">
+                            <span className="rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-2.5 py-1 text-[11px] font-medium text-[var(--text-main)]">
+                              Current document: {activeFile.filename}
+                            </span>
+                            {currentStudyScopeLabel && (
+                              <span className="rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-[11px] font-medium text-violet-700 dark:border-violet-900/40 dark:bg-violet-900/20 dark:text-violet-300">
+                                {currentStudyScopeLabel}
+                              </span>
+                            )}
                           </div>
 
                           {/* Messages */}
@@ -1141,7 +1239,7 @@ ${finalContent}`;
                       )}
                     </div>
                   </div>
-                )}
+                ) : null}
                 {!hideReadingClutter && (
                   <>
                   <input
@@ -1168,13 +1266,11 @@ ${finalContent}`;
                     onDragLeave={onDragLeave}
                     onDrop={onDrop}
                   >
-                    <div className="flex items-center justify-between border-b border-token px-4 py-3">
+                    <div className="flex items-center justify-between gap-3 border-b border-token px-4 py-3">
                       <div>
                         <div className="text-sm font-semibold">Documents</div>
-                        <div className="text-xs text-muted">PDF, PPTX, DOCX</div>
                       </div>
                       <div className="flex items-center gap-2 text-xs text-muted">
-                        <span>{selectedIds.length} selected</span>
                         <button
                           className="inline-flex items-center gap-1 rounded-lg border border-token surface px-2.5 py-1.5 text-xs font-semibold text-muted hover:border-[var(--primary)]"
                           onClick={() => fileInputRef.current?.click()}
@@ -1202,7 +1298,7 @@ ${finalContent}`;
                         Ignored {invalidDropCount} unsupported file{invalidDropCount > 1 ? "s" : ""}.
                       </div>
                     )}
-                    <div className="overflow-auto">
+                    <div className="overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead className="surface-2 text-xs text-muted">
                           <tr>
@@ -1210,7 +1306,7 @@ ${finalContent}`;
                               <input
                                 type="checkbox"
                                 aria-label="Select all"
-                                checked={(files?.length ?? 0) > 0 && selectedIds.length === (files?.length ?? 0)}
+                                checked={visibleDocuments.length > 0 && visibleDocuments.every((f) => !!sel[f.id])}
                                 onChange={(e) => toggleAll(e.target.checked)}
                               />
                             </th>
@@ -1223,7 +1319,7 @@ ${finalContent}`;
                           </tr>
                         </thead>
                         <tbody>
-                          {(files ?? []).map((f) => (
+                          {visibleDocuments.map((f) => (
                             <tr key={f.id} className="border-t border-token">
                               <td className="px-4 py-3">
                                 <input
@@ -1267,12 +1363,21 @@ ${finalContent}`;
                             <tr>
                               <td colSpan={7} className="px-4 py-8">
                                 <button
-                                  className="mx-auto flex w-full max-w-md flex-col items-center rounded-xl border border-dashed border-token px-4 py-6 text-center hover:border-[var(--primary)]"
+                                  className="mx-auto flex w-full max-w-md flex-col items-center rounded-xl border border-dashed border-token px-4 py-5 text-center transition-colors hover:border-[var(--primary)]"
                                   onClick={() => fileInputRef.current?.click()}
                                 >
                                   <Upload className="h-7 w-7 text-[var(--primary)]" />
                                   <div className="mt-2 text-sm font-semibold text-main">Upload your materials</div>
-                                  <div className="mt-1 text-xs text-muted">Click to upload - PDF, PPTX, DOCX</div>
+                                  <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+                                    {["PPTX", "PDF", "DOCS"].map((type) => (
+                                      <span
+                                        key={type}
+                                        className="rounded-full border border-token surface-2 px-2.5 py-0.5 text-[10px] font-semibold tracking-[0.12em] text-muted"
+                                      >
+                                        {type}
+                                      </span>
+                                    ))}
+                                  </div>
                                 </button>
                               </td>
                             </tr>
@@ -1280,6 +1385,28 @@ ${finalContent}`;
                         </tbody>
                       </table>
                     </div>
+                    {documentRows.length > DOCUMENTS_PAGE_SIZE && (
+                      <div className="flex justify-center border-t border-token px-4 py-3">
+                        <div className="flex items-center gap-6 text-sm font-semibold">
+                          <button
+                            type="button"
+                            disabled={currentDocumentsPage === 0}
+                            onClick={() => setDocumentsPage((page) => Math.max(0, page - 1))}
+                            className="text-muted transition-all duration-200 hover:scale-105 hover:text-[var(--primary)] hover:underline hover:underline-offset-4 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:scale-100 disabled:hover:text-muted disabled:hover:no-underline"
+                          >
+                            Previous
+                          </button>
+                          <button
+                            type="button"
+                            disabled={currentDocumentsPage >= documentsPageCount - 1}
+                            onClick={() => setDocumentsPage((page) => Math.min(documentsPageCount - 1, page + 1))}
+                            className="text-muted transition-all duration-200 hover:scale-105 hover:text-[var(--primary)] hover:underline hover:underline-offset-4 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:scale-100 disabled:hover:text-muted disabled:hover:no-underline"
+                          >
+                            Next
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </>
                 )}
@@ -1288,7 +1415,7 @@ ${finalContent}`;
 
 
               {activeTab === "flashcards" && (
-                <div className="mt-6 rounded-2xl border border-token surface p-5 shadow-sm">
+                <div className="rounded-2xl border border-token surface p-5 shadow-sm">
                   <div className="flex items-center justify-between flex-wrap gap-3">
                     <div>
                       <div className="text-sm font-semibold">Flashcards</div>
@@ -1391,12 +1518,7 @@ ${finalContent}`;
                   </div>
                 </div>
               )}
-
-              {activeTab === "chat" && (
-                <div className="mt-6 h-[calc(100vh-240px)] min-h-[500px] border border-token rounded-2xl overflow-hidden shadow-sm">
-                  <ChatInterface classId={selectedId} />
-                </div>
-              )}
+              </div>
 
               {preview && (
                 <div
@@ -1545,7 +1667,13 @@ ${finalContent}`;
 
 export default function Classes() {
   return (
-    <AppShell title="Classes">
+    <AppShell
+      title="Classes"
+      contentGapClassName="gap-3"
+      contentOverflowClassName="overflow-hidden"
+      contentHeightClassName="h-full"
+      mainClassName="min-h-0 overflow-hidden"
+    >
       <ClassesContent />
     </AppShell>
   );

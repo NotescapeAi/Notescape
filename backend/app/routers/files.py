@@ -21,10 +21,6 @@ from app.core.storage import (
     build_s3_document_prefix,
     put_bytes,
 )
-from app.core.cache import cache_set
-from app.lib.pdf_text import detect_digital_pdf
-from app.lib.chunking import extract_page_texts
-from app.lib.indexing import index_file
 
 UPLOAD_ROOT = Path(settings.upload_root)
 UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
@@ -100,17 +96,27 @@ async def _finalize_s3_upload_async(
         )
         await _set_file_storage_key(file_id, storage_key)
 
-        if safe_name.lower().endswith(".pdf"):
+        if safe_name.lower().endswith((".pdf", ".png", ".jpg", ".jpeg", ".tif", ".tiff", ".webp")):
             await _update_file_status(file_id, "PROCESSING")
-            await _process_pdf_async(
-                file_id=file_id,
-                safe_name=safe_name,
-                local_path=local_path,
-                class_id=class_id,
-                owner_uid=owner_uid,
-                storage_backend="s3",
-                storage_key=storage_key,
-            )
+            if safe_name.lower().endswith(".pdf"):
+                await _process_pdf_async(
+                    file_id=file_id,
+                    safe_name=safe_name,
+                    local_path=local_path,
+                    class_id=class_id,
+                    owner_uid=owner_uid,
+                    storage_backend="s3",
+                    storage_key=storage_key,
+                )
+            else:
+                output_prefix = build_s3_document_prefix("public", owner_uid, class_id, file_id)
+                queued = await _queue_ocr_job(file_id, output_prefix)
+                await _update_file_status(file_id, "OCR_QUEUED", ocr_job_id=queued["job_id"])
+                try:
+                    if local_path.exists():
+                        local_path.unlink()
+                except Exception:
+                    pass
         else:
             await _update_file_status(file_id, "UPLOADED")
             try:
@@ -127,8 +133,26 @@ async def _finalize_s3_upload_async(
 async def list_files(class_id: int):
     async with db_conn() as (conn, cur):
         await cur.execute(
-            "SELECT id, class_id, filename, mime_type, storage_url, size_bytes, uploaded_at, status, ocr_job_id, indexed_at "
-            "FROM files WHERE class_id=%s ORDER BY uploaded_at DESC",
+            """
+            SELECT
+                files.id,
+                files.class_id,
+                files.filename,
+                files.mime_type,
+                files.storage_url,
+                files.size_bytes,
+                files.uploaded_at,
+                files.status,
+                files.ocr_job_id,
+                files.indexed_at,
+                files.last_error,
+                COUNT(file_chunks.id)::int AS chunk_count
+            FROM files
+            LEFT JOIN file_chunks ON file_chunks.file_id = files.id
+            WHERE files.class_id=%s
+            GROUP BY files.id
+            ORDER BY files.uploaded_at DESC
+            """,
             (class_id,)
         )
         rows = await cur.fetchall()
@@ -158,10 +182,10 @@ async def _update_file_status(file_id: str, status: str, error: str | None = Non
         await conn.commit()
 
 
-async def _queue_ocr_job(file_id: str, output_prefix: str, engine: str = "tesseract"):
+async def _queue_ocr_job(file_id: str, output_prefix: str, engine: str = "hybrid"):
     job_id = str(uuid.uuid4())
-    output_json_key = f"{output_prefix}/text/ocr.json"
-    output_text_key = f"{output_prefix}/text/ocr.txt"
+    output_json_key = f"{output_prefix}/ocr/normalized.json"
+    output_text_key = f"{output_prefix}/ocr/markdown.md"
     async with db_conn() as (conn, cur):
         await cur.execute(
             """
@@ -189,21 +213,11 @@ async def _process_pdf_async(
     status = "UPLOADED"
     ocr_job_id = None
     try:
-        is_digital, _ = detect_digital_pdf(str(local_path), max_pages=3, min_chars=200)
-        if is_digital:
-            page_texts = extract_page_texts(str(local_path))
-            full_text = "\n".join(page_texts)
-            cache_key = f"filetext:{file_id}:{storage_key or local_path.stat().st_size}"
-            cache_set(cache_key, full_text.encode("utf-8"), ttl_seconds=86400)
-            total = await index_file(file_id, page_texts=page_texts)
-            status = "INDEXED" if total > 0 else "FAILED"
-            await _update_file_status(file_id, status, error=None, indexed=total > 0)
-        else:
-            output_prefix = build_s3_document_prefix("public", owner_uid, class_id, file_id)
-            queued = await _queue_ocr_job(file_id, output_prefix)
-            ocr_job_id = queued["job_id"]
-            status = "OCR_QUEUED"
-            await _update_file_status(file_id, status, ocr_job_id=ocr_job_id)
+        output_prefix = build_s3_document_prefix("public", owner_uid, class_id, file_id)
+        queued = await _queue_ocr_job(file_id, output_prefix)
+        ocr_job_id = queued["job_id"]
+        status = "OCR_QUEUED"
+        await _update_file_status(file_id, status, ocr_job_id=ocr_job_id)
     except Exception as e:
         log.error(f"[files] processing failed for {file_id}: {e}")
         await _update_file_status(file_id, "FAILED", error=str(e))
@@ -281,20 +295,27 @@ async def upload_file(class_id: int, file: UploadFile = File(...)):
                 local_path=local_path,
             )
         )
-    elif safe_name.lower().endswith(".pdf"):
+    elif safe_name.lower().endswith((".pdf", ".png", ".jpg", ".jpeg", ".tif", ".tiff", ".webp")):
         status = "PROCESSING"
         await _update_file_status(file_id, status)
-        asyncio.create_task(
-            _process_pdf_async(
-                file_id=file_id,
-                safe_name=safe_name,
-                local_path=local_path,
-                class_id=class_id,
-                owner_uid=owner_uid,
-                storage_backend=storage_backend,
-                storage_key=storage_key,
+        if safe_name.lower().endswith(".pdf"):
+            asyncio.create_task(
+                _process_pdf_async(
+                    file_id=file_id,
+                    safe_name=safe_name,
+                    local_path=local_path,
+                    class_id=class_id,
+                    owner_uid=owner_uid,
+                    storage_backend=storage_backend,
+                    storage_key=storage_key,
+                )
             )
-        )
+        else:
+            output_prefix = build_s3_document_prefix("public", owner_uid, class_id, file_id)
+            queued = await _queue_ocr_job(file_id, output_prefix)
+            ocr_job_id = queued["job_id"]
+            status = "OCR_QUEUED"
+            await _update_file_status(file_id, status, ocr_job_id=ocr_job_id)
 
     return {
         "id": file_id,
@@ -416,7 +437,7 @@ async def get_download_url(file_id: UUID):
 
 
 @router.post("/{file_id}/ocr")
-async def queue_ocr(file_id: UUID, engine: str = "easyocr"):
+async def queue_ocr(file_id: UUID, engine: str = "hybrid"):
     # confirm file exists
     async with db_conn() as (conn, cur):
         await cur.execute(
@@ -437,8 +458,8 @@ async def queue_ocr(file_id: UUID, engine: str = "easyocr"):
 
     # processed layer output keys
     output_prefix = build_s3_document_prefix("public", owner_uid, class_id, str(file_id))
-    output_json_key = f"{output_prefix}/text/ocr.json"
-    output_text_key = f"{output_prefix}/text/ocr.txt"
+    output_json_key = f"{output_prefix}/ocr/normalized.json"
+    output_text_key = f"{output_prefix}/ocr/markdown.md"
 
     async with db_conn() as (conn, cur):
         await cur.execute(
@@ -466,7 +487,8 @@ async def queue_ocr(file_id: UUID, engine: str = "easyocr"):
 async def get_ocr_jobs(file_id: UUID):
     async with db_conn() as (conn, cur):
         await cur.execute("""
-            SELECT id, status, engine, method, output_text_key, output_json_key, error, created_at, started_at, finished_at
+            SELECT id, status, engine, method, output_text_key, output_json_key, error, created_at, started_at, finished_at,
+                   raw_json_key, metrics_json_key, correction_log_key
             FROM ocr_jobs
             WHERE file_id=%s
             ORDER BY created_at DESC
@@ -486,5 +508,8 @@ async def get_ocr_jobs(file_id: UUID):
             "created_at": r[7],
             "started_at": r[8],
             "finished_at": r[9],
+            "raw_json_url": presign_get_url(r[10]) if r[10] else None,
+            "metrics_json_url": presign_get_url(r[11]) if r[11] else None,
+            "correction_log_url": presign_get_url(r[12]) if r[12] else None,
         })
     return jobs

@@ -2,6 +2,7 @@ import { useNavigate } from "react-router-dom";
 import { useState } from "react";
 import AppShell from "../layouts/AppShell";
 import { deleteAccount as apiDelete, logout as apiLogout } from "../lib/api";
+import { logout as firebaseLogout } from "../firebase/firebaseAuth";
 import { useTheme } from "../hooks/useTheme";
 
 export default function Settings() {
@@ -14,7 +15,8 @@ export default function Settings() {
     if (busy) return;
     setBusy("logout");
     try {
-      await apiLogout();
+      await apiLogout().catch(() => undefined);
+      await firebaseLogout().catch(() => undefined);
       navigate("/login", { replace: true });
     } finally {
       setBusy(null);

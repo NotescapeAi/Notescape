@@ -6,7 +6,7 @@ import { createQuizJob, getQuizJobStatus, type FileRow } from "../lib/api";
 interface QuizPanelProps {
   classId: number;
   files: FileRow[];
-  onQuizCreated?: () => void;
+  onQuizCreated?: () => void | Promise<void>;
 }
 
 const SUBJECTIVE_TYPES = [
@@ -26,6 +26,12 @@ function resolveProgressLabel(progressValue: number, statusLabel?: string | null
   return "Queued for generation";
 }
 
+function canUseForQuiz(file: FileRow) {
+  const chunkCount = Number(file.chunk_count ?? 0);
+  const status = String(file.status || "").toUpperCase();
+  return chunkCount > 0 || status !== "FAILED";
+}
+
 export default function QuizPanel({ classId, files, onQuizCreated }: QuizPanelProps) {
   const [fileId, setFileId] = useState("");
   const [mcqCount, setMcqCount] = useState(10);
@@ -41,6 +47,7 @@ export default function QuizPanel({ classId, files, onQuizCreated }: QuizPanelPr
 
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const generatingRef = useRef(false);
 
   useEffect(() => {
     return () => {
@@ -48,6 +55,16 @@ export default function QuizPanel({ classId, files, onQuizCreated }: QuizPanelPr
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    setFileId("");
+    clearJobTimers();
+    setGenerating(false);
+    generatingRef.current = false;
+    setError(null);
+    setSuccess(false);
+    setProgress(0);
+  }, [classId]);
 
   function clearJobTimers() {
     if (pollIntervalRef.current) {
@@ -107,6 +124,7 @@ export default function QuizPanel({ classId, files, onQuizCreated }: QuizPanelPr
   }
 
   async function handleGenerate() {
+    if (generatingRef.current) return;
     if (!fileId) {
       alert("Please select a PDF file");
       return;
@@ -123,9 +141,10 @@ export default function QuizPanel({ classId, files, onQuizCreated }: QuizPanelPr
     }
 
     clearJobTimers();
+    generatingRef.current = true;
     setGenerating(true);
     setError(null);
-    setProgress(0);
+    setProgress(8);
     setProgressLabel("Queued for generation");
     setSuccess(false);
 
@@ -148,10 +167,10 @@ export default function QuizPanel({ classId, files, onQuizCreated }: QuizPanelPr
       });
 
       setJobId(job.job_id);
-      setProgress(job.progress || 0);
+      setProgress(Math.max(8, job.progress || 0));
       setProgressLabel(resolveProgressLabel(job.progress || 0, job.status_message));
 
-      pollIntervalRef.current = setInterval(async () => {
+      const pollJob = async () => {
         try {
           const status = await getQuizJobStatus(job.job_id);
           setProgress(status.progress || 0);
@@ -159,12 +178,13 @@ export default function QuizPanel({ classId, files, onQuizCreated }: QuizPanelPr
 
           if (status.status === "completed") {
             clearJobTimers();
+            generatingRef.current = false;
             setGenerating(false);
             setJobId(null);
             setProgress(100);
             setProgressLabel(status.status_message || "Quiz ready");
             setSuccess(true);
-            onQuizCreated?.();
+            void onQuizCreated?.();
 
             timeoutRef.current = setTimeout(() => {
               setSuccess(false);
@@ -173,6 +193,7 @@ export default function QuizPanel({ classId, files, onQuizCreated }: QuizPanelPr
             }, 3000);
           } else if (status.status === "failed") {
             clearJobTimers();
+            generatingRef.current = false;
             setGenerating(false);
             setJobId(null);
             setError(
@@ -183,15 +204,21 @@ export default function QuizPanel({ classId, files, onQuizCreated }: QuizPanelPr
         } catch (err: any) {
           console.error("Error polling job:", err);
           clearJobTimers();
+          generatingRef.current = false;
           setGenerating(false);
           setJobId(null);
           setError(friendlyQuizError(err));
         }
-      }, 1200);
+      };
+
+      await pollJob();
+      if (!generatingRef.current) return;
+      pollIntervalRef.current = setInterval(pollJob, 900);
 
       timeoutRef.current = setTimeout(() => {
         if (pollIntervalRef.current) {
           clearJobTimers();
+          generatingRef.current = false;
           setGenerating(false);
           setJobId(null);
           setError("Quiz generation timeout - please try again");
@@ -200,23 +227,21 @@ export default function QuizPanel({ classId, files, onQuizCreated }: QuizPanelPr
     } catch (err: any) {
       console.error("Error creating quiz:", err);
       clearJobTimers();
+      generatingRef.current = false;
       setGenerating(false);
       setError(friendlyQuizError(err));
     }
   }
 
   const pdfFiles = files.filter((f) => f.filename.toLowerCase().endsWith(".pdf"));
+  const readyPdfFiles = pdfFiles.filter(canUseForQuiz);
+  const selectedFile = pdfFiles.find((f) => String(f.id) === String(fileId));
+  const selectedFileReady = !selectedFile || canUseForQuiz(selectedFile);
   const totalQuestions = mcqCount + subjectiveCount;
+  const hasReadyPdf = readyPdfFiles.length > 0;
 
   return (
-    <div className="space-y-6 p-6">
-      <div>
-        <h3 className="text-lg font-bold text-[var(--text-main)]">Quiz Configuration</h3>
-        <p className="mt-1 text-sm text-[var(--text-muted)]">
-          Customize your quiz parameters below
-        </p>
-      </div>
-
+    <div className="space-y-5 px-6 pb-6 pt-4">
       {error && (
         <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 shadow-sm animate-in fade-in slide-in-from-top-2">
           <div className="mb-1 font-semibold">Error</div>
@@ -246,11 +271,16 @@ export default function QuizPanel({ classId, files, onQuizCreated }: QuizPanelPr
             disabled={generating}
           >
             <option value="">Select a PDF document...</option>
-            {pdfFiles.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.filename}
+            {pdfFiles.map((f) => {
+              const chunkCount = Number(f.chunk_count ?? 0);
+              const isReady = canUseForQuiz(f);
+              const status = String(f.status || "").replace(/_/g, " ").toLowerCase();
+              return (
+              <option key={f.id} value={f.id} disabled={!isReady}>
+                {f.filename}{chunkCount > 0 ? "" : isReady ? " (text will be prepared)" : ` (${status || "not ready"})`}
               </option>
-            ))}
+              );
+            })}
           </select>
           <div className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)]">
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -258,6 +288,16 @@ export default function QuizPanel({ classId, files, onQuizCreated }: QuizPanelPr
             </svg>
           </div>
         </div>
+        {!hasReadyPdf && (
+          <p className="px-1 text-xs text-[var(--text-muted)]">
+            No PDFs are ready for quiz generation yet. Wait for processing to finish, then refresh this class.
+          </p>
+        )}
+        {selectedFile && !selectedFileReady && (
+          <p className="px-1 text-xs text-amber-600 dark:text-amber-400">
+            This PDF is still being processed and cannot generate quizzes yet.
+          </p>
+        )}
       </div>
 
       <div className="space-y-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)]/50 p-5 transition-all hover:border-[var(--primary)]/20">
@@ -432,6 +472,7 @@ export default function QuizPanel({ classId, files, onQuizCreated }: QuizPanelPr
         disabled={
           generating ||
           !fileId ||
+          !selectedFileReady ||
           totalQuestions === 0 ||
           (subjectiveCount > 0 && selectedSubjectiveTypes.length === 0)
         }

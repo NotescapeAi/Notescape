@@ -8,9 +8,7 @@ import {
   getFlashcardProgress,
   listFlashcards,
   getStudySessionOverview,
-  listRecentStudySessions,
   getWeakTags,
-  type StudySession,
   type ClassRow,
   type Flashcard,
   type WeakTag,
@@ -36,7 +34,6 @@ export default function Dashboard() {
     sessions_7d: number;
     avg_seconds_7d: number;
   } | null>(null);
-  const [recentSessions, setRecentSessions] = useState<StudySession[]>([]);
   const [weakTags, setWeakTags] = useState<WeakTag[]>([]);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
@@ -73,9 +70,8 @@ export default function Dashboard() {
           const cards = await listFlashcards(cs[0].id);
           setDueCards((cards ?? []).filter(isDue).slice(0, 5));
         }
-        const [overview, sessions, weakTagRows] = await Promise.all([
+        const [overview, weakTagRows] = await Promise.all([
           getStudySessionOverview(),
-          listRecentStudySessions(10),
           getWeakTags({ limit: 12 }),
         ]);
         setStudyOverview({
@@ -83,7 +79,6 @@ export default function Dashboard() {
           sessions_7d: overview.sessions_7d,
           avg_seconds_7d: overview.avg_seconds_7d,
         });
-        setRecentSessions(sessions);
         setWeakTags(weakTagRows);
       } finally {
         setLoading(false);
@@ -376,44 +371,6 @@ export default function Dashboard() {
                       {item.detail && (
                         <div className="text-xs text-[var(--text-secondary)]">{item.detail}</div>
                       )}
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </section>
-
-          <section className="card-neutral p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-xs uppercase tracking-[0.3em] text-[var(--text-muted-soft)]">Study sessions</div>
-                <div className="mt-2 text-lg font-semibold text-[var(--text-main)]">Recent study time</div>
-              </div>
-              {studyOverview && (
-                <span className="text-xs text-[var(--text-secondary)]">{studyOverview.sessions_7d} sessions (7d)</span>
-              )}
-            </div>
-            <div className="mt-5 space-y-3 text-sm">
-              {recentSessions.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-[var(--border-soft)] bg-[var(--surface-2)] px-5 py-6 text-center text-sm text-[var(--text-secondary)]">
-                  No study sessions yet. Start a study session to see time tracked.
-                </div>
-              ) : (
-                recentSessions.map((session) => (
-                  <div
-                    key={session.id}
-                    className="flex items-center justify-between rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3 shadow-[var(--shadow-soft)]"
-                  >
-                    <div>
-                      <div className="font-semibold text-[var(--text-main)]">
-                        {session.class_name || (session.class_id ? `Class #${session.class_id}` : "Study session")}
-                      </div>
-                      <div className="text-xs text-[var(--text-secondary)]">
-                        {session.started_at ? new Date(session.started_at).toLocaleString() : "Session"}
-                      </div>
-                    </div>
-                    <div className="text-xs text-[var(--text-secondary)]">
-                      {formatDuration(Math.max(0, session.duration_seconds ?? session.active_seconds ?? 0))}
                     </div>
                   </div>
                 ))

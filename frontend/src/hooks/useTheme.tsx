@@ -21,6 +21,12 @@ type ThemeState = {
 
 const ThemeContext = createContext<ThemeState | null>(null);
 
+function readStoredTheme(): ThemePreference | null {
+  if (typeof window === "undefined") return null;
+  const stored = window.localStorage.getItem("notescape.theme");
+  return stored === "light" || stored === "dark" || stored === "system" ? stored : null;
+}
+
 function resolveTheme(theme: ThemePreference) {
   if (theme === "system") {
     return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
@@ -36,16 +42,11 @@ function applyTheme(resolved: "light" | "dark") {
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = useState<ThemePreference>(() => {
-    if (typeof window === "undefined") return "system";
-    const stored = window.localStorage.getItem("notescape.theme");
-    if (stored === "light" || stored === "dark" || stored === "system") return stored;
-    return "system";
+    return readStoredTheme() ?? "light";
   });
   const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">(() => {
     if (typeof window === "undefined") return "light";
-    return resolveTheme(
-      (window.localStorage.getItem("notescape.theme") as ThemePreference) || "system"
-    );
+    return resolveTheme(readStoredTheme() ?? "light");
   });
   const isMounted = useRef(false);
 

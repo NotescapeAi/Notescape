@@ -63,6 +63,7 @@ export default function ForgotPassword() {
         <h1>Notescape</h1>
       </header>
 
+      <div className="auth-page">
       <div className="login-container">
         <h2 className="login-title">Forgot Password</h2>
 
@@ -91,6 +92,7 @@ export default function ForgotPassword() {
             Back to Login
           </Link>
         </div>
+      </div>
       </div>
       </main>
     </div>

@@ -37,8 +37,8 @@ export default function TopBar({ title, breadcrumbs, subtitle, showGreeting, bac
   }, [open]);
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-4 rounded-[28px] border border-[var(--border)] bg-[var(--surface)] px-6 py-5 shadow-[var(--shadow-soft)]">
-      <div>
+    <div className="flex flex-wrap items-start justify-between gap-4 px-1 py-1 sm:items-center sm:px-0">
+      <div className="min-w-0">
         {backLabel && (
           <div className="mb-2">
             <BackLink label={backLabel} to={backTo} state={backState} />
@@ -73,7 +73,7 @@ export default function TopBar({ title, breadcrumbs, subtitle, showGreeting, bac
           <button
             type="button"
             onClick={() => setOpen((v) => !v)}
-          className="flex items-center gap-2 rounded-full border border-[var(--border)]/80 bg-[var(--surface)] px-3 py-1"
+            className="flex items-center gap-2 rounded-full border border-[var(--border)]/80 bg-[var(--surface)] px-3 py-1"
             aria-label="Open profile menu"
           >
             {profile?.avatar_url ? (

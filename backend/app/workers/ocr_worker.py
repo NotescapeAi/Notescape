@@ -1,37 +1,43 @@
-import os
-import time
+import asyncio
 import json
-import tempfile
-import subprocess
-from datetime import datetime, timezone
-from pypdf import PdfReader
-from app.core.db import db_conn
-from app.core.storage import get_object_bytes, put_bytes
+import logging
+from pathlib import Path, PurePosixPath
+from typing import Any
+
 from app.core.cache import cache_set
-from app.lib.chunking import extract_page_texts
+from app.core.db import db_conn
+from app.core.migrations import ensure_ocr_pipeline_schema
+from app.core.settings import settings
+from app.core.storage import get_object_bytes, put_bytes
 from app.lib.indexing import index_file
-import io
+from app.services.document_ingestion import ExtractionInput, extract_document, result_json_bytes
+from app.services.flashcards.source_builder import build_flashcard_source_pages
+
 POLL_SECONDS = 2
+log = logging.getLogger("uvicorn.error")
 
 
-def now():
-    return datetime.now(timezone.utc)
-
-
-async def fetch_and_claim_job():
+async def fetch_and_claim_job() -> dict[str, Any] | None:
     async with db_conn() as (conn, cur):
-        await cur.execute("""
+        await cur.execute(
+            """
             UPDATE ocr_jobs
             SET status='running', started_at=now()
             WHERE id = (
-                SELECT id FROM ocr_jobs
+            SELECT id FROM ocr_jobs
                 WHERE status='queued'
+                   OR (
+                       status='running'
+                       AND finished_at IS NULL
+                       AND started_at < now() - interval '15 minutes'
+                   )
                 ORDER BY created_at
                 LIMIT 1
                 FOR UPDATE SKIP LOCKED
             )
-            RETURNING id, file_id, output_text_key, output_json_key
-        """)
+            RETURNING id::text, file_id::text, output_text_key, output_json_key
+            """
+        )
         row = await cur.fetchone()
         if row:
             await conn.commit()
@@ -40,48 +46,61 @@ async def fetch_and_claim_job():
     return None
 
 
-async def get_file_info(file_id):
+async def get_file_info(file_id: str) -> dict[str, Any] | None:
     async with db_conn() as (conn, cur):
         await cur.execute(
-            "SELECT storage_key, mime_type FROM files WHERE id=%s",
-            (str(file_id),)
+            """
+            SELECT files.storage_key,
+                   files.mime_type,
+                   files.filename,
+                   files.storage_backend,
+                   files.class_id,
+                   classes.owner_uid
+            FROM files
+            JOIN classes ON classes.id = files.class_id
+            WHERE files.id=%s
+            """,
+            (str(file_id),),
         )
-        return await cur.fetchone()
+        row = await cur.fetchone()
+        if not row:
+            return None
+        cols = [d[0] for d in cur.description]
+        return dict(zip(cols, row))
 
 
-def ocr_pdf(pdf_path: str):
-    images_dir = os.path.join(os.path.dirname(pdf_path), "pages")
-    os.makedirs(images_dir, exist_ok=True)
+def _local_path_for_key(storage_key: str) -> Path:
+    rel = PurePosixPath(storage_key)
+    return (Path(settings.upload_root) / Path(rel.as_posix())).resolve()
 
-    subprocess.check_call(
-        ["pdftoppm", "-png", pdf_path, os.path.join(images_dir, "page")]
-    )
 
-    pages = []
-    for name in sorted(os.listdir(images_dir)):
-        if not name.endswith(".png"):
-            continue
-        img_path = os.path.join(images_dir, name)
-        text = subprocess.check_output(
-            ["tesseract", img_path, "stdout"],
-            text=True,
-            encoding="utf-8",
-            errors="ignore",
-        )
-        pages.append({"page": name, "text": text})
+def _read_file_bytes(info: dict[str, Any]) -> bytes:
+    storage_key = info["storage_key"]
+    if not storage_key:
+        raise RuntimeError("File has no storage key")
+    if (info.get("storage_backend") or settings.storage_backend).lower() == "local":
+        path = _local_path_for_key(str(storage_key))
+        return path.read_bytes()
+    return get_object_bytes(str(storage_key))
 
-    return pages
 
-def extract_text_from_pdf_bytes(pdf_bytes: bytes) -> str:
-    reader = PdfReader(io.BytesIO(pdf_bytes))
-    texts = []
-    for page in reader.pages:
-        t = page.extract_text() or ""
-        texts.append(t)
-    return "\n".join(texts)
+def _write_bytes(key: str, data: bytes, content_type: str, storage_backend: str) -> str:
+    if storage_backend.lower() == "local":
+        path = _local_path_for_key(key)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+        return key
+    put_bytes(key, data, content_type)
+    return key
 
-def is_digital_text(text: str, min_chars: int = 200) -> bool:
-    return len((text or "").strip()) >= min_chars
+
+def _make_artifact_writer(output_prefix: str, storage_backend: str):
+    def writer(name: str, data: bytes, content_type: str) -> str:
+        key = f"{output_prefix.rstrip('/')}/{name.lstrip('/')}"
+        return _write_bytes(key, data, content_type, storage_backend)
+
+    return writer
+
 
 async def update_file_status(file_id: str, status: str, error: str | None = None, indexed: bool = False):
     async with db_conn() as (conn, cur):
@@ -96,136 +115,165 @@ async def update_file_status(file_id: str, status: str, error: str | None = None
             (status, error, indexed, str(file_id)),
         )
         await conn.commit()
+
+
+async def _complete_job(
+    job_id: str,
+    method: str,
+    normalized_key: str,
+    markdown_key: str,
+    raw_key: str,
+    metrics_key: str,
+    correction_key: str,
+):
+    async with db_conn() as (conn, cur):
+        await cur.execute(
+            """
+            UPDATE ocr_jobs
+            SET status='done',
+                method=%s,
+                output_json_key=%s,
+                output_text_key=%s,
+                raw_json_key=%s,
+                metrics_json_key=%s,
+                correction_log_key=%s,
+                finished_at=now(),
+                error=NULL
+            WHERE id::text=%s
+            """,
+            (method, normalized_key, markdown_key, raw_key, metrics_key, correction_key, str(job_id)),
+        )
+        await conn.commit()
+
+
+async def _fail_job(job_id: str, file_id: str, error: str):
+    async with db_conn() as (conn, cur):
+        await cur.execute(
+            """
+            UPDATE ocr_jobs
+            SET status='failed',
+                finished_at=now(),
+                error=%s
+            WHERE id::text=%s
+            """,
+            (error, str(job_id)),
+        )
+        await conn.commit()
+    await update_file_status(file_id, "FAILED", error=error)
+
+
+async def process_job(job: dict[str, Any]):
+    job_id = job["id"]
+    file_id = job["file_id"]
+    info = await get_file_info(file_id)
+    if not info:
+        raise RuntimeError("File not found")
+
+    storage_backend = (info.get("storage_backend") or settings.storage_backend).lower()
+    output_json_key = str(job["output_json_key"])
+    output_text_key = str(job["output_text_key"])
+    output_prefix = str(PurePosixPath(output_json_key).parent.parent)
+    data = _read_file_bytes(info)
+
+    log.info(
+        "[ocr] processing started job_id=%s file_id=%s filename=%s backend=%s",
+        job_id,
+        file_id,
+        info.get("filename"),
+        storage_backend,
+    )
+    result = extract_document(
+        ExtractionInput(
+            file_id=file_id,
+            filename=str(info.get("filename") or "upload"),
+            mime_type=info.get("mime_type"),
+            data=data,
+            output_prefix=output_prefix,
+        ),
+        artifact_writer=_make_artifact_writer(output_prefix, storage_backend),
+    )
+
+    normalized_key = output_json_key
+    markdown_key = output_text_key
+    raw_key = f"{output_prefix}/ocr/raw.json"
+    metrics_key = f"{output_prefix}/ocr/metrics.json"
+    correction_key = f"{output_prefix}/ocr/corrections.json"
+
+    result.storage_manifest.update(
+        {
+            "normalized_json": normalized_key,
+            "markdown": markdown_key,
+            "raw_json": raw_key,
+            "metrics_json": metrics_key,
+            "correction_log": correction_key,
+        }
+    )
+
+    _write_bytes(normalized_key, result_json_bytes(result), "application/json", storage_backend)
+    _write_bytes(markdown_key, result.markdown.encode("utf-8"), "text/markdown; charset=utf-8", storage_backend)
+    _write_bytes(
+        raw_key,
+        json.dumps(result.raw, ensure_ascii=False, indent=2).encode("utf-8"),
+        "application/json",
+        storage_backend,
+    )
+    _write_bytes(
+        metrics_key,
+        json.dumps(result.metrics, ensure_ascii=False, indent=2).encode("utf-8"),
+        "application/json",
+        storage_backend,
+    )
+    _write_bytes(
+        correction_key,
+        json.dumps(result.correction_log, ensure_ascii=False, indent=2).encode("utf-8"),
+        "application/json",
+        storage_backend,
+    )
+
+    page_texts = build_flashcard_source_pages(result.pages)
+    total = await index_file(file_id, page_texts=page_texts)
+    cache_set(
+        f"filetext:{file_id}:{info['storage_key']}",
+        result.markdown.encode("utf-8"),
+        ttl_seconds=86400,
+    )
+    await _complete_job(
+        job_id,
+        result.method.value,
+        normalized_key,
+        markdown_key,
+        raw_key,
+        metrics_key,
+        correction_key,
+    )
+    await update_file_status(file_id, "INDEXED" if total > 0 else "OCR_DONE", indexed=total > 0)
+    log.info(
+        "[ocr] completed job_id=%s file_id=%s method=%s indexed_chunks=%d confidence=%.3f eligibility=%.3f uncertain=%d",
+        job_id,
+        file_id,
+        result.method.value,
+        total,
+        float(result.metrics.get("average_confidence", 0.0)),
+        float(result.metrics.get("average_flashcard_eligibility_score", 0.0)),
+        int(result.metrics.get("uncertain_region_count", 0)),
+    )
+
+
 async def run():
+    await ensure_ocr_pipeline_schema()
     while True:
-        # 1) fetch job
         job = await fetch_and_claim_job()
         if not job:
-            time.sleep(POLL_SECONDS)
+            await asyncio.sleep(POLL_SECONDS)
             continue
 
-        job_id = job["id"]
-
         try:
-            # 2) get file info
-            info = await get_file_info(job["file_id"])
-            if not info:
-                raise RuntimeError("File not found")
-
-            storage_key, mime = info
-
-            # 3) download file
-            data = get_object_bytes(storage_key)
-
-            # 4) try digital PDF extraction first
-            try:
-                extracted = extract_text_from_pdf_bytes(data)
-            except Exception:
-                extracted = ""
-
-            if is_digital_text(extracted):
-                # DIGITAL PDF PATH (no OCR)
-                put_bytes(
-                    job["output_text_key"],
-                    extracted.encode("utf-8"),
-                    "text/plain; charset=utf-8",
-                )
-
-                meta = {
-                    "method": "pdf_text",
-                    "chars": len(extracted),
-                    "note": "extracted using pypdf",
-                }
-
-                put_bytes(
-                    job["output_json_key"],
-                    json.dumps(meta).encode("utf-8"),
-                    "application/json",
-                )
-
-                async with db_conn() as (conn, cur):
-                    await cur.execute(
-                        """
-                        UPDATE ocr_jobs
-                        SET status='done',
-                            method='pdf_text',
-                            finished_at=now(),
-                            error=NULL
-                        WHERE id=%s
-                        """,
-                        (str(job_id),)
-                    )
-                    await conn.commit()
-
-                cache_set(f"filetext:{job['file_id']}:{storage_key}", extracted.encode("utf-8"), ttl_seconds=86400)
-
-                with tempfile.TemporaryDirectory() as td:
-                    pdf_path = os.path.join(td, "input.pdf")
-                    with open(pdf_path, "wb") as f:
-                        f.write(data)
-                    page_texts = extract_page_texts(pdf_path)
-                    total = await index_file(str(job["file_id"]), page_texts=page_texts)
-                    await update_file_status(job["file_id"], "INDEXED" if total > 0 else "FAILED", indexed=total > 0)
-
-                continue  # IMPORTANT: skip OCR
-
-            # 5) OCR PATH (scanned PDF)
-            with tempfile.TemporaryDirectory() as td:
-                pdf_path = os.path.join(td, "input.pdf")
-                with open(pdf_path, "wb") as f:
-                    f.write(data)
-
-                pages = ocr_pdf(pdf_path)
-                page_texts = [p.get("text", "") for p in pages]
-                full_text = "\n\n".join(page_texts)
-
-                put_bytes(
-                    job["output_text_key"],
-                    full_text.encode("utf-8"),
-                    "text/plain; charset=utf-8",
-                )
-
-                put_bytes(
-                    job["output_json_key"],
-                    json.dumps(pages, ensure_ascii=False).encode("utf-8"),
-                    "application/json",
-                )
-
-            async with db_conn() as (conn, cur):
-                await cur.execute(
-                    """
-                    UPDATE ocr_jobs
-                    SET status='done',
-                        method='ocr',
-                        finished_at=now(),
-                        error=NULL
-                    WHERE id=%s
-                    """,
-                    (str(job_id),)
-                )
-                await conn.commit()
-
-            await update_file_status(job["file_id"], "OCR_DONE")
-            cache_set(f"filetext:{job['file_id']}:{storage_key}", full_text.encode("utf-8"), ttl_seconds=86400)
-            total = await index_file(str(job["file_id"]), page_texts=page_texts)
-            await update_file_status(job["file_id"], "INDEXED" if total > 0 else "FAILED", indexed=total > 0)
-
-        except Exception as e:
-            async with db_conn() as (conn, cur):
-                await cur.execute(
-                    """
-                    UPDATE ocr_jobs
-                    SET status='failed',
-                        finished_at=now(),
-                        error=%s
-                    WHERE id=%s
-                    """,
-                    (str(e), str(job_id)),
-                )
-                await conn.commit()
-            await update_file_status(job["file_id"], "FAILED", error=str(e))
+            await process_job(job)
+        except Exception as exc:
+            log.exception("[ocr] job failed job_id=%s file_id=%s", job.get("id"), job.get("file_id"))
+            await _fail_job(job["id"], job["file_id"], str(exc))
+        await asyncio.sleep(0)
 
 
 if __name__ == "__main__":
-    import asyncio
     asyncio.run(run())

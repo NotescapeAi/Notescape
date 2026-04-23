@@ -159,9 +159,9 @@ export default function QuizzesPage() {
   }
 
   return (
-    <AppShell title="Quizzes" headerMaxWidthClassName="max-w-[1400px]">
-      <div className="mx-auto w-full max-w-[1400px] px-4 py-6">
-        <div className="flex flex-col gap-8">
+    <AppShell title="Quizzes" headerMaxWidthClassName="max-w-[1400px]" contentGapClassName="gap-4">
+      <div className="mx-auto w-full max-w-[1400px] px-2 py-2 sm:px-0">
+        <div className="flex flex-col gap-5">
           {/* Error message */}
           {error && (
             <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 shadow-sm">
@@ -173,80 +173,61 @@ export default function QuizzesPage() {
             </div>
           )}
 
-          {/* Top helper card */}
-          <section className="card-neutral p-8 shadow-sm">
-            <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
-              <div className="space-y-2 max-w-2xl">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--primary)]/10 text-[var(--primary)]">
-                    <ClipboardList className="h-6 w-6" />
-                  </div>
-                  <h2 className="text-2xl font-bold text-[var(--text-main)]">Generate a Quiz</h2>
-                </div>
-                <p className="text-base text-[var(--text-muted)] pl-[52px]">
-                  Create custom quizzes from your class materials. Choose difficulty, question types, and get instant AI-generated assessments.
-                </p>
-              </div>
-
-              {/* Class selector */}
-              <div className="w-full lg:w-[320px]">
-                <label className="mb-2 block text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
-                  Select Class
-                </label>
-                <div className="relative">
-                  <select
-                    className="w-full appearance-none rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3.5 pr-10 text-sm font-medium shadow-sm transition-all hover:border-[var(--primary)] focus:border-[var(--primary)] focus:outline-none focus:ring-4 focus:ring-[var(--primary)]/10"
-                    value={classId ?? ""}
-                    onChange={(e) => setClassId(e.target.value ? Number(e.target.value) : null)}
-                    disabled={classes.length === 0}
-                  >
-                    <option value="">Choose a class...</option>
-                    {classes.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                  <div className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)]">
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <path d="M2.5 4.5L6 8L9.5 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                    </svg>
-                  </div>
-                </div>
-
-                <div className="mt-2 flex items-center justify-between px-1">
-                  <span className="text-xs text-[var(--text-muted)]">
-                    {pdfCount} PDF{pdfCount !== 1 ? 's' : ''} available
-                  </span>
-                  {classId && (
-                    <span className="text-xs font-medium text-[var(--primary)]">
-                      Active
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-          </section>
-
           {/* Main content */}
-          {!classId ? (
-            <div className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-[var(--border)] bg-[var(--surface)]/50 py-24 text-center min-h-[400px]">
-              <div className="mb-4 rounded-full bg-[var(--surface)] p-4 shadow-sm">
-                <ClipboardList className="h-8 w-8 text-[var(--text-muted)]" />
-              </div>
-              <h3 className="text-lg font-medium text-[var(--text-main)]">No Class Selected</h3>
-              <p className="mt-1 text-sm text-[var(--text-muted)]">
-                {classes.length === 0 && !error
-                  ? "Loading your classes..."
-                  : "Please select a class from the dropdown above to start."}
-              </p>
-            </div>
-          ) : (
-            <section className="grid gap-8 lg:grid-cols-[1.4fr_1fr] items-start min-h-[600px]">
+          <section className="grid items-start gap-5 lg:grid-cols-[1.35fr_1fr]">
               {/* Left: generator UI */}
-              <div className="panel p-0 overflow-hidden border-[var(--border)] shadow-sm h-full">
-                {loadingFiles ? (
-                  <div className="flex items-center justify-center h-full min-h-[400px] text-sm text-[var(--text-muted)]">
+              <div className="panel h-full overflow-hidden border-[var(--border)] p-0 shadow-sm">
+                <div className="border-b border-[var(--border)] px-6 py-5">
+                  <h2 className="text-xl font-bold text-[var(--text-main)]">Generate a quiz</h2>
+                  <div className="mt-4 space-y-2">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-[var(--text-muted)]">
+                      Select Class
+                    </label>
+                    <div className="relative">
+                      <select
+                        className="w-full appearance-none rounded-xl border border-[var(--border)] bg-[var(--surface)] px-4 py-3.5 pr-10 text-sm font-medium shadow-sm transition-all hover:border-[var(--primary)] focus:border-[var(--primary)] focus:outline-none focus:ring-4 focus:ring-[var(--primary)]/10 disabled:cursor-not-allowed disabled:opacity-50"
+                        value={classId ?? ""}
+                        onChange={(e) => setClassId(e.target.value ? Number(e.target.value) : null)}
+                        disabled={classes.length === 0}
+                      >
+                        <option value="">Choose a class...</option>
+                        {classes.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)]">
+                        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <path d="M2.5 4.5L6 8L9.5 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between px-1">
+                      <span className="text-xs text-[var(--text-muted)]">
+                        {pdfCount} PDF{pdfCount !== 1 ? "s" : ""} available
+                      </span>
+                      {classId && (
+                        <span className="text-xs font-medium text-[var(--primary)]">Active</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {!classId ? (
+                  <div className="flex min-h-[320px] flex-col items-center justify-center px-6 py-12 text-center">
+                    <div className="mb-4 rounded-full bg-[var(--surface)] p-4 shadow-sm">
+                      <ClipboardList className="h-8 w-8 text-[var(--text-muted)]" />
+                    </div>
+                    <h3 className="text-lg font-medium text-[var(--text-main)]">No Class Selected</h3>
+                    <p className="mt-1 text-sm text-[var(--text-muted)]">
+                      {classes.length === 0 && !error
+                        ? "Loading your classes..."
+                        : "Choose a class to start generating quizzes."}
+                    </p>
+                  </div>
+                ) : loadingFiles ? (
+                  <div className="flex min-h-[360px] items-center justify-center text-sm text-[var(--text-muted)]">
                     <div className="mr-3 h-5 w-5 animate-spin rounded-full border-2 border-[var(--primary)] border-t-transparent"></div>
                     Loading class files...
                   </div>
@@ -256,8 +237,8 @@ export default function QuizzesPage() {
               </div>
 
               {/* Right: Available Quizzes */}
-              <aside className="panel p-6 border-[var(--border)] shadow-sm h-full">
-                <div className="mb-6 flex items-center justify-between border-b border-[var(--border)] pb-4">
+              <aside className="panel h-full border-[var(--border)] p-6 shadow-sm">
+                <div className="mb-5 flex items-center justify-between border-b border-[var(--border)] pb-4">
                   <div>
                     <h3 className="text-lg font-bold text-[var(--text-main)]">Available Quizzes</h3>
                     <p className="text-xs text-[var(--text-muted)] mt-1">Ready to attempt</p>
@@ -272,7 +253,7 @@ export default function QuizzesPage() {
                   </button>
                 </div>
 
-                <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2 custom-scrollbar">
+                <div className="max-h-[600px] space-y-3 overflow-y-auto pr-2 custom-scrollbar">
                   {loadingQuizzes && (
                     <div className="flex flex-col items-center justify-center py-12 text-[var(--text-muted)]">
                       <div className="mb-2 h-6 w-6 animate-spin rounded-full border-2 border-[var(--text-muted)] border-t-transparent"></div>
@@ -339,8 +320,7 @@ export default function QuizzesPage() {
                   })}
                 </div>
               </aside>
-            </section>
-          )}
+          </section>
         </div>
       </div>
     </AppShell>
