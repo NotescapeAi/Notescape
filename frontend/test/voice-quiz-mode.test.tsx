@@ -4,8 +4,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import VoiceQuizMode from "../src/components/VoiceQuizMode";
 
 const mockApi = vi.hoisted(() => ({
+  apiErrorMessage: vi.fn((err: unknown, fallback: string) =>
+    err instanceof Error && err.message.trim() ? err.message : fallback
+  ),
   endStudySession: vi.fn().mockResolvedValue({}),
   heartbeatStudySession: vi.fn().mockResolvedValue({}),
+  evaluateVoiceFlashcardAnswer: vi.fn().mockResolvedValue({
+    score: 4,
+    feedback: "Good match.",
+    missingPoints: ["semipermeable"],
+    isCorrectEnough: true,
+  }),
   listClasses: vi.fn().mockResolvedValue([{ id: 1, name: "Biology" }]),
   listFlashcards: vi.fn().mockResolvedValue([]),
   saveVoiceFlashcardAttempt: vi.fn().mockResolvedValue({
@@ -74,6 +83,7 @@ describe("VoiceQuizMode conversational flow", () => {
     mockApi.saveVoiceFlashcardAttempt.mockClear();
     mockApi.startStudySession.mockClear();
     mockApi.transcribeVoiceFlashcardAnswer.mockClear();
+    mockApi.evaluateVoiceFlashcardAnswer.mockClear();
     startRecordingMock.mockClear();
     stopRecordingMock.mockClear();
     resetMock.mockClear();
@@ -91,6 +101,7 @@ describe("VoiceQuizMode conversational flow", () => {
       value: {
         speak: speechSpeakMock,
         cancel: speechCancelMock,
+        getVoices: () => [],
       },
     });
   });
@@ -107,11 +118,10 @@ describe("VoiceQuizMode conversational flow", () => {
     await waitFor(() => {
       expect(speechSpeakMock).toHaveBeenCalledTimes(1);
     });
-    expect(screen.getByText(/your turn\. start answering when you are ready/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /start answering/i })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /start answering/i })).toBeInTheDocument();
   });
 
-  it("shows transcript and correct answer after successful transcription", async () => {
+  it("shows transcript and evaluation after successful transcription", async () => {
     const cards = [{ id: "c1", question: "Define osmosis", answer: "Movement of water across a semipermeable membrane." }];
     const user = userEvent.setup();
     const { rerender } = render(
@@ -146,11 +156,16 @@ describe("VoiceQuizMode conversational flow", () => {
     await waitFor(() => {
       expect(mockApi.transcribeVoiceFlashcardAnswer.mock.calls.length).toBeGreaterThan(0);
     });
+    await waitFor(() => {
+      expect(mockApi.evaluateVoiceFlashcardAnswer.mock.calls.length).toBeGreaterThan(0);
+    });
     expect(await screen.findByText(/mock transcript/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Good match/i)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /show expected answer/i }));
     expect(screen.getByText(/movement of water across a semipermeable membrane/i)).toBeInTheDocument();
   });
 
-  it("submits rating and saves attempt", async () => {
+  it("saves attempt when user taps Next after evaluation", async () => {
     const cards = [{ id: "c1", question: "What is mitosis?", answer: "Cell division process." }];
     const user = userEvent.setup();
     const { rerender } = render(
@@ -182,7 +197,8 @@ describe("VoiceQuizMode conversational flow", () => {
     );
 
     await screen.findByText(/mock transcript/i);
-    await user.click(screen.getByRole("button", { name: /rate 4/i }));
+    await screen.findByText(/Good match/i);
+    await user.click(screen.getByRole("button", { name: /next question/i }));
 
     await waitFor(() => {
       expect(mockApi.saveVoiceFlashcardAttempt).toHaveBeenCalledWith(
@@ -193,7 +209,6 @@ describe("VoiceQuizMode conversational flow", () => {
         })
       );
     });
-    expect(await screen.findByText(/attempt saved/i)).toBeInTheDocument();
   });
 
   it("renders a clear transcription error message", async () => {
@@ -221,7 +236,7 @@ describe("VoiceQuizMode conversational flow", () => {
     rerender(<VoiceQuizMode classId={1} initialCards={cards} />);
 
     expect(
-      await screen.findByText(/voice transcription is currently unavailable/i)
+      await screen.findByText(/voice transcription is not configured/i)
     ).toBeInTheDocument();
   });
 

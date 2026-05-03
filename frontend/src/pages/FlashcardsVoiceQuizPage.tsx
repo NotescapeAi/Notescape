@@ -17,6 +17,7 @@ export default function FlashcardsVoiceQuizPage() {
   return (
     <AppShell
       title="Voice Quiz"
+      subtitle="Answer flashcard questions aloud and let Notescape evaluate your response."
       backLabel="Back to Flashcards"
       backTo={classId ? `/classes/${classId}/flashcards` : "/classes"}
       headerMaxWidthClassName="max-w-[1040px]"
