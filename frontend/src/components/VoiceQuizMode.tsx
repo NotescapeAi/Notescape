@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 import { Mic, RotateCcw, SkipForward, Square, Volume2, Waves } from "lucide-react";
 import {
@@ -21,6 +21,7 @@ import {
   sm2RatingFromEvaluationScore,
   type QuizVerdict,
 } from "../lib/voiceQuizUtils";
+import { parseVoiceQuizCommand } from "../lib/voiceCommands";
 import Button from "./Button";
 import { useAudioRecorder } from "../hooks/useAudioRecorder";
 
@@ -48,6 +49,7 @@ type HandsFreeState =
   | "listening_answer"
   | "evaluating_answer"
   | "feedback_ready"
+  | "listening_quiz_command"
   | "moving_next"
   | "paused"
   | "completed";
@@ -90,9 +92,10 @@ function manualStatusLabel(state: VoiceState): string {
 function handsFreeStatusLabel(state: HandsFreeState): string {
   if (state === "speaking_question") return "Speaking question";
   if (state === "pause_before_listen") return "Pause";
-  if (state === "listening_answer") return "Listening";
+  if (state === "listening_answer") return "Listening for your answer";
   if (state === "evaluating_answer") return "Evaluating answer";
   if (state === "feedback_ready") return "Feedback ready";
+  if (state === "listening_quiz_command") return "Listening for command";
   if (state === "moving_next") return "Next card";
   if (state === "paused") return "Paused";
   if (state === "completed") return "Complete";
@@ -147,6 +150,18 @@ export default function VoiceQuizMode({ classId, initialCards, initialClassName,
   const selectedVoiceRef = useRef<SpeechSynthesisVoice | null>(null);
   const listenMaxTimerRef = useRef<number | null>(null);
   const handsFreePackRef = useRef<{ card: Flashcard; text: string; ev: VoiceEvaluationResult } | null>(null);
+  const quizCmdListenTimerRef = useRef<number | null>(null);
+  const handsFreeStateRef = useRef<HandsFreeState>("idle");
+  const quizCmdUnknownAttemptsRef = useRef(0);
+  const listenForQuizCommandRef = useRef<() => void>(() => {});
+  const listenHandsFreeRef = useRef<(onFinal: (text: string) => void) => void>(() => {});
+  const handsFreeContinueNextRef = useRef<() => Promise<void>>(async () => {});
+  const advanceHandsFreeRef = useRef<() => void>(() => {});
+  const runHandsFreeCardRef = useRef<(card: Flashcard, cardIndex: number) => void>(() => {});
+  const processHandsFreeAnswerRef = useRef<(card: Flashcard, answerText: string) => Promise<void>>(async () => {});
+  const endHandsFreeRef = useRef<(complete?: boolean) => void>(() => {});
+  const idxRef = useRef(idx);
+  const cardsLenRef = useRef(cards.length);
 
   const recorder = useAudioRecorder();
   const canSpeak = typeof window !== "undefined" && "speechSynthesis" in window;
@@ -157,6 +172,16 @@ export default function VoiceQuizMode({ classId, initialCards, initialClassName,
   const canRecognizeSpeech = !!SpeechRecognitionCtor;
 
   const currentCard = useMemo(() => cards[clampIndex(idx, cards.length)], [cards, idx]);
+
+  useEffect(() => {
+    handsFreeStateRef.current = handsFreeState;
+  }, [handsFreeState]);
+  useEffect(() => {
+    idxRef.current = idx;
+  }, [idx]);
+  useEffect(() => {
+    cardsLenRef.current = cards.length;
+  }, [cards.length]);
 
   useEffect(() => {
     if (!canSpeak) return;
@@ -257,6 +282,10 @@ export default function VoiceQuizMode({ classId, initialCards, initialClassName,
   }, [recorder.error]);
 
   const stopRecognition = useCallback(() => {
+    if (quizCmdListenTimerRef.current) {
+      window.clearTimeout(quizCmdListenTimerRef.current);
+      quizCmdListenTimerRef.current = null;
+    }
     if (recognitionRef.current) {
       recognitionRef.current.onend = null;
       recognitionRef.current.onerror = null;
@@ -491,6 +520,10 @@ export default function VoiceQuizMode({ classId, initialCards, initialClassName,
     [SpeechRecognitionCtor, speakHandsFree, stopRecognition]
   );
 
+  useLayoutEffect(() => {
+    listenHandsFreeRef.current = listenHandsFree;
+  }, [listenHandsFree]);
+
   const saveAttempt = useCallback(
     async (card: Flashcard, answerText: string, ev: VoiceEvaluationResult) => {
       const attemptNumber = (attemptCounts[card.id] || 0) + 1;
@@ -544,6 +577,158 @@ export default function VoiceQuizMode({ classId, initialCards, initialClassName,
     [canSpeak, stopRecognition]
   );
 
+  const listenForQuizCommand = useCallback(() => {
+    if (!handsFreeActiveRef.current || !SpeechRecognitionCtor) return;
+    stopRecognition();
+    setHandsFreeError(null);
+    setLiveTranscript("");
+    if (quizCmdListenTimerRef.current) {
+      window.clearTimeout(quizCmdListenTimerRef.current);
+      quizCmdListenTimerRef.current = null;
+    }
+    const heardRef = { current: "" };
+    const recognition = new SpeechRecognitionCtor();
+    recognition.lang = "en-US";
+    recognition.interimResults = true;
+    recognition.continuous = false;
+    recognition.maxAlternatives = 1;
+    recognition.onresult = (event: any) => {
+      let line = "";
+      for (let i = event.resultIndex; i < event.results.length; i += 1) {
+        line += event.results[i][0]?.transcript || "";
+      }
+      heardRef.current = line.trim();
+      setLiveTranscript(heardRef.current);
+    };
+    recognition.onerror = (event: any) => {
+      if (quizCmdListenTimerRef.current) {
+        window.clearTimeout(quizCmdListenTimerRef.current);
+        quizCmdListenTimerRef.current = null;
+      }
+      const code = event?.error || "";
+      if (code === "aborted") return;
+      recognitionRef.current = null;
+      if (!handsFreeActiveRef.current) return;
+      quizCmdUnknownAttemptsRef.current = 0;
+      setHandsFreeState("feedback_ready");
+      if (code === "not-allowed") {
+        setHandsFreeError("Microphone permission was denied. Use the Next question button when you are ready.");
+      }
+    };
+    recognition.onend = () => {
+      if (quizCmdListenTimerRef.current) {
+        window.clearTimeout(quizCmdListenTimerRef.current);
+        quizCmdListenTimerRef.current = null;
+      }
+      recognitionRef.current = null;
+      if (!handsFreeActiveRef.current) return;
+      if (handsFreeStateRef.current === "paused") return;
+      const text = heardRef.current.trim();
+      const cmd = parseVoiceQuizCommand(text);
+      if (cmd === "unknown" || !text) {
+        quizCmdUnknownAttemptsRef.current += 1;
+        if (quizCmdUnknownAttemptsRef.current > 2) {
+          quizCmdUnknownAttemptsRef.current = 0;
+          setHandsFreeState("feedback_ready");
+          setHandsFreeError('Did not catch that. Try "next question", "repeat question", or the buttons.');
+          return;
+        }
+        speakHandsFree("Say next question, repeat question, or skip.", () => {
+          if (!handsFreeActiveRef.current || handsFreeStateRef.current === "paused") return;
+          listenForQuizCommandRef.current();
+        });
+        return;
+      }
+      quizCmdUnknownAttemptsRef.current = 0;
+      switch (cmd) {
+        case "next_question":
+          void handsFreeContinueNextRef.current();
+          break;
+        case "repeat_question": {
+          const card = cardDuringAnswerRef.current;
+          if (!card || !handsFreeActiveRef.current) break;
+          handsFreePackRef.current = null;
+          runHandsFreeCardRef.current(card, clampIndex(idxRef.current, cardsLenRef.current));
+          break;
+        }
+        case "retry_answer": {
+          const card = cardDuringAnswerRef.current;
+          if (!card || !handsFreeActiveRef.current) break;
+          answerStartedAtRef.current = Date.now();
+          setHandsFreeState("listening_answer");
+          listenHandsFreeRef.current(async (answerText) => {
+            if (!handsFreeActiveRef.current) return;
+            await processHandsFreeAnswerRef.current(card, answerText);
+          });
+          break;
+        }
+        case "skip_question":
+          handsFreePackRef.current = null;
+          advanceHandsFreeRef.current();
+          break;
+        case "pause_quiz":
+          stopRecognition();
+          if (canSpeak) window.speechSynthesis.pause();
+          setHandsFreeState("paused");
+          break;
+        case "resume_quiz":
+          if (canSpeak) window.speechSynthesis.resume();
+          setHandsFreeState("feedback_ready");
+          listenForQuizCommandRef.current();
+          break;
+        case "end_quiz":
+          endHandsFreeRef.current(false);
+          break;
+        default:
+          listenForQuizCommandRef.current();
+      }
+    };
+    recognitionRef.current = recognition;
+    setHandsFreeState("listening_quiz_command");
+    try {
+      recognition.start();
+    } catch {
+      setHandsFreeState("feedback_ready");
+      setHandsFreeError("Could not start listening. Use Next question when you are ready.");
+      return;
+    }
+    quizCmdListenTimerRef.current = window.setTimeout(() => {
+      quizCmdListenTimerRef.current = null;
+      try {
+        recognition.stop();
+      } catch {
+        /* */
+      }
+    }, 12000);
+  }, [SpeechRecognitionCtor, stopRecognition, speakHandsFree, canSpeak]);
+
+  const processHandsFreeAnswer = useCallback(
+    async (card: Flashcard, answerText: string) => {
+      if (!handsFreeActiveRef.current) return;
+      setHandsFreeState("evaluating_answer");
+      const ev = await evaluateAnswerForCard(card, answerText);
+      setEvaluation(ev);
+      handsFreePackRef.current = { card, text: answerText, ev };
+      const qr = quizResultFromEvaluation(ev);
+      const shortFb = `${qr.label}. ${ev.feedback}`.slice(0, HANDS_FREE_FEEDBACK_TTS_MAX_CHARS);
+      setHandsFreeState("feedback_ready");
+      speakHandsFree(shortFb, () => {
+        if (!handsFreeActiveRef.current) return;
+        quizCmdUnknownAttemptsRef.current = 0;
+        listenForQuizCommandRef.current();
+      });
+    },
+    [evaluateAnswerForCard, speakHandsFree]
+  );
+
+  useLayoutEffect(() => {
+    listenForQuizCommandRef.current = listenForQuizCommand;
+  }, [listenForQuizCommand]);
+
+  useLayoutEffect(() => {
+    processHandsFreeAnswerRef.current = processHandsFreeAnswer;
+  }, [processHandsFreeAnswer]);
+
   const advanceHandsFree = useCallback(() => {
     if (!cards.length) return;
     handsFreePackRef.current = null;
@@ -586,24 +771,19 @@ export default function VoiceQuizMode({ classId, initialCards, initialClassName,
           setHandsFreeState("listening_answer");
           listenHandsFree(async (answerText) => {
             if (!handsFreeActiveRef.current) return;
-            setHandsFreeState("evaluating_answer");
-            const ev = await evaluateAnswerForCard(card, answerText);
-            setEvaluation(ev);
-            handsFreePackRef.current = { card, text: answerText, ev };
-            const qr = quizResultFromEvaluation(ev);
-            const shortFb = `${qr.label}. ${ev.feedback}`.slice(0, HANDS_FREE_FEEDBACK_TTS_MAX_CHARS);
-            setHandsFreeState("feedback_ready");
-            speakHandsFree(shortFb, () => undefined);
+            await processHandsFreeAnswer(card, answerText);
           });
         }, PAUSE_AFTER_QUESTION_MS);
       });
     },
-    [cards.length, evaluateAnswerForCard, listenHandsFree, saveAttempt, speakHandsFree]
+    [cards.length, listenHandsFree, processHandsFreeAnswer, speakHandsFree]
   );
 
   const handsFreeContinueNext = useCallback(async () => {
-    if (handsFreeState !== "feedback_ready") return;
+    const hs = handsFreeStateRef.current;
+    if (hs !== "feedback_ready" && hs !== "listening_quiz_command") return;
     window.speechSynthesis.cancel();
+    stopRecognition();
     const pack = handsFreePackRef.current;
     if (pack) {
       try {
@@ -615,7 +795,23 @@ export default function VoiceQuizMode({ classId, initialCards, initialClassName,
       handsFreePackRef.current = null;
     }
     advanceHandsFree();
-  }, [advanceHandsFree, handsFreeState, saveAttempt]);
+  }, [advanceHandsFree, saveAttempt, stopRecognition]);
+
+  useLayoutEffect(() => {
+    advanceHandsFreeRef.current = advanceHandsFree;
+  }, [advanceHandsFree]);
+
+  useLayoutEffect(() => {
+    handsFreeContinueNextRef.current = handsFreeContinueNext;
+  }, [handsFreeContinueNext]);
+
+  useLayoutEffect(() => {
+    runHandsFreeCardRef.current = runHandsFreeCard;
+  }, [runHandsFreeCard]);
+
+  useLayoutEffect(() => {
+    endHandsFreeRef.current = endHandsFree;
+  }, [endHandsFree]);
 
   const startHandsFree = useCallback(() => {
     if (!currentCard) return;
@@ -689,7 +885,7 @@ export default function VoiceQuizMode({ classId, initialCards, initialClassName,
   const modeStatus = quizMode === "handsfree" ? handsFreeStatusLabel(handsFreeState) : manualStatusLabel(state);
   const isListening =
     quizMode === "handsfree"
-      ? handsFreeState === "listening_answer"
+      ? handsFreeState === "listening_answer" || handsFreeState === "listening_quiz_command"
       : state === "recording";
   const transcriptDisplay = liveTranscript || transcript;
   const finalScorePercent =
@@ -710,8 +906,8 @@ export default function VoiceQuizMode({ classId, initialCards, initialClassName,
           <p className="text-sm text-[var(--text-secondary)]">
             <span className="font-medium text-[var(--text-main)]">{className || `Class #${classId}`}</span>
             {" · "}
-            Notescape scores your spoken answer — no self-rating. For practice with self-rating, use{" "}
-            <span className="font-medium text-[var(--text-main)]">Voice Revision</span>.
+            Notescape scores your spoken answer — no self-rating. For hands-free study without grading, use{" "}
+            <span className="font-medium text-[var(--text-main)]">Voice Flashcards</span>.
           </p>
         </div>
         <div className="min-w-[200px]">
@@ -776,8 +972,9 @@ export default function VoiceQuizMode({ classId, initialCards, initialClassName,
           <p className="mt-3 text-xs text-[var(--text-muted)]">
             <span className="font-semibold text-[var(--text-main)]">Manual:</span> you replay, start/stop recording, then review automatic feedback and tap{" "}
             <span className="font-semibold">Next question</span>.{" "}
-            <span className="font-semibold text-[var(--text-main)]">Hands-free:</span> the app reads the question, pauses, listens, evaluates, then waits for you to say &quot;next&quot; or tap{" "}
-            <span className="font-semibold">Next</span>.
+            <span className="font-semibold text-[var(--text-main)]">Hands-free:</span> the app reads the question, listens, scores your answer, then listens for{" "}
+            <span className="font-semibold">next question</span>, <span className="font-semibold">repeat question</span>, or <span className="font-semibold">skip</span> — or tap{" "}
+            <span className="font-semibold">Next question</span>.
           </p>
 
           <div className="mt-3 flex flex-wrap items-center gap-4 text-xs text-[var(--text-muted)]">
@@ -972,7 +1169,7 @@ export default function VoiceQuizMode({ classId, initialCards, initialClassName,
                       <Square className="mr-2 h-4 w-4" /> Done answering
                     </Button>
                   )}
-                  {handsFreeState === "feedback_ready" && (
+                  {(handsFreeState === "feedback_ready" || handsFreeState === "listening_quiz_command") && (
                     <Button variant="primary" onClick={() => void handsFreeContinueNext()}>
                       Next question
                     </Button>

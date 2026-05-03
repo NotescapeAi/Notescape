@@ -1,15 +1,13 @@
 /**
- * Voice Revision — hands-free flashcard *practice* (revision), not a scored Voice Quiz.
- * Data: same flashcards as the rest of the app (`listFlashcards` + optional `postReview` for SRS).
- * Voice Quiz (class Flashcards → Voice) focuses on testing / evaluation; this page is recall + self-rating only.
+ * Voice Flashcards — hands-free revision companion (not Voice Quiz).
+ * Voice-first: speak → listen for commands → respond. Optional voice ratings for SRS.
+ * Route stays /voice-revision; sidebar label is "Voice Flashcards".
  */
-import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import {
   BookOpen,
-  CheckCircle2,
   Headphones,
   Layers,
   Mic,
@@ -20,52 +18,20 @@ import {
 } from "lucide-react";
 import AppShell from "../layouts/AppShell";
 import Button from "../components/Button";
-import {
-  listClasses,
-  listFlashcards,
-  postReview,
-  type ClassRow,
-  type Flashcard,
-} from "../lib/api";
+import { chatAsk, listClasses, listFlashcards, postReview, type ClassRow, type Flashcard } from "../lib/api";
+import { parseVoiceFlashcardsCommand, type VoiceFlashcardsCommand } from "../lib/voiceCommands";
+import { speakText, stopSpeaking } from "../lib/voiceSpeech";
 
-type UiStatus =
-  | "setup"
-  | "loading_cards"
-  | "speaking"
-  | "listening"
-  | "answer_captured"
-  | "reviewing"
-  | "saving_rating"
-  | "session_complete";
-
-const STATUS_LABEL: Record<UiStatus, string> = {
-  setup: "Ready",
-  loading_cards: "Loading cards",
-  speaking: "Speaking question",
-  listening: "Listening",
-  answer_captured: "Answer captured",
-  reviewing: "Reviewing answer",
-  saving_rating: "Saving",
-  session_complete: "Session complete",
-};
-
-type SpeechRec = {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  maxAlternatives?: number;
-  onstart: (() => void) | null;
-  onresult: ((e: SpeechRecognitionEventLike) => void) | null;
-  onerror: ((e: { error: string }) => void) | null;
-  onend: (() => void) | null;
-  start: () => void;
-  stop: () => void;
-  abort: () => void;
-};
-
-type SpeechRecognitionEventLike = {
-  results: ArrayLike<{ 0: { transcript: string }; isFinal?: boolean }>;
-};
+export type FlashcardVoicePhase =
+  | "idle"
+  | "speakingQuestion"
+  | "waitingForCommand"
+  | "listeningCommand"
+  | "speakingAnswer"
+  | "explaining"
+  | "paused"
+  | "complete"
+  | "error";
 
 function shuffle<T>(items: T[]): T[] {
   const a = [...items];
@@ -76,49 +42,30 @@ function shuffle<T>(items: T[]): T[] {
   return a;
 }
 
-function friendlyApiError(err: unknown, fallback: string): string {
-  if (axios.isAxiosError(err)) {
-    if (!err.response) {
-      return "Could not reach the server. Check that it is running and try again.";
-    }
-    const status = err.response.status;
-    if (status === 401 || status === 403) {
-      return "You may need to sign in again, then retry.";
-    }
-    if (status >= 500) {
-      return "The server had a problem. Please try again in a moment.";
-    }
+function sanitize(value?: string | null) {
+  const text = (value ?? "").trim();
+  if (!text) return "";
+  if (text.startsWith("{") && text.includes("\"cards\"")) return "This card needs regeneration.";
+  return text;
+}
+
+function friendlyLoad(err: unknown, fallback: string): string {
+  if (axios.isAxiosError(err) && !err.response) {
+    return "Could not reach the server. Check your connection and try again.";
   }
   if (err instanceof Error && err.message === "Network Error") {
-    return "Could not load voice revision cards. Check your connection or try again.";
+    return "Network problem. Check your connection and try again.";
   }
   return fallback;
 }
 
-function speechRecognitionErrorMessage(code: string): string {
-  switch (code) {
-    case "not-allowed":
-      return "Microphone permission was denied. Allow microphone access to answer aloud, or type your answer.";
-    case "no-speech":
-      return "No speech was detected. Try again or type your answer.";
-    case "audio-capture":
-      return "No microphone was found. Check your device or type your answer.";
-    case "network":
-      return "Speech recognition had a network issue. You can still listen and type your answer.";
-    case "aborted":
-      return "";
-    default:
-      return "Speech recognition stopped. You can try again or type your answer.";
-  }
+function fallbackExplanation(card: Flashcard): string {
+  const q = sanitize(card.question);
+  const a = sanitize(card.answer);
+  if (!a) return "Here is the idea in one line: focus on the key terms from the question.";
+  const short = a.length > 220 ? `${a.slice(0, 220).trim()}…` : a;
+  return `Here is a simpler way to think about it: ${short}`;
 }
-
-const RATING_OPTIONS = [
-  { score: 1 as const, label: "Again", tone: "var(--danger)" },
-  { score: 2 as const, label: "Hard", tone: "var(--warning)" },
-  { score: 3 as const, label: "Good", tone: "#2563eb" },
-  { score: 4 as const, label: "Easy", tone: "var(--success)" },
-  { score: 5 as const, label: "Mastered", tone: "var(--primary)" },
-] as const;
 
 export default function VoiceRevisionMode() {
   const navigate = useNavigate();
@@ -127,78 +74,46 @@ export default function VoiceRevisionMode() {
   const [deck, setDeck] = useState<Flashcard[]>([]);
   const [cardIndex, setCardIndex] = useState(0);
   const [sessionActive, setSessionActive] = useState(false);
-  const [status, setStatus] = useState<UiStatus>("setup");
-  const [transcript, setTranscript] = useState("");
-  const [answerRevealed, setAnswerRevealed] = useState(false);
-  const [bannerError, setBannerError] = useState<string | null>(null);
+  const [phase, setPhase] = useState<FlashcardVoicePhase>("idle");
+  const [answerShown, setAnswerShown] = useState(false);
+  const [awaitingEndConfirm, setAwaitingEndConfirm] = useState(false);
+  const [lastCommandText, setLastCommandText] = useState("");
+  const [hint, setHint] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [deckLoading, setDeckLoading] = useState(false);
   const [cardCount, setCardCount] = useState<number | null>(null);
 
-  const [ttsSupported, setTtsSupported] = useState(false);
-  const [sttSupported, setSttSupported] = useState(false);
-  const [recognizing, setRecognizing] = useState(false);
-  const [micHint, setMicHint] = useState<string | null>(null);
+  const [ttsOk, setTtsOk] = useState(false);
+  const [sttOk, setSttOk] = useState(false);
 
-  const recognitionRef = useRef<SpeechRec | null>(null);
-  const responseStartRef = useRef<number | null>(null);
-  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const phaseRef = useRef(phase);
+  const sessionActiveRef = useRef(sessionActive);
+  const listenTimerRef = useRef<number | null>(null);
+  const recognitionRef = useRef<{
+    stop: () => void;
+    abort: () => void;
+    onend: (() => void) | null;
+    onerror: ((e: { error?: string }) => void) | null;
+    onresult: ((e: unknown) => void) | null;
+  } | null>(null);
 
-  const SpeechRecognitionCtor = useMemo((): (new () => SpeechRec) | null => {
+  const SpeechRecognitionCtor = useMemo(() => {
     if (typeof window === "undefined") return null;
-    const w = window as unknown as {
-      SpeechRecognition?: new () => SpeechRec;
-      webkitSpeechRecognition?: new () => SpeechRec;
-    };
+    const w = window as unknown as { SpeechRecognition?: new () => any; webkitSpeechRecognition?: new () => any };
     return w.SpeechRecognition || w.webkitSpeechRecognition || null;
   }, []);
 
   useEffect(() => {
-    setTtsSupported(typeof window !== "undefined" && "speechSynthesis" in window);
-    setSttSupported(!!SpeechRecognitionCtor);
+    phaseRef.current = phase;
+  }, [phase]);
+  useEffect(() => {
+    sessionActiveRef.current = sessionActive;
+  }, [sessionActive]);
+
+  useEffect(() => {
+    setTtsOk(typeof window !== "undefined" && "speechSynthesis" in window);
+    setSttOk(!!SpeechRecognitionCtor);
   }, [SpeechRecognitionCtor]);
-
-  const cancelSpeech = useCallback(() => {
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
-    }
-    utteranceRef.current = null;
-  }, []);
-
-  const stopRecognition = useCallback(() => {
-    const rec = recognitionRef.current;
-    if (rec) {
-      rec.onend = null;
-      rec.onerror = null;
-      rec.onresult = null;
-      rec.onstart = null;
-      try {
-        rec.stop();
-      } catch {
-        /* ignore */
-      }
-      try {
-        rec.abort();
-      } catch {
-        /* ignore */
-      }
-      recognitionRef.current = null;
-    }
-    setRecognizing(false);
-  }, []);
-
-  const resetSessionState = useCallback(() => {
-    stopRecognition();
-    cancelSpeech();
-    setSessionActive(false);
-    setDeck([]);
-    setCardIndex(0);
-    setTranscript("");
-    setAnswerRevealed(false);
-    setStatus("setup");
-    setMicHint(null);
-    responseStartRef.current = null;
-  }, [stopRecognition, cancelSpeech]);
 
   useEffect(() => {
     (async () => {
@@ -207,7 +122,7 @@ export default function VoiceRevisionMode() {
         setClasses(cs);
         if (cs[0]) setSelectedClassId(cs[0].id);
       } catch (err: unknown) {
-        setLoadError(friendlyApiError(err, "Could not load your classes. Try again."));
+        setLoadError(friendlyLoad(err, "Could not load classes."));
       }
     })();
   }, []);
@@ -217,266 +132,475 @@ export default function VoiceRevisionMode() {
       setCardCount(null);
       return;
     }
-    let cancelled = false;
+    let c = false;
     setDeckLoading(true);
     setLoadError(null);
     (async () => {
       try {
         const cards = await listFlashcards(selectedClassId);
-        if (cancelled) return;
+        if (c) return;
         setCardCount(Array.isArray(cards) ? cards.length : 0);
       } catch (err: unknown) {
-        if (!cancelled) {
-          setCardCount(null);
-          setLoadError(friendlyApiError(err, "Could not check flashcards for this class."));
-        }
+        if (!c) setLoadError(friendlyLoad(err, "Could not load flashcards."));
       } finally {
-        if (!cancelled) setDeckLoading(false);
+        if (!c) setDeckLoading(false);
       }
     })();
     return () => {
-      cancelled = true;
+      c = true;
     };
   }, [selectedClassId]);
 
-  useEffect(() => {
-    if (!sessionActive) return;
-    return () => {
-      stopRecognition();
-      cancelSpeech();
-    };
-  }, [sessionActive, stopRecognition, cancelSpeech]);
-
-  const currentCard = sessionActive && deck.length > 0 ? deck[Math.min(cardIndex, deck.length - 1)] : null;
-
-  /** After TTS ends, return to `captured` (before reveal) or stay in `reviewing` (after reveal). */
-  const speakQuestion = useCallback(
-    (text: string, afterSpeak: "captured" | "reviewing" = "captured") => {
-      cancelSpeech();
-      if (!ttsSupported || !text.trim()) {
-        setStatus(afterSpeak === "reviewing" ? "reviewing" : "answer_captured");
-        return;
+  const stopListen = useCallback(() => {
+    if (listenTimerRef.current) {
+      window.clearTimeout(listenTimerRef.current);
+      listenTimerRef.current = null;
+    }
+    const r = recognitionRef.current;
+    if (r) {
+      r.onend = null;
+      r.onerror = null;
+      r.onresult = null;
+      try {
+        r.stop();
+      } catch {
+        /* */
       }
-      const u = new SpeechSynthesisUtterance(text);
-      u.rate = 0.95;
-      u.pitch = 1;
-      utteranceRef.current = u;
-      const done = () => {
-        utteranceRef.current = null;
-        setStatus(afterSpeak === "reviewing" ? "reviewing" : "answer_captured");
-      };
-      u.onend = done;
-      u.onerror = done;
-      setStatus("speaking");
-      window.speechSynthesis.speak(u);
+      try {
+        r.abort();
+      } catch {
+        /* */
+      }
+      recognitionRef.current = null;
+    }
+  }, []);
+
+  const cleanup = useCallback(() => {
+    stopListen();
+    stopSpeaking();
+  }, [stopListen]);
+
+  useEffect(() => () => cleanup(), [cleanup]);
+
+  const currentCard = sessionActive && deck.length ? deck[Math.min(cardIndex, deck.length - 1)] : null;
+
+  const speak = useCallback((text: string, then: () => void) => {
+    stopListen();
+    speakText(text, {
+      rate: 0.9,
+      onEnd: then,
+      onError: then,
+    });
+  }, [stopListen]);
+
+  /** One-shot command listen; resolves with parsed command (unknown if silence/error). */
+  const listenOnce = useCallback(
+    (maxMs: number): Promise<VoiceFlashcardsCommand> => {
+      return new Promise((resolve) => {
+        if (!SpeechRecognitionCtor || !sessionActiveRef.current) {
+          resolve("unknown");
+          return;
+        }
+        let heard = "";
+        let settled = false;
+        const finish = (cmd: VoiceFlashcardsCommand) => {
+          if (settled) return;
+          settled = true;
+          if (listenTimerRef.current) {
+            window.clearTimeout(listenTimerRef.current);
+            listenTimerRef.current = null;
+          }
+          recognitionRef.current = null;
+          resolve(cmd);
+        };
+        const rec = new SpeechRecognitionCtor();
+        rec.lang = "en-US";
+        rec.interimResults = true;
+        rec.continuous = false;
+        rec.maxAlternatives = 1;
+        rec.onresult = (event: any) => {
+          let line = "";
+          for (let i = event.resultIndex; i < event.results.length; i += 1) {
+            line += event.results[i][0]?.transcript || "";
+          }
+          heard = line.trim();
+          setLastCommandText(heard);
+        };
+        rec.onerror = (e: any) => {
+          if (e?.error === "aborted") return;
+          finish("unknown");
+        };
+        rec.onend = () => {
+          finish(parseVoiceFlashcardsCommand(heard));
+        };
+        recognitionRef.current = rec;
+        try {
+          rec.start();
+        } catch {
+          finish("unknown");
+          return;
+        }
+        listenTimerRef.current = window.setTimeout(() => {
+          try {
+            rec.stop();
+          } catch {
+            /* */
+          }
+        }, maxMs);
+      });
     },
-    [ttsSupported, cancelSpeech]
+    [SpeechRecognitionCtor]
   );
 
-  const startRevisionSession = async () => {
+  const queueListen = useCallback(async () => {
+    if (!sessionActiveRef.current || phaseRef.current === "paused") return;
+    if (!sttOk) return;
+    setPhase("listeningCommand");
+    const cmd = await listenOnce(14000);
+    if (!sessionActiveRef.current || phaseRef.current === "paused") return;
+    await handleCommandRef.current?.(cmd);
+  }, [listenOnce, sttOk]);
+
+  const handleCommandRef = useRef<(cmd: VoiceFlashcardsCommand) => Promise<void>>(async () => undefined);
+
+  const readQuestion = useCallback(
+    (index: number, cards: Flashcard[]) => {
+      const card = cards[index];
+      if (!card) return;
+      setAnswerShown(false);
+      setPhase("speakingQuestion");
+      const q = sanitize(card.question);
+      const line = `Card ${index + 1} of ${cards.length}. ${q}`;
+      speak(line, () => {
+        if (!sessionActiveRef.current) return;
+        setPhase("waitingForCommand");
+        void queueListen();
+      });
+    },
+    [queueListen, speak]
+  );
+
+  const readAnswer = useCallback(
+    (card: Flashcard) => {
+      setPhase("speakingAnswer");
+      setAnswerShown(true);
+      const a = sanitize(card.answer);
+      speak(`The answer is: ${a}`, () => {
+        setPhase("waitingForCommand");
+        void queueListen();
+      });
+    },
+    [queueListen, speak]
+  );
+
+  const readExplanation = useCallback(
+    async (card: Flashcard) => {
+      setPhase("explaining");
+      let text: string;
+      try {
+        const res = await chatAsk({
+          class_id: selectedClassId ?? undefined,
+          mode: "general",
+          question: `You are a patient tutor. In under 90 words for spoken audio, explain this flashcard simply, add one short analogy or memory hint, stay concise. Question: ${sanitize(card.question)}. Answer: ${sanitize(card.answer)}.`,
+        });
+        text = (res.answer || "").trim().slice(0, 500) || fallbackExplanation(card);
+      } catch {
+        text = fallbackExplanation(card);
+      }
+      speak(text, () => {
+        if (!sessionActiveRef.current) return;
+        setPhase("waitingForCommand");
+        void queueListen();
+      });
+    },
+    [queueListen, selectedClassId, speak]
+  );
+
+  const applyMark = useCallback(
+    async (score: 1 | 2 | 3 | 4 | 5, label: string) => {
+      const card = currentCard;
+      if (!card) return;
+      try {
+        await postReview(card.id, score);
+        speak(`Marked as ${label}.`, () => {
+          if (!sessionActiveRef.current) return;
+          setPhase("waitingForCommand");
+          void queueListen();
+        });
+      } catch {
+        setHint("Could not save that mark. You can try again or say next card.");
+        setPhase("waitingForCommand");
+        void queueListen();
+      }
+    },
+    [currentCard, speak, queueListen]
+  );
+
+  const handleCommand = useCallback(
+    async (cmd: VoiceFlashcardsCommand) => {
+      const card = deck[Math.min(cardIndex, deck.length - 1)];
+      if (!sessionActiveRef.current || !card) return;
+      if (phaseRef.current === "paused" && cmd !== "resume") return;
+
+      if (cmd === "pause") {
+        phaseRef.current = "paused";
+        cleanup();
+        setPhase("paused");
+        return;
+      }
+      if (cmd === "resume") {
+        phaseRef.current = "waitingForCommand";
+        setPhase("waitingForCommand");
+        window.setTimeout(() => void queueListen(), 0);
+        return;
+      }
+
+      if (cmd === "end_session") {
+        setAwaitingEndConfirm(true);
+        speak('Say "confirm end" to end this session.', () => {
+          if (!sessionActiveRef.current) return;
+          setPhase("waitingForCommand");
+          void queueListen();
+        });
+        return;
+      }
+      if (cmd === "confirm_end") {
+        if (awaitingEndConfirm) {
+          setAwaitingEndConfirm(false);
+          cleanup();
+          setSessionActive(false);
+          sessionActiveRef.current = false;
+          setPhase("complete");
+          speak("Session ended. Nice studying.", () => stopSpeaking());
+          return;
+        }
+        speak('Say "end session" first if you want to stop.', () => {
+          if (!sessionActiveRef.current) return;
+          setPhase("waitingForCommand");
+          void queueListen();
+        });
+        return;
+      }
+      setAwaitingEndConfirm(false);
+
+      switch (cmd) {
+        case "next_card": {
+          const next = cardIndex + 1;
+          if (next >= deck.length) {
+            speak("That was the last card. Session complete.", () => {
+              cleanup();
+              setSessionActive(false);
+              sessionActiveRef.current = false;
+              setPhase("complete");
+            });
+            return;
+          }
+          setCardIndex(next);
+          readQuestion(next, deck);
+          return;
+        }
+        case "previous_card": {
+          if (cardIndex <= 0) {
+            speak("You are on the first card.", () => {
+              setPhase("waitingForCommand");
+              void queueListen();
+            });
+            return;
+          }
+          const prev = cardIndex - 1;
+          setCardIndex(prev);
+          readQuestion(prev, deck);
+          return;
+        }
+        case "repeat_question":
+          readQuestion(cardIndex, deck);
+          return;
+        case "show_answer":
+        case "repeat_answer":
+          readAnswer(card);
+          return;
+        case "hide_answer":
+          if (!answerShown) {
+            speak('The answer is already hidden. Say "show answer" when you want it.', () => {
+              if (!sessionActiveRef.current) return;
+              setPhase("waitingForCommand");
+              void queueListen();
+            });
+            return;
+          }
+          setAnswerShown(false);
+          speak("Hiding the answer.", () => {
+            if (!sessionActiveRef.current) return;
+            setPhase("waitingForCommand");
+            void queueListen();
+          });
+          return;
+        case "i_dont_know":
+          speak("No problem. Let me read the answer.", () => readAnswer(card));
+          return;
+        case "explain_more":
+          await readExplanation(card);
+          return;
+        case "mark_hard":
+          await applyMark(2, "hard");
+          return;
+        case "mark_again":
+          await applyMark(1, "again");
+          return;
+        case "mark_good":
+          await applyMark(3, "good");
+          return;
+        case "mark_easy":
+          await applyMark(4, "easy");
+          return;
+        case "mark_mastered":
+          await applyMark(5, "mastered");
+          return;
+        default:
+          speak('I did not catch that. Try saying "show answer", "next card", or "explain more".', () => {
+            if (!sessionActiveRef.current) return;
+            setPhase("waitingForCommand");
+            void queueListen();
+          });
+      }
+    },
+    [
+      answerShown,
+      awaitingEndConfirm,
+      applyMark,
+      cardIndex,
+      cleanup,
+      deck,
+      readAnswer,
+      readExplanation,
+      readQuestion,
+      queueListen,
+      speak,
+    ]
+  );
+
+  useEffect(() => {
+    handleCommandRef.current = handleCommand;
+  }, [handleCommand]);
+
+  const startSession = async () => {
     if (!selectedClassId) return;
-    stopRecognition();
-    cancelSpeech();
-    setBannerError(null);
-    setMicHint(null);
-    setStatus("loading_cards");
+    cleanup();
+    setHint(null);
+    setAwaitingEndConfirm(false);
+    setPhase("idle");
     try {
       const cards = await listFlashcards(selectedClassId);
-      const list = Array.isArray(cards) ? cards.filter((c) => (c.question || "").trim()) : [];
-      if (list.length === 0) {
-        setStatus("setup");
-        setBannerError(null);
-        setLoadError(null);
-        setCardCount(0);
+      const list = Array.isArray(cards) ? cards.filter((c) => sanitize(c.question)) : [];
+      if (!list.length) {
+        setHint("No flashcards are available for this class. Generate flashcards first.");
         return;
       }
       const shuffled = shuffle(list);
       setDeck(shuffled);
       setCardIndex(0);
-      setTranscript("");
-      setAnswerRevealed(false);
       setSessionActive(true);
-      setCardCount(shuffled.length);
-      speakQuestion(shuffled[0].question, "captured");
+      sessionActiveRef.current = true;
+      readQuestion(0, shuffled);
     } catch (err: unknown) {
-      setStatus("setup");
-      setBannerError(friendlyApiError(err, "Unable to load voice revision cards. Please try again."));
+      setHint(friendlyLoad(err, "Could not start. Try again."));
+      setPhase("error");
     }
   };
 
-  const endRevisionSession = useCallback(() => {
-    resetSessionState();
-    setBannerError(null);
-  }, [resetSessionState]);
-
-  const handleRate = async (score: 1 | 2 | 3 | 4 | 5) => {
-    if (!sessionActive) return;
-    const idx = cardIndex;
-    const card = deck[idx];
-    if (!card) return;
-    setBannerError(null);
-    setStatus("saving_rating");
-    const started = responseStartRef.current;
-    const responseTimeMs = started ? Date.now() - started : undefined;
-    try {
-      await postReview(card.id, score, responseTimeMs);
-    } catch (err: unknown) {
-      setBannerError(friendlyApiError(err, "Could not save your rating. Try again."));
-      setStatus("reviewing");
-      return;
-    }
-    const nextIdx = idx + 1;
-    if (nextIdx >= deck.length) {
-      stopRecognition();
-      cancelSpeech();
-      setSessionActive(false);
-      setStatus("session_complete");
-      return;
-    }
-    setCardIndex(nextIdx);
-    setTranscript("");
-    setAnswerRevealed(false);
-    setMicHint(null);
-    responseStartRef.current = null;
-    stopRecognition();
-    speakQuestion(deck[nextIdx].question, "captured");
+  const endSession = () => {
+    cleanup();
+    setSessionActive(false);
+    sessionActiveRef.current = false;
+    setAwaitingEndConfirm(false);
+    setDeck([]);
+    setCardIndex(0);
+    setPhase("idle");
+    setAnswerShown(false);
+    setLastCommandText("");
   };
 
-  const startListening = () => {
-    if (!SpeechRecognitionCtor || !sessionActive) return;
-    setMicHint(null);
-    setBannerError(null);
-    stopRecognition();
-    responseStartRef.current = Date.now();
-    const rec = new SpeechRecognitionCtor();
-    recognitionRef.current = rec;
-    rec.continuous = true;
-    rec.interimResults = true;
-    rec.lang = "en-US";
-    rec.onstart = () => {
-      setRecognizing(true);
-      setStatus("listening");
-      setTranscript("");
-    };
-    rec.onresult = (event) => {
-      const text = Array.from(event.results)
-        .map((r) => r[0]?.transcript ?? "")
-        .join("");
-      setTranscript(text.trim());
-    };
-    rec.onerror = (e) => {
-      const msg = speechRecognitionErrorMessage(e.error);
-      if (msg) setMicHint(msg);
-      setRecognizing(false);
-      setStatus((s) => (s === "listening" ? "answer_captured" : s));
-    };
-    rec.onend = () => {
-      setRecognizing(false);
-      setStatus((s) => (s === "listening" ? "answer_captured" : s));
-      recognitionRef.current = null;
-    };
-    try {
-      rec.start();
-    } catch {
-      setMicHint("Could not start listening. Try again or type your answer.");
-      setStatus("answer_captured");
-    }
-  };
-
-  const finishListening = () => {
-    stopRecognition();
-    setStatus("answer_captured");
-  };
-
-  const handleClassChange = (id: number | null) => {
-    if (sessionActive) {
-      endRevisionSession();
-    }
+  const onClassChange = (id: number | null) => {
+    if (sessionActive) endSession();
     setSelectedClassId(id);
-    setBannerError(null);
     setLoadError(null);
+    setHint(null);
+  };
+
+  const phaseLabel: Record<FlashcardVoicePhase, string> = {
+    idle: "Ready",
+    speakingQuestion: "Reading question",
+    waitingForCommand: "Listening for command",
+    listeningCommand: "Listening for command",
+    speakingAnswer: "Reading answer",
+    explaining: "Explaining",
+    paused: "Paused",
+    complete: "Session complete",
+    error: "Needs attention",
   };
 
   const hasCards = (cardCount ?? 0) > 0;
-  const canStart = !!selectedClassId && hasCards && !deckLoading && status !== "loading_cards" && !sessionActive;
-
-  const statusRing =
-    status === "listening"
-      ? "bg-emerald-500 shadow-[0_0_0_6px_rgba(16,185,129,0.22)]"
-      : status === "speaking"
-        ? "bg-[var(--primary)] shadow-[0_0_0_6px_color-mix(in_srgb,var(--primary)_28%,transparent)]"
-        : status === "saving_rating" || status === "loading_cards"
-          ? "bg-amber-400 shadow-[0_0_0_6px_rgba(251,191,36,0.22)]"
-          : status === "session_complete"
-            ? "bg-[var(--success)] shadow-[0_0_0_6px_color-mix(in_srgb,var(--success)_25%,transparent)]"
-            : "bg-[var(--text-muted-soft)]";
+  const canStart = !!selectedClassId && hasCards && !deckLoading && !sessionActive;
 
   return (
     <AppShell
-      title="Voice Revision"
-      subtitle="Listen to your flashcards, answer aloud, compare with the answer, and rate how well you remembered them."
+      title="Voice Flashcards"
+      subtitle="Hands-free revision without screen fatigue. Listen, ask for the answer, get brief explanations, and move on — all by voice."
       headerMaxWidthClassName="max-w-3xl"
       contentGapClassName="gap-4"
     >
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 pb-10">
-        {/* Product context */}
-        <div className="rounded-[var(--radius-xl)] border border-[color-mix(in_srgb,var(--primary)_18%,var(--border))] bg-[var(--primary-soft)] px-4 py-3 text-[13px] leading-relaxed text-[var(--text-secondary)]">
-          <span className="font-semibold text-[var(--text-main)]">Voice Revision</span> is for{" "}
-          <span className="text-[var(--text-main)]">practice and recall</span>: same cards as Flashcards, no score out of 100.
-          {" "}
-          <span className="font-semibold text-[var(--text-main)]">Voice Quiz</span> (under a class → Flashcards → Voice) is for{" "}
-          <span className="text-[var(--text-main)]">testing</span> with evaluated answers.
+        <div className="grid gap-3 rounded-[var(--radius-xl)] border border-[var(--border)] bg-[var(--surface-2)] p-4 sm:grid-cols-2">
+          <div className="rounded-[var(--radius-lg)] border border-[color-mix(in_srgb,var(--primary)_20%,var(--border))] bg-[var(--primary-soft)] p-3">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--primary)]">Voice Flashcards</div>
+            <p className="mt-1 text-sm text-[var(--text-secondary)]">Study hands-free. No grading — optional voice marks for scheduling.</p>
+          </div>
+          <div className="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface)] p-3">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--text-muted-soft)]">Voice Quiz</div>
+            <p className="mt-1 text-sm text-[var(--text-secondary)]">
+              Test yourself aloud from a class → Flashcards → Voice. Answers are scored automatically.
+            </p>
+            <Button size="sm" variant="secondary" className="mt-2" onClick={() => navigate("/flashcards")}>
+              Open flashcards hub
+            </Button>
+          </div>
         </div>
 
-        {/* Setup */}
         <div className="ns-card p-5 sm:p-6">
           <div className="flex flex-wrap items-start gap-3">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--primary-soft)] text-[var(--primary)]">
               <Headphones className="h-5 w-5" aria-hidden />
             </div>
             <div className="min-w-0 flex-1">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted-soft)]">Session</div>
-              <h2 className="mt-1 text-lg font-semibold text-[var(--text-main)] sm:text-xl">Hands-free revision</h2>
-              <p className="mt-2 max-w-[560px] text-sm leading-relaxed text-[var(--text-secondary)]">
-                Choose a class with generated flashcards. Notescape will read each question aloud and help you revise using your voice.
+              <h2 className="text-lg font-semibold text-[var(--text-main)] sm:text-xl">Start a voice session</h2>
+              <p className="mt-1 text-sm text-[var(--text-secondary)]">
+                Pick a class, then start. The app reads each card; you say commands like &quot;show answer&quot; or &quot;next card&quot;. Buttons below are optional.
               </p>
             </div>
           </div>
 
-          <div className="mt-4 flex flex-wrap gap-3 text-[13px] text-[var(--text-secondary)]">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-2.5 py-1">
-              <Volume2 className="h-3.5 w-3.5 text-[var(--primary)]" aria-hidden />
-              {ttsSupported ? "Text-to-speech ready" : "Text-to-speech not available"}
+          <div className="mt-4 flex flex-wrap gap-2 text-[12px] text-[var(--text-muted)]">
+            <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-2.5 py-1">
+              <Volume2 className="h-3.5 w-3.5" />
+              {ttsOk ? "Speech ready" : "Speech unavailable"}
             </span>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-2.5 py-1">
-              {sttSupported ? (
-                <>
-                  <Mic className="h-3.5 w-3.5 text-[var(--success)]" aria-hidden />
-                  Speech recognition available
-                </>
-              ) : (
-                <>
-                  <MicOff className="h-3.5 w-3.5 text-[var(--text-muted)]" aria-hidden />
-                  Voice input not supported — listen and type instead
-                </>
-              )}
+            <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-2.5 py-1">
+              {sttOk ? <Mic className="h-3.5 w-3.5 text-[var(--success)]" /> : <MicOff className="h-3.5 w-3.5" />}
+              {sttOk ? "Voice commands" : "Use buttons only"}
             </span>
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-2.5 py-1">
-              <Layers className="h-3.5 w-3.5 text-[var(--text-muted)]" aria-hidden />
-              {deckLoading ? "Checking deck…" : cardCount === null ? "—" : `${cardCount} flashcard${cardCount === 1 ? "" : "s"}`}
+            <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-2.5 py-1">
+              <Layers className="h-3.5 w-3.5" />
+              {deckLoading ? "…" : `${cardCount ?? 0} cards`}
             </span>
           </div>
 
           {loadError ? (
-            <div className="mt-4 rounded-[var(--radius-md)] border border-[color-mix(in_srgb,var(--danger)_28%,transparent)] bg-[var(--danger-soft)] px-3 py-2 text-sm text-[var(--danger)]">
+            <div className="mt-3 rounded-md border border-[color-mix(in_srgb,var(--danger)_25%,transparent)] bg-[var(--danger-soft)] px-3 py-2 text-sm text-[var(--danger)]">
               {loadError}
             </div>
           ) : null}
-
-          {!sttSupported ? (
-            <p className="mt-3 text-sm text-[var(--text-muted)]">
-              Speech recognition is not supported in this browser. You can still listen to questions and revise manually (type your answer).
-            </p>
+          {hint ? (
+            <div className="mt-3 rounded-md border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-[var(--text-secondary)]">{hint}</div>
           ) : null}
 
           <div className="mt-5 flex flex-wrap items-end gap-3">
@@ -484,12 +608,9 @@ export default function VoiceRevisionMode() {
               Class
               <select
                 value={selectedClassId ?? ""}
-                onChange={(e) => {
-                  const v = e.target.value;
-                  handleClassChange(v ? Number(v) : null);
-                }}
+                onChange={(e) => onClassChange(e.target.value ? Number(e.target.value) : null)}
                 disabled={sessionActive}
-                className="mt-2 h-11 w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] px-3 text-sm text-[var(--text-main)]"
+                className="mt-2 h-11 w-full rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] px-3 text-sm"
               >
                 <option value="">Select class</option>
                 {classes.map((c) => (
@@ -500,211 +621,139 @@ export default function VoiceRevisionMode() {
               </select>
             </label>
             <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                variant="primary"
-                size="md"
-                onClick={startRevisionSession}
-                disabled={!canStart}
-                className="gap-1.5"
-              >
-                <Sparkles className="h-4 w-4 shrink-0" aria-hidden />
-                Start revision
+              <Button type="button" variant="primary" disabled={!canStart} onClick={() => void startSession()} className="gap-1.5">
+                <Sparkles className="h-4 w-4" />
+                Start voice session
               </Button>
               {sessionActive ? (
-                <Button type="button" variant="secondary" size="md" onClick={endRevisionSession} className="gap-1.5">
-                  <Square className="h-4 w-4 shrink-0" aria-hidden />
+                <Button type="button" variant="secondary" onClick={() => endSession()} className="gap-1.5">
+                  <Square className="h-4 w-4" />
                   End session
                 </Button>
               ) : null}
             </div>
           </div>
+        </div>
 
-          {!deckLoading && selectedClassId && cardCount === 0 ? (
-            <div className="mt-5 flex flex-col items-start gap-3 rounded-[var(--radius-lg)] border border-dashed border-[var(--border)] bg-[var(--surface-2)] px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm text-[var(--text-secondary)]">
-                No flashcards found for this class. Generate flashcards first, then return to Voice Revision.
+        {sessionActive || phase === "complete" ? (
+          <div className="ns-card overflow-hidden">
+            <div className="border-b border-[var(--border)] bg-[var(--surface-2)]/70 px-4 py-3">
+              <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted-soft)]">Status</div>
+              <div className="text-lg font-semibold text-[var(--text-main)]">{phaseLabel[phase]}</div>
+              <p className="mt-1 text-xs text-[var(--text-muted)]">
+                Try: &quot;show answer&quot;, &quot;next card&quot;, or &quot;explain more&quot;.
               </p>
-              <Button
-                type="button"
-                size="sm"
-                variant="primary"
-                className="gap-1.5 shrink-0"
-                onClick={() => navigate(`/classes/${selectedClassId}/flashcards`)}
-              >
-                <BookOpen className="h-4 w-4" aria-hidden />
+            </div>
+            <div className="space-y-4 p-4 sm:p-5">
+              {currentCard ? (
+                <>
+                  <div>
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--primary)]">Question</div>
+                    <p className="mt-2 text-lg font-semibold text-[var(--text-main)]">{sanitize(currentCard.question)}</p>
+                    <p className="mt-1 text-xs text-[var(--text-muted)]">
+                      Card {cardIndex + 1} of {deck.length}
+                    </p>
+                  </div>
+                  <div>
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-muted-soft)]">Answer</div>
+                    <p className="mt-2 min-h-[3rem] text-sm text-[var(--text-main)]">
+                      {answerShown ? sanitize(currentCard.answer) : "Hidden until you ask (voice or button)."}
+                    </p>
+                  </div>
+                  {lastCommandText ? (
+                    <p className="text-xs text-[var(--text-muted)]">
+                      Heard: <span className="font-medium text-[var(--text-main)]">{lastCommandText}</span>
+                    </p>
+                  ) : null}
+                </>
+              ) : phase === "complete" ? (
+                <p className="text-sm text-[var(--text-secondary)]">Session complete. Start again anytime.</p>
+              ) : null}
+
+              <div className="flex flex-wrap gap-2 border-t border-[var(--border)] pt-4">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  disabled={!sessionActive || phase === "speakingQuestion" || phase === "speakingAnswer" || phase === "explaining"}
+                  onClick={() => void handleCommand("repeat_question")}
+                >
+                  Repeat question
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  disabled={!sessionActive || !currentCard || phase === "speakingQuestion" || phase === "speakingAnswer" || phase === "explaining"}
+                  onClick={() => void handleCommand("show_answer")}
+                >
+                  Show answer
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  disabled={!sessionActive || !currentCard || !answerShown || phase === "speakingQuestion" || phase === "speakingAnswer" || phase === "explaining"}
+                  onClick={() => void handleCommand("hide_answer")}
+                >
+                  Hide answer
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  disabled={!sessionActive || !currentCard || !answerShown || phase === "speakingQuestion" || phase === "explaining"}
+                  onClick={() => void handleCommand("repeat_answer")}
+                >
+                  Repeat answer
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  disabled={!sessionActive || !currentCard || phase === "speakingQuestion" || phase === "speakingAnswer" || phase === "explaining"}
+                  onClick={() => void handleCommand("explain_more")}
+                >
+                  Explain more
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="primary"
+                  disabled={!sessionActive || phase === "speakingQuestion" || phase === "speakingAnswer" || phase === "explaining"}
+                  onClick={() => void handleCommand("next_card")}
+                >
+                  Next card
+                </Button>
+                <Button type="button" size="sm" variant="ghost" disabled={!sessionActive} onClick={() => void handleCommand("pause")}>
+                  Pause
+                </Button>
+                <Button type="button" size="sm" variant="ghost" disabled={phase !== "paused"} onClick={() => void handleCommand("resume")}>
+                  Resume
+                </Button>
+                <Button type="button" size="sm" variant="danger" disabled={!sessionActive} onClick={() => void handleCommand("end_session")}>
+                  End session
+                </Button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <span className="w-full text-[10px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted-soft)]">Optional marks (SRS)</span>
+                <Button type="button" size="sm" variant="ghost" disabled={!sessionActive || !currentCard} onClick={() => void handleCommand("mark_hard")}>
+                  Mark hard
+                </Button>
+                <Button type="button" size="sm" variant="ghost" disabled={!sessionActive || !currentCard} onClick={() => void handleCommand("mark_easy")}>
+                  Mark easy
+                </Button>
+                <Button type="button" size="sm" variant="ghost" disabled={!sessionActive || !currentCard} onClick={() => void handleCommand("mark_mastered")}>
+                  Mark mastered
+                </Button>
+              </div>
+              <Button type="button" size="sm" variant="secondary" className="gap-1.5" onClick={() => selectedClassId && navigate(`/classes/${selectedClassId}/flashcards`)}>
+                <BookOpen className="h-4 w-4" />
                 Generate flashcards
               </Button>
             </div>
-          ) : null}
-        </div>
-
-        {/* Status + main panel */}
-        <div className="ns-card overflow-hidden">
-          <div className="border-b border-[var(--border)] bg-[var(--surface-2)]/60 px-4 py-3 sm:px-5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className={`h-3 w-3 shrink-0 rounded-full transition-all ${statusRing}`} aria-hidden />
-                <div>
-                  <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--text-muted-soft)]">Status</div>
-                  <div className="text-base font-semibold text-[var(--text-main)]">{STATUS_LABEL[status]}</div>
-                </div>
-              </div>
-              {sessionActive && deck.length > 0 ? (
-                <div className="text-xs font-semibold tabular-nums text-[var(--text-muted)]">
-                  Card {cardIndex + 1} / {deck.length}
-                </div>
-              ) : null}
-            </div>
           </div>
-
-          <div className="space-y-4 p-4 sm:p-5">
-            {bannerError ? (
-              <div className="rounded-[var(--radius-md)] border border-[color-mix(in_srgb,var(--danger)_28%,transparent)] bg-[var(--danger-soft)] px-3 py-2 text-sm text-[var(--danger)]">
-                {bannerError}
-              </div>
-            ) : null}
-            {micHint ? (
-              <div className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-[var(--text-secondary)]">
-                {micHint}
-              </div>
-            ) : null}
-
-            {status === "session_complete" ? (
-              <div className="flex flex-col items-center gap-3 py-8 text-center">
-                <CheckCircle2 className="h-12 w-12 text-[var(--success)]" aria-hidden />
-                <div className="text-lg font-semibold text-[var(--text-main)]">Session complete</div>
-                <p className="max-w-md text-sm text-[var(--text-muted)]">Nice work. Start another round whenever you want.</p>
-                <Button type="button" variant="primary" onClick={() => { setStatus("setup"); }}>
-                  Done
-                </Button>
-              </div>
-            ) : (
-              <>
-                <div className="mx-auto w-full max-w-xl rounded-[var(--radius-2xl)] border border-[var(--border)] bg-[var(--surface)] px-5 py-7 text-center shadow-[var(--shadow-sm)] sm:px-8 sm:py-9">
-                  <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--text-muted-soft)]">Question</div>
-                  <p className="mt-3 text-lg font-semibold leading-relaxed text-[var(--text-main)] sm:text-xl">
-                    {currentCard?.question ?? "Start a session to hear your first question."}
-                  </p>
-                  {currentCard?.topic ? (
-                    <p className="mt-2 text-xs font-medium text-[var(--text-muted)]">Topic: {currentCard.topic}</p>
-                  ) : null}
-                  <div className="mt-6 flex flex-wrap justify-center gap-2">
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      onClick={() =>
-                        currentCard && speakQuestion(currentCard.question, answerRevealed ? "reviewing" : "captured")
-                      }
-                      disabled={!currentCard || !ttsSupported}
-                      className="gap-1.5"
-                    >
-                      <Volume2 className="h-4 w-4" aria-hidden />
-                      Replay question
-                    </Button>
-                  </div>
-                </div>
-
-                {sessionActive && currentCard ? (
-                  <div className="rounded-[var(--radius-xl)] border border-[var(--border)] bg-[var(--surface-2)]/50 p-4 sm:p-5">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                      <div>
-                        <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--text-muted-soft)]">Your answer</div>
-                        <p className="mt-1 text-sm text-[var(--text-secondary)]">
-                          {sttSupported
-                            ? recognizing
-                              ? "Listening… speak naturally."
-                              : "Use the microphone or type what you remember."
-                            : "Type what you remember."}
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {sttSupported ? (
-                          <>
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              size="sm"
-                              onClick={startListening}
-                              disabled={recognizing || answerRevealed}
-                              className="gap-1.5"
-                            >
-                              <Mic className="h-4 w-4" aria-hidden />
-                              Start answering
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={finishListening}
-                              disabled={!recognizing}
-                              className="gap-1.5"
-                            >
-                              Done speaking
-                            </Button>
-                          </>
-                        ) : null}
-                      </div>
-                    </div>
-                    <textarea
-                      value={transcript}
-                      onChange={(e) => setTranscript(e.target.value)}
-                      placeholder="Your spoken answer appears here, or type…"
-                      disabled={answerRevealed}
-                      className="mt-4 min-h-[96px] w-full resize-y rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] px-3 py-3 text-sm text-[var(--text-main)] placeholder:text-[var(--placeholder)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-                      rows={3}
-                    />
-                  </div>
-                ) : null}
-
-                {sessionActive && currentCard ? (
-                  <div className="rounded-[var(--radius-xl)] border border-[var(--border)] bg-[var(--surface)] p-4 sm:p-5">
-                    {!answerRevealed ? (
-                      <Button
-                        type="button"
-                        variant="primary"
-                        onClick={() => {
-                          setAnswerRevealed(true);
-                          setStatus("reviewing");
-                        }}
-                        className="w-full sm:w-auto"
-                      >
-                        Show answer
-                      </Button>
-                    ) : (
-                      <>
-                        <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--text-muted-soft)]">Correct answer</div>
-                        <p className="mt-2 text-sm font-medium leading-relaxed text-[var(--text-main)]">{currentCard.answer}</p>
-                        <div className="mt-5">
-                          <div className="mb-2 text-[10.5px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted-soft)]">
-                            How well did you remember it?
-                          </div>
-                          <div className="grid grid-cols-5 gap-1.5 sm:gap-2">
-                            {RATING_OPTIONS.map((opt) => (
-                              <button
-                                key={opt.score}
-                                type="button"
-                                onClick={() => void handleRate(opt.score)}
-                                disabled={status === "saving_rating"}
-                                className="rating-btn rating-btn--ready"
-                                style={{ ["--tone" as string]: opt.tone } as CSSProperties}
-                                aria-label={opt.label}
-                                title={`${opt.label} (${opt.score})`}
-                              >
-                                <span className="rating-btn__label">{opt.label}</span>
-                                <span className="rating-btn__key">{opt.score}</span>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                ) : null}
-              </>
-            )}
-          </div>
-        </div>
+        ) : null}
       </div>
     </AppShell>
   );

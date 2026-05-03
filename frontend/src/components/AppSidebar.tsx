@@ -75,7 +75,7 @@ export default function AppSidebar({ collapsed, onToggle, mobileOpen = false, on
     },
     { to: "/quizzes", label: "Quizzes", icon: <ClipboardList className="h-[18px] w-[18px]" /> },
     { to: "/chatbot", label: "Study Assistant", icon: <MessageCircle className="h-[18px] w-[18px]" /> },
-    { to: "/voice-revision", label: "Voice Revision", icon: <Mic className="h-[18px] w-[18px]" /> },
+    { to: "/voice-revision", label: "Voice Flashcards", icon: <Mic className="h-[18px] w-[18px]" /> },
   ];
 
   function navActivate() {

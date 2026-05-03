@@ -327,7 +327,7 @@ export default function Dashboard() {
               </Button>
               <Button type="button" variant="secondary" size="sm" onClick={() => navigate("/voice-revision")}>
                 <Mic className="h-4 w-4" aria-hidden />
-                Voice revision
+                Voice Flashcards
               </Button>
             </div>
           </div>
@@ -708,7 +708,7 @@ export default function Dashboard() {
                     Create / refresh plan
                   </Button>
                   <Button type="button" variant="secondary" onClick={() => navigate("/voice-revision")}>
-                    Hands-free revision
+                    Voice Flashcards
                   </Button>
                   {activePlan ? (
                     <span className="self-center text-xs text-[var(--text-secondary)]">
