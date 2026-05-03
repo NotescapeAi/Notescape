@@ -15,6 +15,8 @@ import { auth } from "./firebase/firebase";
 import RequireAuth from "./components/RequireAuth";
 import RouteTransition from "./components/RouteTransition";
 import ScrollToTop from "./components/ScrollToTop";
+import GlobalThemeToggle from "./components/GlobalThemeToggle";
+import AppToastProvider from "./components/AppToastProvider";
 import { UserProvider } from "./hooks/useUser";
 import { ThemeProvider } from "./hooks/useTheme";
 
@@ -54,6 +56,7 @@ const QuizzesPage = lazy(() => import("./pages/quizzes/QuizzesPage"));
 const QuizAttemptPage = lazy(() => import("./pages/quizzes/QuizAttemptPage"));
 const QuizHistoryPage = lazy(() => import("./pages/quizzes/QuizHistoryPage"));
 const QuizHistoryDetailsPage = lazy(() => import("./pages/quizzes/QuizHistoryDetailsPage"));
+const VoiceRevisionMode = lazy(() => import("./pages/VoiceRevisionMode"));
 
 
 function GetStartedGate() {
@@ -92,6 +95,7 @@ function AppLayout({ children }: { children: React.ReactNode }) {
       <div id="app-scroll-container" className="app-content">
         {children}
       </div>
+      <AppToastProvider />
     </div>
   );
 }
@@ -192,6 +196,14 @@ function AppRoutes() {
         }
       />
       <Route
+        path="/voice-revision"
+        element={
+          <RequireAuth>
+            <VoiceRevisionMode />
+          </RequireAuth>
+        }
+      />
+      <Route
         path="/settings"
         element={
           <RequireAuth>
@@ -255,6 +267,7 @@ export default function App() {
             >
               <AppRoutes />
             </Suspense>
+            <GlobalThemeToggle />
           </AppLayout>
         </BrowserRouter>
       </UserProvider>

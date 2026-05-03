@@ -9,6 +9,7 @@ import {
 import { auth } from "../firebase/firebase";
 import { fetchSignInMethodsForEmail, sendEmailVerification } from "firebase/auth";
 import { FirebaseError } from "firebase/app";
+import BrandLogo from "../components/BrandLogo";
 import "./NotescapeStartPage.css";
 
 export default function Signup() {
@@ -156,8 +157,7 @@ export default function Signup() {
     <div className="auth-root">
       <main className="signup-page page">
         <header className="logo">
-          <img src="/logo1.png" alt="Notescape logo" width={70} height={50} />
-          <h1>Notescape</h1>
+          <BrandLogo variant="header" className="auth-brand-logo" />
         </header>
 
       <section

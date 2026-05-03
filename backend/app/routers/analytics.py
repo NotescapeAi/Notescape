@@ -1,4 +1,6 @@
 from typing import List, Dict, Optional
+from datetime import datetime, timezone
+from statistics import mean
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 
@@ -18,6 +20,251 @@ def _cache_key(user_id: str, name: str, suffix: str = "") -> str:
 
 def _to_percent(value: float) -> float:
     return round(max(0.0, min(1.0, float(value or 0.0))) * 100.0, 2)
+
+
+def _mastery_label(score: float) -> str:
+    if score >= 85:
+        return "Exam-ready"
+    if score >= 70:
+        return "Strong"
+    if score >= 45:
+        return "Improving"
+    return "Weak"
+
+
+def _clamp01(value: float) -> float:
+    return max(0.0, min(1.0, float(value or 0.0)))
+
+
+def _weighted_avg(pairs: List[tuple[float, float]]) -> float:
+    total_weight = sum(w for _, w in pairs if w is not None)
+    if total_weight <= 0:
+        return 0.0
+    acc = sum((val or 0.0) * w for val, w in pairs if w is not None)
+    return acc / total_weight
+
+
+async def _ensure_class_owner(cur, class_id: int, user_id: str) -> None:
+    if user_id == "dev-user":
+        await cur.execute("SELECT 1 FROM classes WHERE id=%s", (class_id,))
+    else:
+        await cur.execute("SELECT 1 FROM classes WHERE id=%s AND owner_uid=%s", (class_id, user_id))
+    if not await cur.fetchone():
+        raise HTTPException(status_code=404, detail="Class not found")
+
+
+async def _class_topic_mastery_rows(cur, user_id: str, class_id: int, limit: int = 50):
+    await cur.execute(
+        """
+        WITH quiz_signals AS (
+          SELECT
+            COALESCE(
+              qq.topic,
+              (
+                SELECT t.name
+                FROM quiz_question_tags qqt
+                JOIN tags t ON t.id = qqt.tag_id
+                WHERE qqt.question_id = qq.id
+                ORDER BY t.name
+                LIMIT 1
+              ),
+              qq.qtype,
+              'General'
+            ) AS topic,
+            COUNT(*)::int AS quiz_attempts,
+            SUM(CASE WHEN COALESCE(qqa.score, 0) >= 0.7 THEN 1 ELSE 0 END)::int AS quiz_correct,
+            AVG(GREATEST(0::float, LEAST(1::float, COALESCE(qqa.score, 0)))) AS quiz_accuracy,
+            MAX(qqa.graded_at) AS last_quiz_at
+          FROM quiz_question_attempts qqa
+          JOIN quiz_attempts qa ON qa.id = qqa.attempt_id
+          JOIN quiz_questions qq ON qq.id = qqa.question_id
+          JOIN quizzes q ON q.id = qq.quiz_id
+          WHERE qa.user_id=%s AND q.class_id=%s
+          GROUP BY COALESCE(
+            qq.topic,
+            (
+              SELECT t.name
+              FROM quiz_question_tags qqt
+              JOIN tags t ON t.id = qqt.tag_id
+              WHERE qqt.question_id = qq.id
+              ORDER BY t.name
+              LIMIT 1
+            ),
+            qq.qtype,
+            'General'
+          )
+        ),
+        flash_signals AS (
+          SELECT
+            COALESCE(f.topic, f.tags[1], 'General') AS topic,
+            COUNT(*)::int AS flash_attempts,
+            SUM(CASE WHEN lower(fr.rating) IN ('good','easy','4','5') THEN 1 ELSE 0 END)::int AS flash_positive,
+            SUM(CASE WHEN lower(fr.rating) IN ('again','hard','1','2') THEN 1 ELSE 0 END)::int AS flash_struggles,
+            AVG(CASE
+              WHEN lower(fr.rating) IN ('easy','5') THEN 1.0
+              WHEN lower(fr.rating) IN ('good','3','4') THEN 0.75
+              WHEN lower(fr.rating) IN ('hard','2') THEN 0.35
+              ELSE 0.05
+            END) AS flash_score,
+            MAX(fr.reviewed_at) AS last_flash_at
+          FROM flashcard_reviews fr
+          JOIN flashcards f ON f.id = fr.flashcard_id
+          WHERE fr.user_id=%s AND f.class_id=%s AND f.deleted_at IS NULL
+          GROUP BY COALESCE(f.topic, f.tags[1], 'General')
+        ),
+        voice_signals AS (
+          SELECT
+            COALESCE(v.topic, 'General') AS topic,
+            SUM(v.total_turns)::int AS voice_attempts,
+            SUM(v.correct_turns)::int AS voice_correct,
+            AVG(COALESCE(v.avg_score, 0) / 100.0) AS voice_score,
+            MAX(v.last_seen) AS last_voice_at
+          FROM voice_revision_topic_rollup v
+          WHERE v.user_id=%s AND v.class_id=%s
+          GROUP BY COALESCE(v.topic, 'General')
+        ),
+        topics AS (
+          SELECT topic FROM quiz_signals
+          UNION
+          SELECT topic FROM flash_signals
+          UNION
+          SELECT topic FROM voice_signals
+        )
+        SELECT
+          topics.topic,
+          COALESCE(q.quiz_attempts, 0) AS quiz_attempts,
+          COALESCE(q.quiz_correct, 0) AS quiz_correct,
+          COALESCE(q.quiz_accuracy, 0) AS quiz_accuracy,
+          COALESCE(f.flash_attempts, 0) AS flash_attempts,
+          COALESCE(f.flash_positive, 0) AS flash_positive,
+          COALESCE(f.flash_struggles, 0) AS flash_struggles,
+          COALESCE(f.flash_score, 0) AS flash_score,
+          COALESCE(v.voice_attempts, 0) AS voice_attempts,
+          COALESCE(v.voice_correct, 0) AS voice_correct,
+          COALESCE(v.voice_score, 0) AS voice_score,
+          GREATEST(
+            COALESCE(q.last_quiz_at, to_timestamp(0)),
+            COALESCE(f.last_flash_at, to_timestamp(0)),
+            COALESCE(v.last_voice_at, to_timestamp(0))
+          ) AS last_practiced_at,
+          CASE
+            WHEN COALESCE(q.quiz_attempts, 0) > 0 AND COALESCE(f.flash_attempts, 0) > 0 AND COALESCE(v.voice_attempts, 0) > 0
+              THEN (COALESCE(q.quiz_accuracy, 0) * 0.5 + COALESCE(f.flash_score, 0) * 0.25 + COALESCE(v.voice_score, 0) * 0.25)
+            WHEN COALESCE(q.quiz_attempts, 0) > 0 AND COALESCE(f.flash_attempts, 0) > 0
+              THEN (COALESCE(q.quiz_accuracy, 0) * 0.65 + COALESCE(f.flash_score, 0) * 0.35)
+            WHEN COALESCE(q.quiz_attempts, 0) > 0 AND COALESCE(v.voice_attempts, 0) > 0
+              THEN (COALESCE(q.quiz_accuracy, 0) * 0.7 + COALESCE(v.voice_score, 0) * 0.3)
+            WHEN COALESCE(f.flash_attempts, 0) > 0 AND COALESCE(v.voice_attempts, 0) > 0
+              THEN (COALESCE(f.flash_score, 0) * 0.7 + COALESCE(v.voice_score, 0) * 0.3)
+            WHEN COALESCE(q.quiz_attempts, 0) > 0
+              THEN COALESCE(q.quiz_accuracy, 0)
+            WHEN COALESCE(f.flash_attempts, 0) > 0
+              THEN COALESCE(f.flash_score, 0)
+            ELSE COALESCE(v.voice_score, 0)
+          END AS mastery_ratio
+        FROM topics
+        LEFT JOIN quiz_signals q ON q.topic = topics.topic
+        LEFT JOIN flash_signals f ON f.topic = topics.topic
+        LEFT JOIN voice_signals v ON v.topic = topics.topic
+        ORDER BY mastery_ratio ASC, (COALESCE(q.quiz_attempts, 0) + COALESCE(f.flash_attempts, 0) + COALESCE(v.voice_attempts, 0)) DESC
+        LIMIT %s
+        """,
+        (user_id, class_id, user_id, class_id, user_id, class_id, limit),
+    )
+    return await cur.fetchall()
+
+
+async def _class_topic_universe(cur, class_id: int) -> int:
+    await cur.execute(
+        """
+        WITH flash_topics AS (
+          SELECT COUNT(DISTINCT COALESCE(f.topic, f.tags[1], 'General')) AS c
+          FROM flashcards f
+          WHERE f.class_id=%s AND f.deleted_at IS NULL
+        ),
+        quiz_topics AS (
+          SELECT COUNT(DISTINCT COALESCE(
+              qq.topic,
+              (
+                SELECT t.name
+                FROM quiz_question_tags qqt
+                JOIN tags t ON t.id = qqt.tag_id
+                WHERE qqt.question_id = qq.id
+                ORDER BY t.name
+                LIMIT 1
+              ),
+              qq.qtype,
+              'General'
+            )) AS c
+          FROM quiz_questions qq
+          JOIN quizzes q ON q.id = qq.quiz_id
+          WHERE q.class_id=%s
+        )
+        SELECT COALESCE((SELECT c FROM flash_topics), 0) + COALESCE((SELECT c FROM quiz_topics), 0)
+        """,
+        (class_id, class_id),
+    )
+    row = await cur.fetchone()
+    return int(row[0] or 0)
+
+
+def _readiness_from_rows(rows, total_topics: int):
+    if not rows:
+        return {
+            "score": 0,
+            "components": {
+                "mastery": 0,
+                "quiz_accuracy": 0,
+                "flash_confidence": 0,
+                "voice_strength": 0,
+                "coverage": 0,
+                "recent_practice": 0,
+            },
+            "practiced_topics": 0,
+            "total_topics": total_topics,
+        }
+
+    mastery_vals = [float(r[12] or 0) for r in rows]
+    quiz_pairs = [(float(r[3] or 0), int(r[1] or 0)) for r in rows]
+    flash_pairs = [(float(r[7] or 0), int(r[4] or 0)) for r in rows]
+    voice_pairs = [(float(r[10] or 0), int(r[8] or 0)) for r in rows]
+    last_dates = [r[11] for r in rows if r[11]]
+
+    practiced_topics = len(rows)
+    coverage = _clamp01(practiced_topics / max(1, total_topics or practiced_topics))
+    mastery_avg = mean(mastery_vals) if mastery_vals else 0.0
+    quiz_accuracy = _weighted_avg(quiz_pairs)
+    flash_conf = _weighted_avg(flash_pairs)
+    voice_strength = _weighted_avg(voice_pairs)
+
+    if last_dates:
+        now = datetime.now(timezone.utc)
+        avg_days = mean([(now - d).total_seconds() / 86400.0 for d in last_dates])
+        recent_practice = _clamp01(max(0.0, 1.0 - (avg_days / 14.0)))
+    else:
+        recent_practice = 0.0
+
+    score = (
+        mastery_avg * 0.4
+        + quiz_accuracy * 0.25
+        + coverage * 0.2
+        + recent_practice * 0.15
+    )
+    score = round(_clamp01(score) * 100)
+
+    return {
+        "score": score,
+        "components": {
+            "mastery": round(_clamp01(mastery_avg) * 100),
+            "quiz_accuracy": round(_clamp01(quiz_accuracy) * 100),
+            "flash_confidence": round(_clamp01(flash_conf) * 100),
+            "voice_strength": round(_clamp01(voice_strength) * 100),
+            "coverage": round(_clamp01(coverage) * 100),
+            "recent_practice": round(_clamp01(recent_practice) * 100),
+        },
+        "practiced_topics": practiced_topics,
+        "total_topics": total_topics,
+    }
 
 
 @router.get("/overview")
@@ -483,16 +730,17 @@ async def quiz_breakdown(
         await cur.execute(
             """
             SELECT
-              t.id,
-              t.name,
+              MIN(COALESCE(t.id, 0)) AS tag_id,
+              COALESCE(qq.topic, t.name, qq.qtype, 'General') AS topic,
               AVG(GREATEST(0::float, LEAST(1::float, COALESCE(qqa.score, 0)))) AS accuracy,
               COUNT(*) AS total_questions,
               SUM(CASE WHEN COALESCE(qqa.score, 0) < 0.7 THEN 1 ELSE 0 END) AS struggled_questions
             FROM quiz_question_attempts qqa
-            JOIN quiz_question_tags qqt ON qqt.question_id = qqa.question_id
-            JOIN tags t ON t.id = qqt.tag_id
+            JOIN quiz_questions qq ON qq.id = qqa.question_id
+            LEFT JOIN quiz_question_tags qqt ON qqt.question_id = qqa.question_id
+            LEFT JOIN tags t ON t.id = qqt.tag_id
             WHERE qqa.attempt_id::text=%s
-            GROUP BY t.id, t.name
+            GROUP BY COALESCE(qq.topic, t.name, qq.qtype, 'General')
             ORDER BY accuracy ASC, total_questions DESC
             """,
             (attempt_id,),
@@ -502,10 +750,10 @@ async def quiz_breakdown(
         await cur.execute(
             """
             SELECT
-              qqt.tag_id,
+              COALESCE(qqt.tag_id, 0) AS tag_id,
               mp.value
             FROM quiz_question_attempts qqa
-            JOIN quiz_question_tags qqt ON qqt.question_id = qqa.question_id
+            LEFT JOIN quiz_question_tags qqt ON qqt.question_id = qqa.question_id
             LEFT JOIN LATERAL jsonb_array_elements_text(COALESCE(qqa.missing_points, '[]'::jsonb)) mp(value) ON TRUE
             WHERE qqa.attempt_id::text=%s
               AND mp.value IS NOT NULL
@@ -542,3 +790,285 @@ async def quiz_breakdown(
         "struggled_tags": struggled[:5],
         "by_tag": by_tag,
     }
+
+
+@router.get("/classes/{class_id}/mastery")
+async def class_mastery(
+    class_id: int = Path(..., ge=1),
+    limit: int = Query(default=50, ge=1, le=100),
+    user_id: str = Depends(get_request_user_uid),
+):
+    async with db_conn() as (conn, cur):
+        await _ensure_class_owner(cur, class_id, user_id)
+        rows = await _class_topic_mastery_rows(cur, user_id, class_id, limit)
+
+    topics = []
+    for row in rows:
+        mastery_score = round(float(row[12] or 0) * 100)
+        total_attempts = int(row[1] or 0) + int(row[4] or 0) + int(row[8] or 0)
+        correct_attempts = int(row[2] or 0) + int(row[5] or 0) + int(row[9] or 0)
+        weak_count = max(0, total_attempts - correct_attempts)
+        topics.append(
+            {
+                "class_id": class_id,
+                "topic": row[0] or "General",
+                "mastery_score": mastery_score,
+                "status": _mastery_label(mastery_score),
+                "total_attempts": total_attempts,
+                "correct_attempts": correct_attempts,
+                "weak_count": weak_count,
+                "quiz_attempts": int(row[1] or 0),
+                "quiz_correct": int(row[2] or 0),
+                "quiz_accuracy_pct": _to_percent(float(row[3] or 0)),
+                "flashcard_attempts": int(row[4] or 0),
+                "flashcard_struggles": int(row[6] or 0),
+                "voice_attempts": int(row[8] or 0),
+                "voice_correct": int(row[9] or 0),
+                "voice_score_pct": _to_percent(float(row[10] or 0)),
+                "last_practiced_at": row[11].isoformat() if row[11] else None,
+            }
+        )
+    return {"class_id": class_id, "topics": topics}
+
+
+@router.get("/classes/{class_id}/recommendations")
+async def class_recommendations(
+    class_id: int = Path(..., ge=1),
+    limit: int = Query(default=5, ge=1, le=20),
+    user_id: str = Depends(get_request_user_uid),
+):
+    async with db_conn() as (conn, cur):
+        await _ensure_class_owner(cur, class_id, user_id)
+        rows = await _class_topic_mastery_rows(cur, user_id, class_id, max(limit, 10))
+
+    recommendations = []
+    for row in rows:
+        mastery_score = round(float(row[12] or 0) * 100)
+        quiz_attempts = int(row[1] or 0)
+        quiz_correct = int(row[2] or 0)
+        flash_attempts = int(row[4] or 0)
+        flash_struggles = int(row[6] or 0)
+        wrong_quiz = max(0, quiz_attempts - quiz_correct)
+        voice_attempts = int(row[8] or 0)
+        voice_correct = int(row[9] or 0)
+        voice_gaps = max(0, voice_attempts - voice_correct)
+        if mastery_score >= 85 and wrong_quiz == 0 and flash_struggles == 0:
+            continue
+        reasons = []
+        if wrong_quiz:
+            reasons.append(f"{wrong_quiz} wrong quiz answer{'s' if wrong_quiz != 1 else ''}")
+        if flash_struggles:
+            reasons.append(f"{flash_struggles} hard flashcard review{'s' if flash_struggles != 1 else ''}")
+        if voice_gaps:
+            reasons.append(f"{voice_gaps} weak voice responses")
+        if not reasons:
+            reasons.append("not enough recent practice")
+        recommendations.append(
+            {
+                "class_id": class_id,
+                "topic": row[0] or "General",
+                "status": _mastery_label(mastery_score),
+                "mastery_score": mastery_score,
+                "reason": " and ".join(reasons),
+                "actions": [
+                    {"type": "flashcards", "label": "Review flashcards"},
+                    {"type": "quiz", "label": "Take practice quiz"},
+                    {"type": "assistant", "label": "Ask Study Assistant"},
+                    {"type": "voice_revision", "label": "Start voice revision"},
+                ],
+            }
+        )
+        if len(recommendations) >= limit:
+            break
+    return {"class_id": class_id, "recommendations": recommendations}
+
+
+@router.get("/dashboard")
+async def analytics_dashboard(
+    user_id: str = Depends(get_request_user_uid),
+):
+    async with db_conn() as (conn, cur):
+        await cur.execute(
+            """
+            SELECT id, name
+            FROM classes
+            WHERE (%s = 'dev-user') OR owner_uid=%s
+            ORDER BY id ASC
+            LIMIT 8
+            """,
+            (user_id, user_id),
+        )
+        class_rows = await cur.fetchall()
+
+        class_summaries = []
+        readiness_values = []
+        for cid, cname in class_rows:
+            rows = await _class_topic_mastery_rows(cur, user_id, cid, 100)
+            total_topics = await _class_topic_universe(cur, cid)
+            readiness = _readiness_from_rows(rows, total_topics)
+            readiness_values.append(readiness["score"])
+            weak = [
+                {
+                    "topic": r[0] or "General",
+                    "mastery_score": round(float(r[12] or 0) * 100),
+                }
+                for r in rows
+                if float(r[12] or 0) < 0.6
+            ][:3]
+            next_action = (
+                "Review flashcards"
+                if weak
+                else "Take a short quiz" if readiness["score"] < 70 else "Light review"
+            )
+            class_summaries.append(
+                {
+                    "class_id": cid,
+                    "class_name": cname,
+                    "exam_readiness": readiness,
+                    "weak_topics": weak,
+                    "recommended_next_action": next_action,
+                }
+            )
+
+    overall = round(sum(readiness_values) / len(readiness_values)) if readiness_values else 0
+    return {
+        "overall_exam_readiness": overall,
+        "classes": class_summaries,
+    }
+
+
+@router.get("/classes/{class_id}/analytics")
+async def class_learning_analytics(
+    class_id: int = Path(..., ge=1),
+    limit: int = Query(default=50, ge=1, le=200),
+    user_id: str = Depends(get_request_user_uid),
+):
+    async with db_conn() as (conn, cur):
+        await _ensure_class_owner(cur, class_id, user_id)
+        rows = await _class_topic_mastery_rows(cur, user_id, class_id, limit)
+        total_topics = await _class_topic_universe(cur, class_id)
+        readiness = _readiness_from_rows(rows, total_topics)
+
+        weak_topics = sorted(
+            [
+                {
+                    "topic": r[0] or "General",
+                    "mastery_score": round(float(r[12] or 0) * 100),
+                    "status": _mastery_label(round(float(r[12] or 0) * 100)),
+                    "quiz_accuracy_pct": _to_percent(float(r[3] or 0)),
+                    "flash_confidence_pct": _to_percent(float(r[7] or 0)),
+                    "voice_score_pct": _to_percent(float(r[10] or 0)),
+                    "last_practiced_at": r[11].isoformat() if r[11] else None,
+                }
+                for r in rows
+            ],
+            key=lambda x: x["mastery_score"],
+        )[:5]
+
+        strong_topics = sorted(
+            [
+                {
+                    "topic": r[0] or "General",
+                    "mastery_score": round(float(r[12] or 0) * 100),
+                    "status": _mastery_label(round(float(r[12] or 0) * 100)),
+                }
+                for r in rows
+            ],
+            key=lambda x: x["mastery_score"],
+            reverse=True,
+        )[:5]
+
+        await cur.execute(
+            """
+            SELECT COUNT(*) FROM card_review_state
+            WHERE user_id=%s AND deck_id=%s AND next_review_at <= now()
+            """,
+            (user_id, class_id),
+        )
+        due_row = await cur.fetchone()
+        revision_due = int(due_row[0] or 0)
+
+    return {
+        "class_id": class_id,
+        "exam_readiness": readiness,
+        "weak_topics": weak_topics,
+        "strong_topics": strong_topics,
+        "revision_due": revision_due,
+    }
+
+
+@router.get("/classes/{class_id}/topics/mastery")
+async def class_topics_mastery(
+    class_id: int = Path(..., ge=1),
+    limit: int = Query(default=100, ge=1, le=200),
+    user_id: str = Depends(get_request_user_uid),
+):
+    async with db_conn() as (conn, cur):
+        await _ensure_class_owner(cur, class_id, user_id)
+        rows = await _class_topic_mastery_rows(cur, user_id, class_id, limit)
+        total_topics = await _class_topic_universe(cur, class_id)
+    return {
+        "class_id": class_id,
+        "total_topics": total_topics,
+        "topics": [
+            {
+                "topic": r[0] or "General",
+                "mastery_score": round(float(r[12] or 0) * 100),
+                "status": _mastery_label(round(float(r[12] or 0) * 100)),
+                "quiz_accuracy_pct": _to_percent(float(r[3] or 0)),
+                "flash_confidence_pct": _to_percent(float(r[7] or 0)),
+                "voice_score_pct": _to_percent(float(r[10] or 0)),
+                "last_practiced_at": r[11].isoformat() if r[11] else None,
+            }
+            for r in rows
+        ],
+    }
+
+
+@router.get("/classes/{class_id}/exam-readiness")
+async def class_exam_readiness(
+    class_id: int = Path(..., ge=1),
+    user_id: str = Depends(get_request_user_uid),
+):
+    async with db_conn() as (conn, cur):
+        await _ensure_class_owner(cur, class_id, user_id)
+        rows = await _class_topic_mastery_rows(cur, user_id, class_id, 120)
+        total_topics = await _class_topic_universe(cur, class_id)
+        readiness = _readiness_from_rows(rows, total_topics)
+    return readiness
+
+
+@router.get("/classes/{class_id}/mistakes")
+async def class_mistakes(
+    class_id: int = Path(..., ge=1),
+    limit: int = Query(default=30, ge=1, le=100),
+    unresolved_only: bool = Query(default=True),
+    user_id: str = Depends(get_request_user_uid),
+):
+    async with db_conn() as (conn, cur):
+        await _ensure_class_owner(cur, class_id, user_id)
+        await cur.execute(
+            """
+            SELECT id, topic, question, student_answer, correct_answer, explanation, created_at, resolved
+            FROM mistake_notebook
+            WHERE user_id=%s AND class_id=%s
+              AND (%s = false OR resolved = false)
+            ORDER BY created_at DESC
+            LIMIT %s
+            """,
+            (user_id, class_id, unresolved_only, limit),
+        )
+        rows = await cur.fetchall()
+    return [
+        {
+            "id": int(r[0]),
+            "topic": r[1],
+            "question": r[2],
+            "student_answer": r[3],
+            "correct_answer": r[4],
+            "explanation": r[5],
+            "created_at": r[6].isoformat() if r[6] else None,
+            "resolved": bool(r[7]),
+        }
+        for r in rows
+    ]

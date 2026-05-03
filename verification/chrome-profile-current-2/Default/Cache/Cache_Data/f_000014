@@ -1,0 +1,420 @@
+import { createHotContext as __vite__createHotContext } from "/@vite/client";import.meta.hot = __vite__createHotContext("/src/components/ClassHeaderButtons.tsx");import __vite__cjsImport0_react_jsxDevRuntime from "/node_modules/.vite/deps/react_jsx-dev-runtime.js?v=299a1942"; const jsxDEV = __vite__cjsImport0_react_jsxDevRuntime["jsxDEV"];
+import * as RefreshRuntime from "/@react-refresh";
+const inWebWorker = typeof WorkerGlobalScope !== "undefined" && self instanceof WorkerGlobalScope;
+let prevRefreshReg;
+let prevRefreshSig;
+if (import.meta.hot && !inWebWorker) {
+  if (!window.$RefreshReg$) {
+    throw new Error(
+      "@vitejs/plugin-react can't detect preamble. Something is wrong."
+    );
+  }
+  prevRefreshReg = window.$RefreshReg$;
+  prevRefreshSig = window.$RefreshSig$;
+  window.$RefreshReg$ = RefreshRuntime.getRefreshReg("C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/ClassHeaderButtons.tsx");
+  window.$RefreshSig$ = RefreshRuntime.createSignatureFunctionForTransform;
+}
+var _s = $RefreshSig$();
+import __vite__cjsImport3_react from "/node_modules/.vite/deps/react.js?v=299a1942"; const useEffect = __vite__cjsImport3_react["useEffect"]; const useRef = __vite__cjsImport3_react["useRef"]; const useState = __vite__cjsImport3_react["useState"];
+import { useNavigate } from "/node_modules/.vite/deps/react-router-dom.js?v=299a1942";
+import { SlidersHorizontal } from "/node_modules/.vite/deps/lucide-react.js?v=299a1942";
+import Button from "/src/components/Button.tsx";
+const LS_DIFF_KEY = "fc_pref_difficulty";
+const LS_COUNT_MODE_KEY = "fc_pref_count_mode";
+const LS_COUNT_KEY = "fc_pref_count";
+const LS_STYLE_KEY = "fc_pref_style";
+const FIXED_COUNTS = [10, 20, 30, 40];
+function isDifficulty(x) {
+  return x === "easy" || x === "medium" || x === "hard";
+}
+function isStyle(x) {
+  return x === "mixed" || x === "definitions" || x === "conceptual" || x === "qa";
+}
+function isCardCountMode(x) {
+  return x === "auto" || x === "fixed" || x === "custom";
+}
+function countSelectValue(mode, count) {
+  if (mode === "auto") return "auto";
+  if (mode === "custom") return "custom";
+  return String(count);
+}
+export default function ClassHeaderButtons({
+  classId,
+  onGenerate,
+  canGenerateFlashcards = true,
+  generateDisabledReason
+}) {
+  _s();
+  const navigate = useNavigate();
+  const toId = Number(classId);
+  const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef(null);
+  const [difficulty, setDifficulty] = useState(() => {
+    const raw = localStorage.getItem(LS_DIFF_KEY);
+    return isDifficulty(raw) ? raw : "medium";
+  });
+  const [cardCountMode, setCardCountMode] = useState(() => {
+    const raw = localStorage.getItem(LS_COUNT_MODE_KEY);
+    return isCardCountMode(raw) ? raw : "auto";
+  });
+  const [count, setCount] = useState(() => {
+    const raw = Number(localStorage.getItem(LS_COUNT_KEY));
+    return Number.isFinite(raw) && raw >= 1 ? raw : 20;
+  });
+  const [style, setStyle] = useState(() => {
+    const raw = localStorage.getItem(LS_STYLE_KEY);
+    return isStyle(raw) ? raw : "mixed";
+  });
+  useEffect(() => localStorage.setItem(LS_DIFF_KEY, difficulty), [difficulty]);
+  useEffect(() => localStorage.setItem(LS_COUNT_MODE_KEY, cardCountMode), [cardCountMode]);
+  useEffect(() => localStorage.setItem(LS_COUNT_KEY, String(count)), [count]);
+  useEffect(() => localStorage.setItem(LS_STYLE_KEY, style), [style]);
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (e) => {
+      if (!menuRef.current || menuRef.current.contains(e.target)) return;
+      setOpen(false);
+    };
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    window.addEventListener("mousedown", onPointerDown);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("mousedown", onPointerDown);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open]);
+  const handleGenerate = async () => {
+    if (!toId || !canGenerateFlashcards || busy) return;
+    if (!onGenerate) {
+      navigate(`/classes/${toId}/flashcards`);
+      return;
+    }
+    try {
+      setBusy(true);
+      await onGenerate({
+        difficulty,
+        style,
+        cardCountMode,
+        requestedCount: cardCountMode === "auto" ? void 0 : count
+      });
+      navigate(`/classes/${toId}/flashcards`);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const countWarning = cardCountMode === "custom" && count > 50 ? "Large custom sets can take longer and may generate fewer useful cards." : null;
+  return /* @__PURE__ */ jsxDEV("div", { className: "flex flex-wrap items-center justify-end gap-2", children: [
+    /* @__PURE__ */ jsxDEV(
+      Button,
+      {
+        variant: "primary",
+        onClick: handleGenerate,
+        disabled: busy || !canGenerateFlashcards,
+        title: generateDisabledReason || "Generate flashcards from selected documents",
+        children: busy ? "Generating flashcards..." : "Generate"
+      },
+      void 0,
+      false,
+      {
+        fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/ClassHeaderButtons.tsx",
+        lineNumber: 144,
+        columnNumber: 7
+      },
+      this
+    ),
+    /* @__PURE__ */ jsxDEV(Button, { onClick: () => navigate(`/classes/${toId}/flashcards`), title: "Open flashcards", children: "View flashcards" }, void 0, false, {
+      fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/ClassHeaderButtons.tsx",
+      lineNumber: 153,
+      columnNumber: 7
+    }, this),
+    /* @__PURE__ */ jsxDEV("div", { ref: menuRef, className: "relative", children: [
+      /* @__PURE__ */ jsxDEV(
+        "button",
+        {
+          type: "button",
+          className: "inline-flex h-9 items-center gap-2 rounded-xl border border-token surface px-3 text-sm font-semibold text-main hover:bg-[var(--surface-2)]",
+          onClick: () => setOpen((v) => !v),
+          "aria-haspopup": "dialog",
+          "aria-expanded": open,
+          children: [
+            /* @__PURE__ */ jsxDEV(SlidersHorizontal, { className: "h-4 w-4" }, void 0, false, {
+              fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/ClassHeaderButtons.tsx",
+              lineNumber: 165,
+              columnNumber: 11
+            }, this),
+            "Options"
+          ]
+        },
+        void 0,
+        true,
+        {
+          fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/ClassHeaderButtons.tsx",
+          lineNumber: 158,
+          columnNumber: 9
+        },
+        this
+      ),
+      open && /* @__PURE__ */ jsxDEV(
+        "div",
+        {
+          role: "dialog",
+          "aria-label": "Generation options",
+          className: "fixed inset-x-3 bottom-3 z-40 rounded-2xl border border-token surface p-4 shadow-xl sm:absolute sm:bottom-auto sm:right-0 sm:mt-2 sm:w-80",
+          children: [
+            /* @__PURE__ */ jsxDEV("div", { className: "mb-3", children: [
+              /* @__PURE__ */ jsxDEV("div", { className: "text-sm font-semibold text-main", children: "Generation options" }, void 0, false, {
+                fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/ClassHeaderButtons.tsx",
+                lineNumber: 175,
+                columnNumber: 15
+              }, this),
+              /* @__PURE__ */ jsxDEV("div", { className: "mt-1 text-xs text-muted", children: "Auto chooses a useful card count from the selected content." }, void 0, false, {
+                fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/ClassHeaderButtons.tsx",
+                lineNumber: 176,
+                columnNumber: 15
+              }, this)
+            ] }, void 0, true, {
+              fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/ClassHeaderButtons.tsx",
+              lineNumber: 174,
+              columnNumber: 13
+            }, this),
+            /* @__PURE__ */ jsxDEV("div", { className: "space-y-3", children: [
+              /* @__PURE__ */ jsxDEV("label", { className: "block", children: [
+                /* @__PURE__ */ jsxDEV("span", { className: "text-xs font-medium text-muted", children: "Difficulty" }, void 0, false, {
+                  fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/ClassHeaderButtons.tsx",
+                  lineNumber: 181,
+                  columnNumber: 17
+                }, this),
+                /* @__PURE__ */ jsxDEV(
+                  "select",
+                  {
+                    value: difficulty,
+                    onChange: (e) => {
+                      const val = e.target.value;
+                      if (isDifficulty(val)) setDifficulty(val);
+                    },
+                    className: "mt-1 h-10 w-full rounded-xl border border-token surface px-3 text-sm text-main",
+                    children: [
+                      /* @__PURE__ */ jsxDEV("option", { value: "easy", children: "Easy" }, void 0, false, {
+                        fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/ClassHeaderButtons.tsx",
+                        lineNumber: 190,
+                        columnNumber: 19
+                      }, this),
+                      /* @__PURE__ */ jsxDEV("option", { value: "medium", children: "Medium" }, void 0, false, {
+                        fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/ClassHeaderButtons.tsx",
+                        lineNumber: 191,
+                        columnNumber: 19
+                      }, this),
+                      /* @__PURE__ */ jsxDEV("option", { value: "hard", children: "Hard" }, void 0, false, {
+                        fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/ClassHeaderButtons.tsx",
+                        lineNumber: 192,
+                        columnNumber: 19
+                      }, this)
+                    ]
+                  },
+                  void 0,
+                  true,
+                  {
+                    fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/ClassHeaderButtons.tsx",
+                    lineNumber: 182,
+                    columnNumber: 17
+                  },
+                  this
+                )
+              ] }, void 0, true, {
+                fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/ClassHeaderButtons.tsx",
+                lineNumber: 180,
+                columnNumber: 15
+              }, this),
+              /* @__PURE__ */ jsxDEV("label", { className: "block", children: [
+                /* @__PURE__ */ jsxDEV("span", { className: "text-xs font-medium text-muted", children: "Number of cards" }, void 0, false, {
+                  fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/ClassHeaderButtons.tsx",
+                  lineNumber: 197,
+                  columnNumber: 17
+                }, this),
+                /* @__PURE__ */ jsxDEV(
+                  "select",
+                  {
+                    value: countSelectValue(cardCountMode, count),
+                    onChange: (e) => {
+                      const val = e.target.value;
+                      if (val === "auto") setCardCountMode("auto");
+                      else if (val === "custom") setCardCountMode("custom");
+                      else {
+                        setCardCountMode("fixed");
+                        setCount(Number(val));
+                      }
+                    },
+                    className: "mt-1 h-10 w-full rounded-xl border border-token surface px-3 text-sm text-main",
+                    children: [
+                      /* @__PURE__ */ jsxDEV("option", { value: "auto", children: "Auto" }, void 0, false, {
+                        fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/ClassHeaderButtons.tsx",
+                        lineNumber: 211,
+                        columnNumber: 19
+                      }, this),
+                      FIXED_COUNTS.map(
+                        (n) => /* @__PURE__ */ jsxDEV("option", { value: n, children: n }, n, false, {
+                          fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/ClassHeaderButtons.tsx",
+                          lineNumber: 213,
+                          columnNumber: 17
+                        }, this)
+                      ),
+                      /* @__PURE__ */ jsxDEV("option", { value: "custom", children: "Custom" }, void 0, false, {
+                        fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/ClassHeaderButtons.tsx",
+                        lineNumber: 217,
+                        columnNumber: 19
+                      }, this)
+                    ]
+                  },
+                  void 0,
+                  true,
+                  {
+                    fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/ClassHeaderButtons.tsx",
+                    lineNumber: 198,
+                    columnNumber: 17
+                  },
+                  this
+                )
+              ] }, void 0, true, {
+                fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/ClassHeaderButtons.tsx",
+                lineNumber: 196,
+                columnNumber: 15
+              }, this),
+              cardCountMode === "custom" && /* @__PURE__ */ jsxDEV("label", { className: "block", children: [
+                /* @__PURE__ */ jsxDEV("span", { className: "text-xs font-medium text-muted", children: "Custom count" }, void 0, false, {
+                  fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/ClassHeaderButtons.tsx",
+                  lineNumber: 223,
+                  columnNumber: 19
+                }, this),
+                /* @__PURE__ */ jsxDEV(
+                  "input",
+                  {
+                    type: "number",
+                    min: 1,
+                    max: 100,
+                    value: count,
+                    onChange: (e) => setCount(Math.max(1, Math.min(100, Number(e.target.value) || 1))),
+                    className: "mt-1 h-10 w-full rounded-xl border border-token surface px-3 text-sm text-main"
+                  },
+                  void 0,
+                  false,
+                  {
+                    fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/ClassHeaderButtons.tsx",
+                    lineNumber: 224,
+                    columnNumber: 19
+                  },
+                  this
+                ),
+                countWarning && /* @__PURE__ */ jsxDEV("span", { className: "mt-1 block text-xs text-muted", children: countWarning }, void 0, false, {
+                  fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/ClassHeaderButtons.tsx",
+                  lineNumber: 232,
+                  columnNumber: 36
+                }, this)
+              ] }, void 0, true, {
+                fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/ClassHeaderButtons.tsx",
+                lineNumber: 222,
+                columnNumber: 13
+              }, this),
+              /* @__PURE__ */ jsxDEV("label", { className: "block", children: [
+                /* @__PURE__ */ jsxDEV("span", { className: "text-xs font-medium text-muted", children: "Style" }, void 0, false, {
+                  fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/ClassHeaderButtons.tsx",
+                  lineNumber: 237,
+                  columnNumber: 17
+                }, this),
+                /* @__PURE__ */ jsxDEV(
+                  "select",
+                  {
+                    value: style,
+                    onChange: (e) => {
+                      const val = e.target.value;
+                      if (isStyle(val)) setStyle(val);
+                    },
+                    className: "mt-1 h-10 w-full rounded-xl border border-token surface px-3 text-sm text-main",
+                    children: [
+                      /* @__PURE__ */ jsxDEV("option", { value: "mixed", children: "Mixed" }, void 0, false, {
+                        fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/ClassHeaderButtons.tsx",
+                        lineNumber: 246,
+                        columnNumber: 19
+                      }, this),
+                      /* @__PURE__ */ jsxDEV("option", { value: "definitions", children: "Definitions" }, void 0, false, {
+                        fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/ClassHeaderButtons.tsx",
+                        lineNumber: 247,
+                        columnNumber: 19
+                      }, this),
+                      /* @__PURE__ */ jsxDEV("option", { value: "conceptual", children: "Conceptual" }, void 0, false, {
+                        fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/ClassHeaderButtons.tsx",
+                        lineNumber: 248,
+                        columnNumber: 19
+                      }, this),
+                      /* @__PURE__ */ jsxDEV("option", { value: "qa", children: "Q&A" }, void 0, false, {
+                        fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/ClassHeaderButtons.tsx",
+                        lineNumber: 249,
+                        columnNumber: 19
+                      }, this)
+                    ]
+                  },
+                  void 0,
+                  true,
+                  {
+                    fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/ClassHeaderButtons.tsx",
+                    lineNumber: 238,
+                    columnNumber: 17
+                  },
+                  this
+                )
+              ] }, void 0, true, {
+                fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/ClassHeaderButtons.tsx",
+                lineNumber: 236,
+                columnNumber: 15
+              }, this)
+            ] }, void 0, true, {
+              fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/ClassHeaderButtons.tsx",
+              lineNumber: 179,
+              columnNumber: 13
+            }, this)
+          ]
+        },
+        void 0,
+        true,
+        {
+          fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/ClassHeaderButtons.tsx",
+          lineNumber: 169,
+          columnNumber: 9
+        },
+        this
+      )
+    ] }, void 0, true, {
+      fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/ClassHeaderButtons.tsx",
+      lineNumber: 157,
+      columnNumber: 7
+    }, this)
+  ] }, void 0, true, {
+    fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/ClassHeaderButtons.tsx",
+    lineNumber: 143,
+    columnNumber: 5
+  }, this);
+}
+_s(ClassHeaderButtons, "G/ro0t5knvPfL8sXrMHLTAG/ukc=", false, function() {
+  return [useNavigate];
+});
+_c = ClassHeaderButtons;
+var _c;
+$RefreshReg$(_c, "ClassHeaderButtons");
+if (import.meta.hot && !inWebWorker) {
+  window.$RefreshReg$ = prevRefreshReg;
+  window.$RefreshSig$ = prevRefreshSig;
+}
+if (import.meta.hot && !inWebWorker) {
+  RefreshRuntime.__hmr_import(import.meta.url).then((currentExports) => {
+    RefreshRuntime.registerExportsForReactRefresh("C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/ClassHeaderButtons.tsx", currentExports);
+    import.meta.hot.accept((nextExports) => {
+      if (!nextExports) return;
+      const invalidateMessage = RefreshRuntime.validateRefreshBoundaryAndEnqueueUpdate("C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/ClassHeaderButtons.tsx", currentExports, nextExports);
+      if (invalidateMessage) import.meta.hot.invalidate(invalidateMessage);
+    });
+  });
+}
+
+//# sourceMappingURL=data:application/json;base64,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cnNIb3Jpem9udGFsIiwiQnV0dG9uIiwiTFNfRElGRl9LRVkiLCJMU19DT1VOVF9NT0RFX0tFWSIsIkxTX0NPVU5UX0tFWSIsIkxTX1NUWUxFX0tFWSIsIkZJWEVEX0NPVU5UUyIsImlzRGlmZmljdWx0eSIsIngiLCJpc1N0eWxlIiwiaXNDYXJkQ291bnRNb2RlIiwiY291bnRTZWxlY3RWYWx1ZSIsIm1vZGUiLCJjb3VudCIsIlN0cmluZyIsIkNsYXNzSGVhZGVyQnV0dG9ucyIsImNsYXNzSWQiLCJvbkdlbmVyYXRlIiwiY2FuR2VuZXJhdGVGbGFzaGNhcmRzIiwiZ2VuZXJhdGVEaXNhYmxlZFJlYXNvbiIsIl9zIiwibmF2aWdhdGUiLCJ0b0lkIiwiTnVtYmVyIiwiYnVzeSIsInNldEJ1c3kiLCJvcGVuIiwic2V0T3BlbiIsIm1lbnVSZWYiLCJkaWZmaWN1bHR5Iiwic2V0RGlmZmljdWx0eSIsInJhdyIsImxvY2FsU3RvcmFnZSIsImdldEl0ZW0iLCJjYXJkQ291bnRNb2RlIiwic2V0Q2FyZENvdW50TW9kZSIsInNldENvdW50IiwiaXNGaW5pdGUiLCJzdHlsZSIsInNldFN0eWxlIiwic2V0SXRlbSIsIm9uUG9pbnRlckRvd24iLCJlIiwiY3VycmVudCIsImNvbnRhaW5zIiwidGFyZ2V0Iiwib25LZXlEb3duIiwia2V5Iiwid2luZG93IiwiYWRkRXZlbnRMaXN0ZW5lciIsInJlbW92ZUV2ZW50TGlzdGVuZXIiLCJoYW5kbGVHZW5lcmF0ZSIsInJlcXVlc3RlZENvdW50IiwidW5kZWZpbmVkIiwiY291bnRXYXJuaW5nIiwidiIsInZhbCIsInZhbHVlIiwibWFwIiwibiIsIk1hdGgiLCJtYXgiLCJtaW4iLCJfYyIsIiRSZWZyZXNoUmVnJCJdLCJpZ25vcmVMaXN0IjpbXSwic291cmNlcyI6WyJDbGFzc0hlYWRlckJ1dHRvbnMudHN4Il0sInNvdXJjZXNDb250ZW50IjpbImltcG9ydCB7IHVzZUVmZmVjdCwgdXNlUmVmLCB1c2VTdGF0ZSB9IGZyb20gXCJyZWFjdFwiO1xuaW1wb3J0IHsgdXNlTmF2aWdhdGUgfSBmcm9tIFwicmVhY3Qtcm91dGVyLWRvbVwiO1xuaW1wb3J0IHsgU2xpZGVyc0hvcml6b250YWwgfSBmcm9tIFwibHVjaWRlLXJlYWN0XCI7XG5pbXBvcnQgQnV0dG9uIGZyb20gXCIuL0J1dHRvblwiO1xuXG50eXBlIERpZmZpY3VsdHkgPSBcImVhc3lcIiB8IFwibWVkaXVtXCIgfCBcImhhcmRcIjtcbnR5cGUgU3R5bGUgPSBcIm1peGVkXCIgfCBcImRlZmluaXRpb25zXCIgfCBcImNvbmNlcHR1YWxcIiB8IFwicWFcIjtcbnR5cGUgQ2FyZENvdW50TW9kZSA9IFwiYXV0b1wiIHwgXCJmaXhlZFwiIHwgXCJjdXN0b21cIjtcblxuZXhwb3J0IHR5cGUgRmxhc2hjYXJkR2VuZXJhdGlvbk9wdGlvbnMgPSB7XG4gIGRpZmZpY3VsdHk6IERpZmZpY3VsdHk7XG4gIHN0eWxlOiBTdHlsZTtcbiAgY2FyZENvdW50TW9kZTogQ2FyZENvdW50TW9kZTtcbiAgcmVxdWVzdGVkQ291bnQ/OiBudW1iZXI7XG59O1xuXG50eXBlIFByb3BzID0ge1xuICBjbGFzc0lkOiBzdHJpbmcgfCBudW1iZXI7XG4gIGNhbkdlbmVyYXRlRmxhc2hjYXJkcz86IGJvb2xlYW47XG4gIGdlbmVyYXRlRGlzYWJsZWRSZWFzb24/OiBzdHJpbmc7XG4gIG9uR2VuZXJhdGU/OiAob3B0czogRmxhc2hjYXJkR2VuZXJhdGlvbk9wdGlvbnMpID0+IFByb21pc2U8dm9pZD4gfCB2b2lkO1xufTtcblxuY29uc3QgTFNfRElGRl9LRVkgPSBcImZjX3ByZWZfZGlmZmljdWx0eVwiO1xuY29uc3QgTFNfQ09VTlRfTU9ERV9LRVkgPSBcImZjX3ByZWZfY291bnRfbW9kZVwiO1xuY29uc3QgTFNfQ09VTlRfS0VZID0gXCJmY19wcmVmX2NvdW50XCI7XG5jb25zdCBMU19TVFlMRV9LRVkgPSBcImZjX3ByZWZfc3R5bGVcIjtcbmNvbnN0IEZJWEVEX0NPVU5UUyA9IFsxMCwgMjAsIDMwLCA0MF0gYXMgY29uc3Q7XG5cbmZ1bmN0aW9uIGlzRGlmZmljdWx0eSh4OiB1bmtub3duKTogeCBpcyBEaWZmaWN1bHR5IHtcbiAgcmV0dXJuIHggPT09IFwiZWFzeVwiIHx8IHggPT09IFwibWVkaXVtXCIgfHwgeCA9PT0gXCJoYXJkXCI7XG59XG5cbmZ1bmN0aW9uIGlzU3R5bGUoeDogdW5rbm93bik6IHggaXMgU3R5bGUge1xuICByZXR1cm4geCA9PT0gXCJtaXhlZFwiIHx8IHggPT09IFwiZGVmaW5pdGlvbnNcIiB8fCB4ID09PSBcImNvbmNlcHR1YWxcIiB8fCB4ID09PSBcInFhXCI7XG59XG5cbmZ1bmN0aW9uIGlzQ2FyZENvdW50TW9kZSh4OiB1bmtub3duKTogeCBpcyBDYXJkQ291bnRNb2RlIHtcbiAgcmV0dXJuIHggPT09IFwiYXV0b1wiIHx8IHggPT09IFwiZml4ZWRcIiB8fCB4ID09PSBcImN1c3RvbVwiO1xufVxuXG5mdW5jdGlvbiBjb3VudFNlbGVjdFZhbHVlKG1vZGU6IENhcmRDb3VudE1vZGUsIGNvdW50OiBudW1iZXIpIHtcbiAgaWYgKG1vZGUgPT09IFwiYXV0b1wiKSByZXR1cm4gXCJhdXRvXCI7XG4gIGlmIChtb2RlID09PSBcImN1c3RvbVwiKSByZXR1cm4gXCJjdXN0b21cIjtcbiAgcmV0dXJuIFN0cmluZyhjb3VudCk7XG59XG5cbmV4cG9ydCBkZWZhdWx0IGZ1bmN0aW9uIENsYXNzSGVhZGVyQnV0dG9ucyh7XG4gIGNsYXNzSWQsXG4gIG9uR2VuZXJhdGUsXG4gIGNhbkdlbmVyYXRlRmxhc2hjYXJkcyA9IHRydWUsXG4gIGdlbmVyYXRlRGlzYWJsZWRSZWFzb24sXG59OiBQcm9wcykge1xuICBjb25zdCBuYXZpZ2F0ZSA9IHVzZU5hdmlnYXRlKCk7XG4gIGNvbnN0IHRvSWQgPSBOdW1iZXIoY2xhc3NJZCk7XG5cbiAgY29uc3QgW2J1c3ksIHNldEJ1c3ldID0gdXNlU3RhdGUoZmFsc2UpO1xuICBjb25zdCBbb3Blbiwgc2V0T3Blbl0gPSB1c2VTdGF0ZShmYWxzZSk7XG4gIGNvbnN0IG1lbnVSZWYgPSB1c2VSZWY8SFRNTERpdkVsZW1lbnQgfCBudWxsPihudWxsKTtcbiAgY29uc3QgW2RpZmZpY3VsdHksIHNldERpZmZpY3VsdHldID0gdXNlU3RhdGU8RGlmZmljdWx0eT4oKCkgPT4ge1xuICAgIGNvbnN0IHJhdyA9IGxvY2FsU3RvcmFnZS5nZXRJdGVtKExTX0RJRkZfS0VZKTtcbiAgICByZXR1cm4gaXNEaWZmaWN1bHR5KHJhdykgPyByYXcgOiBcIm1lZGl1bVwiO1xuICB9KTtcbiAgY29uc3QgW2NhcmRDb3VudE1vZGUsIHNldENhcmRDb3VudE1vZGVdID0gdXNlU3RhdGU8Q2FyZENvdW50TW9kZT4oKCkgPT4ge1xuICAgIGNvbnN0IHJhdyA9IGxvY2FsU3RvcmFnZS5nZXRJdGVtKExTX0NPVU5UX01PREVfS0VZKTtcbiAgICByZXR1cm4gaXNDYXJkQ291bnRNb2RlKHJhdykgPyByYXcgOiBcImF1dG9cIjtcbiAgfSk7XG4gIGNvbnN0IFtjb3VudCwgc2V0Q291bnRdID0gdXNlU3RhdGU8bnVtYmVyPigoKSA9PiB7XG4gICAgY29uc3QgcmF3ID0gTnVtYmVyKGxvY2FsU3RvcmFnZS5nZXRJdGVtKExTX0NPVU5UX0tFWSkpO1xuICAgIHJldHVybiBOdW1iZXIuaXNGaW5pdGUocmF3KSAmJiByYXcgPj0gMSA/IHJhdyA6IDIwO1xuICB9KTtcbiAgY29uc3QgW3N0eWxlLCBzZXRTdHlsZV0gPSB1c2VTdGF0ZTxTdHlsZT4oKCkgPT4ge1xuICAgIGNvbnN0IHJhdyA9IGxvY2FsU3RvcmFnZS5nZXRJdGVtKExTX1NUWUxFX0tFWSk7XG4gICAgcmV0dXJuIGlzU3R5bGUocmF3KSA/IHJhdyA6IFwibWl4ZWRcIjtcbiAgfSk7XG5cbiAgdXNlRWZmZWN0KCgpID0+IGxvY2FsU3RvcmFnZS5zZXRJdGVtKExTX0RJRkZfS0VZLCBkaWZmaWN1bHR5KSwgW2RpZmZpY3VsdHldKTtcbiAgdXNlRWZmZWN0KCgpID0+IGxvY2FsU3RvcmFnZS5zZXRJdGVtKExTX0NPVU5UX01PREVfS0VZLCBjYXJkQ291bnRNb2RlKSwgW2NhcmRDb3VudE1vZGVdKTtcbiAgdXNlRWZmZWN0KCgpID0+IGxvY2FsU3RvcmFnZS5zZXRJdGVtKExTX0NPVU5UX0tFWSwgU3RyaW5nKGNvdW50KSksIFtjb3VudF0pO1xuICB1c2VFZmZlY3QoKCkgPT4gbG9jYWxTdG9yYWdlLnNldEl0ZW0oTFNfU1RZTEVfS0VZLCBzdHlsZSksIFtzdHlsZV0pO1xuXG4gIHVzZUVmZmVjdCgoKSA9PiB7XG4gICAgaWYgKCFvcGVuKSByZXR1cm47XG4gICAgY29uc3Qgb25Qb2ludGVyRG93biA9IChlOiBNb3VzZUV2ZW50KSA9PiB7XG4gICAgICBpZiAoIW1lbnVSZWYuY3VycmVudCB8fCBtZW51UmVmLmN1cnJlbnQuY29udGFpbnMoZS50YXJnZXQgYXMgTm9kZSkpIHJldHVybjtcbiAgICAgIHNldE9wZW4oZmFsc2UpO1xuICAgIH07XG4gICAgY29uc3Qgb25LZXlEb3duID0gKGU6IEtleWJvYXJkRXZlbnQpID0+IHtcbiAgICAgIGlmIChlLmtleSA9PT0gXCJFc2NhcGVcIikgc2V0T3BlbihmYWxzZSk7XG4gICAgfTtcbiAgICB3aW5kb3cuYWRkRXZlbnRMaXN0ZW5lcihcIm1vdXNlZG93blwiLCBvblBvaW50ZXJEb3duKTtcbiAgICB3aW5kb3cuYWRkRXZlbnRMaXN0ZW5lcihcImtleWRvd25cIiwgb25LZXlEb3duKTtcbiAgICByZXR1cm4gKCkgPT4ge1xuICAgICAgd2luZG93LnJlbW92ZUV2ZW50TGlzdGVuZXIoXCJtb3VzZWRvd25cIiwgb25Qb2ludGVyRG93bik7XG4gICAgICB3aW5kb3cucmVtb3ZlRXZlbnRMaXN0ZW5lcihcImtleWRvd25cIiwgb25LZXlEb3duKTtcbiAgICB9O1xuICB9LCBbb3Blbl0pO1xuXG4gIGNvbnN0IGhhbmRsZUdlbmVyYXRlID0gYXN5bmMgKCkgPT4ge1xuICAgIGlmICghdG9JZCB8fCAhY2FuR2VuZXJhdGVGbGFzaGNhcmRzIHx8IGJ1c3kpIHJldHVybjtcbiAgICBpZiAoIW9uR2VuZXJhdGUpIHtcbiAgICAgIG5hdmlnYXRlKGAvY2xhc3Nlcy8ke3RvSWR9L2ZsYXNoY2FyZHNgKTtcbiAgICAgIHJldHVybjtcbiAgICB9XG4gICAgdHJ5IHtcbiAgICAgIHNldEJ1c3kodHJ1ZSk7XG4gICAgICBhd2FpdCBvbkdlbmVyYXRlKHtcbiAgICAgICAgZGlmZmljdWx0eSxcbiAgICAgICAgc3R5bGUsXG4gICAgICAgIGNhcmRDb3VudE1vZGUsXG4gICAgICAgIHJlcXVlc3RlZENvdW50OiBjYXJkQ291bnRNb2RlID09PSBcImF1dG9cIiA/IHVuZGVmaW5lZCA6IGNvdW50LFxuICAgICAgfSk7XG4gICAgICBuYXZpZ2F0ZShgL2NsYXNzZXMvJHt0b0lkfS9mbGFzaGNhcmRzYCk7XG4gICAgfSBmaW5hbGx5IHtcbiAgICAgIHNldEJ1c3koZmFsc2UpO1xuICAgIH1cbiAgfTtcblxuICBjb25zdCBjb3VudFdhcm5pbmcgPSBjYXJkQ291bnRNb2RlID09PSBcImN1c3RvbVwiICYmIGNvdW50ID4gNTBcbiAgICA/IFwiTGFyZ2UgY3VzdG9tIHNldHMgY2FuIHRha2UgbG9uZ2VyIGFuZCBtYXkgZ2VuZXJhdGUgZmV3ZXIgdXNlZnVsIGNhcmRzLlwiXG4gICAgOiBudWxsO1xuXG4gIHJldHVybiAoXG4gICAgPGRpdiBjbGFzc05hbWU9XCJmbGV4IGZsZXgtd3JhcCBpdGVtcy1jZW50ZXIganVzdGlmeS1lbmQgZ2FwLTJcIj5cbiAgICAgIDxCdXR0b25cbiAgICAgICAgdmFyaWFudD1cInByaW1hcnlcIlxuICAgICAgICBvbkNsaWNrPXtoYW5kbGVHZW5lcmF0ZX1cbiAgICAgICAgZGlzYWJsZWQ9e2J1c3kgfHwgIWNhbkdlbmVyYXRlRmxhc2hjYXJkc31cbiAgICAgICAgdGl0bGU9e2dlbmVyYXRlRGlzYWJsZWRSZWFzb24gfHwgXCJHZW5lcmF0ZSBmbGFzaGNhcmRzIGZyb20gc2VsZWN0ZWQgZG9jdW1lbnRzXCJ9XG4gICAgICA+XG4gICAgICAgIHtidXN5ID8gXCJHZW5lcmF0aW5nIGZsYXNoY2FyZHMuLi5cIiA6IFwiR2VuZXJhdGVcIn1cbiAgICAgIDwvQnV0dG9uPlxuXG4gICAgICA8QnV0dG9uIG9uQ2xpY2s9eygpID0+IG5hdmlnYXRlKGAvY2xhc3Nlcy8ke3RvSWR9L2ZsYXNoY2FyZHNgKX0gdGl0bGU9XCJPcGVuIGZsYXNoY2FyZHNcIj5cbiAgICAgICAgVmlldyBmbGFzaGNhcmRzXG4gICAgICA8L0J1dHRvbj5cblxuICAgICAgPGRpdiByZWY9e21lbnVSZWZ9IGNsYXNzTmFtZT1cInJlbGF0aXZlXCI+XG4gICAgICAgIDxidXR0b25cbiAgICAgICAgICB0eXBlPVwiYnV0dG9uXCJcbiAgICAgICAgICBjbGFzc05hbWU9XCJpbmxpbmUtZmxleCBoLTkgaXRlbXMtY2VudGVyIGdhcC0yIHJvdW5kZWQteGwgYm9yZGVyIGJvcmRlci10b2tlbiBzdXJmYWNlIHB4LTMgdGV4dC1zbSBmb250LXNlbWlib2xkIHRleHQtbWFpbiBob3ZlcjpiZy1bdmFyKC0tc3VyZmFjZS0yKV1cIlxuICAgICAgICAgIG9uQ2xpY2s9eygpID0+IHNldE9wZW4oKHYpID0+ICF2KX1cbiAgICAgICAgICBhcmlhLWhhc3BvcHVwPVwiZGlhbG9nXCJcbiAgICAgICAgICBhcmlhLWV4cGFuZGVkPXtvcGVufVxuICAgICAgICA+XG4gICAgICAgICAgPFNsaWRlcnNIb3Jpem9udGFsIGNsYXNzTmFtZT1cImgtNCB3LTRcIiAvPlxuICAgICAgICAgIE9wdGlvbnNcbiAgICAgICAgPC9idXR0b24+XG4gICAgICAgIHtvcGVuICYmIChcbiAgICAgICAgICA8ZGl2XG4gICAgICAgICAgICByb2xlPVwiZGlhbG9nXCJcbiAgICAgICAgICAgIGFyaWEtbGFiZWw9XCJHZW5lcmF0aW9uIG9wdGlvbnNcIlxuICAgICAgICAgICAgY2xhc3NOYW1lPVwiZml4ZWQgaW5zZXQteC0zIGJvdHRvbS0zIHotNDAgcm91bmRlZC0yeGwgYm9yZGVyIGJvcmRlci10b2tlbiBzdXJmYWNlIHAtNCBzaGFkb3cteGwgc206YWJzb2x1dGUgc206Ym90dG9tLWF1dG8gc206cmlnaHQtMCBzbTptdC0yIHNtOnctODBcIlxuICAgICAgICAgID5cbiAgICAgICAgICAgIDxkaXYgY2xhc3NOYW1lPVwibWItM1wiPlxuICAgICAgICAgICAgICA8ZGl2IGNsYXNzTmFtZT1cInRleHQtc20gZm9udC1zZW1pYm9sZCB0ZXh0LW1haW5cIj5HZW5lcmF0aW9uIG9wdGlvbnM8L2Rpdj5cbiAgICAgICAgICAgICAgPGRpdiBjbGFzc05hbWU9XCJtdC0xIHRleHQteHMgdGV4dC1tdXRlZFwiPkF1dG8gY2hvb3NlcyBhIHVzZWZ1bCBjYXJkIGNvdW50IGZyb20gdGhlIHNlbGVjdGVkIGNvbnRlbnQuPC9kaXY+XG4gICAgICAgICAgICA8L2Rpdj5cblxuICAgICAgICAgICAgPGRpdiBjbGFzc05hbWU9XCJzcGFjZS15LTNcIj5cbiAgICAgICAgICAgICAgPGxhYmVsIGNsYXNzTmFtZT1cImJsb2NrXCI+XG4gICAgICAgICAgICAgICAgPHNwYW4gY2xhc3NOYW1lPVwidGV4dC14cyBmb250LW1lZGl1bSB0ZXh0LW11dGVkXCI+RGlmZmljdWx0eTwvc3Bhbj5cbiAgICAgICAgICAgICAgICA8c2VsZWN0XG4gICAgICAgICAgICAgICAgICB2YWx1ZT17ZGlmZmljdWx0eX1cbiAgICAgICAgICAgICAgICAgIG9uQ2hhbmdlPXsoZSkgPT4ge1xuICAgICAgICAgICAgICAgICAgICBjb25zdCB2YWwgPSBlLnRhcmdldC52YWx1ZTtcbiAgICAgICAgICAgICAgICAgICAgaWYgKGlzRGlmZmljdWx0eSh2YWwpKSBzZXREaWZmaWN1bHR5KHZhbCk7XG4gICAgICAgICAgICAgICAgICB9fVxuICAgICAgICAgICAgICAgICAgY2xhc3NOYW1lPVwibXQtMSBoLTEwIHctZnVsbCByb3VuZGVkLXhsIGJvcmRlciBib3JkZXItdG9rZW4gc3VyZmFjZSBweC0zIHRleHQtc20gdGV4dC1tYWluXCJcbiAgICAgICAgICAgICAgICA+XG4gICAgICAgICAgICAgICAgICA8b3B0aW9uIHZhbHVlPVwiZWFzeVwiPkVhc3k8L29wdGlvbj5cbiAgICAgICAgICAgICAgICAgIDxvcHRpb24gdmFsdWU9XCJtZWRpdW1cIj5NZWRpdW08L29wdGlvbj5cbiAgICAgICAgICAgICAgICAgIDxvcHRpb24gdmFsdWU9XCJoYXJkXCI+SGFyZDwvb3B0aW9uPlxuICAgICAgICAgICAgICAgIDwvc2VsZWN0PlxuICAgICAgICAgICAgICA8L2xhYmVsPlxuXG4gICAgICAgICAgICAgIDxsYWJlbCBjbGFzc05hbWU9XCJibG9ja1wiPlxuICAgICAgICAgICAgICAgIDxzcGFuIGNsYXNzTmFtZT1cInRleHQteHMgZm9udC1tZWRpdW0gdGV4dC1tdXRlZFwiPk51bWJlciBvZiBjYXJkczwvc3Bhbj5cbiAgICAgICAgICAgICAgICA8c2VsZWN0XG4gICAgICAgICAgICAgICAgICB2YWx1ZT17Y291bnRTZWxlY3RWYWx1ZShjYXJkQ291bnRNb2RlLCBjb3VudCl9XG4gICAgICAgICAgICAgICAgICBvbkNoYW5nZT17KGUpID0+IHtcbiAgICAgICAgICAgICAgICAgICAgY29uc3QgdmFsID0gZS50YXJnZXQudmFsdWU7XG4gICAgICAgICAgICAgICAgICAgIGlmICh2YWwgPT09IFwiYXV0b1wiKSBzZXRDYXJkQ291bnRNb2RlKFwiYXV0b1wiKTtcbiAgICAgICAgICAgICAgICAgICAgZWxzZSBpZiAodmFsID09PSBcImN1c3RvbVwiKSBzZXRDYXJkQ291bnRNb2RlKFwiY3VzdG9tXCIpO1xuICAgICAgICAgICAgICAgICAgICBlbHNlIHtcbiAgICAgICAgICAgICAgICAgICAgICBzZXRDYXJkQ291bnRNb2RlKFwiZml4ZWRcIik7XG4gICAgICAgICAgICAgICAgICAgICAgc2V0Q291bnQoTnVtYmVyKHZhbCkpO1xuICAgICAgICAgICAgICAgICAgICB9XG4gICAgICAgICAgICAgICAgICB9fVxuICAgICAgICAgICAgICAgICAgY2xhc3NOYW1lPVwibXQtMSBoLTEwIHctZnVsbCByb3VuZGVkLXhsIGJvcmRlciBib3JkZXItdG9rZW4gc3VyZmFjZSBweC0zIHRleHQtc20gdGV4dC1tYWluXCJcbiAgICAgICAgICAgICAgICA+XG4gICAgICAgICAgICAgICAgICA8b3B0aW9uIHZhbHVlPVwiYXV0b1wiPkF1dG88L29wdGlvbj5cbiAgICAgICAgICAgICAgICAgIHtGSVhFRF9DT1VOVFMubWFwKChuKSA9PiAoXG4gICAgICAgICAgICAgICAgICAgIDxvcHRpb24ga2V5PXtufSB2YWx1ZT17bn0+XG4gICAgICAgICAgICAgICAgICAgICAge259XG4gICAgICAgICAgICAgICAgICAgIDwvb3B0aW9uPlxuICAgICAgICAgICAgICAgICAgKSl9XG4gICAgICAgICAgICAgICAgICA8b3B0aW9uIHZhbHVlPVwiY3VzdG9tXCI+Q3VzdG9tPC9vcHRpb24+XG4gICAgICAgICAgICAgICAgPC9zZWxlY3Q+XG4gICAgICAgICAgICAgIDwvbGFiZWw+XG5cbiAgICAgICAgICAgICAge2NhcmRDb3VudE1vZGUgPT09IFwiY3VzdG9tXCIgJiYgKFxuICAgICAgICAgICAgICAgIDxsYWJlbCBjbGFzc05hbWU9XCJibG9ja1wiPlxuICAgICAgICAgICAgICAgICAgPHNwYW4gY2xhc3NOYW1lPVwidGV4dC14cyBmb250LW1lZGl1bSB0ZXh0LW11dGVkXCI+Q3VzdG9tIGNvdW50PC9zcGFuPlxuICAgICAgICAgICAgICAgICAgPGlucHV0XG4gICAgICAgICAgICAgICAgICAgIHR5cGU9XCJudW1iZXJcIlxuICAgICAgICAgICAgICAgICAgICBtaW49ezF9XG4gICAgICAgICAgICAgICAgICAgIG1heD17MTAwfVxuICAgICAgICAgICAgICAgICAgICB2YWx1ZT17Y291bnR9XG4gICAgICAgICAgICAgICAgICAgIG9uQ2hhbmdlPXsoZSkgPT4gc2V0Q291bnQoTWF0aC5tYXgoMSwgTWF0aC5taW4oMTAwLCBOdW1iZXIoZS50YXJnZXQudmFsdWUpIHx8IDEpKSl9XG4gICAgICAgICAgICAgICAgICAgIGNsYXNzTmFtZT1cIm10LTEgaC0xMCB3LWZ1bGwgcm91bmRlZC14bCBib3JkZXIgYm9yZGVyLXRva2VuIHN1cmZhY2UgcHgtMyB0ZXh0LXNtIHRleHQtbWFpblwiXG4gICAgICAgICAgICAgICAgICAvPlxuICAgICAgICAgICAgICAgICAge2NvdW50V2FybmluZyAmJiA8c3BhbiBjbGFzc05hbWU9XCJtdC0xIGJsb2NrIHRleHQteHMgdGV4dC1tdXRlZFwiPntjb3VudFdhcm5pbmd9PC9zcGFuPn1cbiAgICAgICAgICAgICAgICA8L2xhYmVsPlxuICAgICAgICAgICAgICApfVxuXG4gICAgICAgICAgICAgIDxsYWJlbCBjbGFzc05hbWU9XCJibG9ja1wiPlxuICAgICAgICAgICAgICAgIDxzcGFuIGNsYXNzTmFtZT1cInRleHQteHMgZm9udC1tZWRpdW0gdGV4dC1tdXRlZFwiPlN0eWxlPC9zcGFuPlxuICAgICAgICAgICAgICAgIDxzZWxlY3RcbiAgICAgICAgICAgICAgICAgIHZhbHVlPXtzdHlsZX1cbiAgICAgICAgICAgICAgICAgIG9uQ2hhbmdlPXsoZSkgPT4ge1xuICAgICAgICAgICAgICAgICAgICBjb25zdCB2YWwgPSBlLnRhcmdldC52YWx1ZTtcbiAgICAgICAgICAgICAgICAgICAgaWYgKGlzU3R5bGUodmFsKSkgc2V0U3R5bGUodmFsKTtcbiAgICAgICAgICAgICAgICAgIH19XG4gICAgICAgICAgICAgICAgICBjbGFzc05hbWU9XCJtdC0xIGgtMTAgdy1mdWxsIHJvdW5kZWQteGwgYm9yZGVyIGJvcmRlci10b2tlbiBzdXJmYWNlIHB4LTMgdGV4dC1zbSB0ZXh0LW1haW5cIlxuICAgICAgICAgICAgICAgID5cbiAgICAgICAgICAgICAgICAgIDxvcHRpb24gdmFsdWU9XCJtaXhlZFwiPk1peGVkPC9vcHRpb24+XG4gICAgICAgICAgICAgICAgICA8b3B0aW9uIHZhbHVlPVwiZGVmaW5pdGlvbnNcIj5EZWZpbml0aW9uczwvb3B0aW9uPlxuICAgICAgICAgICAgICAgICAgPG9wdGlvbiB2YWx1ZT1cImNvbmNlcHR1YWxcIj5Db25jZXB0dWFsPC9vcHRpb24+XG4gICAgICAgICAgICAgICAgICA8b3B0aW9uIHZhbHVlPVwicWFcIj5RJmFtcDtBPC9vcHRpb24+XG4gICAgICAgICAgICAgICAgPC9zZWxlY3Q+XG4gICAgICAgICAgICAgIDwvbGFiZWw+XG4gICAgICAgICAgICA8L2Rpdj5cbiAgICAgICAgICA8L2Rpdj5cbiAgICAgICAgKX1cbiAgICAgIDwvZGl2PlxuICAgIDwvZGl2PlxuICApO1xufVxuIl0sImZpbGUiOiJDOi9Vc2Vycy9SYWJiaXlhL0Rlc2t0b3AvTm90ZXNjYXBlL2Zyb250ZW5kL3NyYy9jb21wb25lbnRzL0NsYXNzSGVhZGVyQnV0dG9ucy50c3gifQ==

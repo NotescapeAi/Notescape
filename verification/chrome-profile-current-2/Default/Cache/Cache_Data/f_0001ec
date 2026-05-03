@@ -1,0 +1,563 @@
+import { createHotContext as __vite__createHotContext } from "/@vite/client";import.meta.hot = __vite__createHotContext("/src/components/AppSidebar.tsx");import __vite__cjsImport0_react_jsxDevRuntime from "/node_modules/.vite/deps/react_jsx-dev-runtime.js?v=299a1942"; const Fragment = __vite__cjsImport0_react_jsxDevRuntime["Fragment"]; const jsxDEV = __vite__cjsImport0_react_jsxDevRuntime["jsxDEV"];
+import * as RefreshRuntime from "/@react-refresh";
+const inWebWorker = typeof WorkerGlobalScope !== "undefined" && self instanceof WorkerGlobalScope;
+let prevRefreshReg;
+let prevRefreshSig;
+if (import.meta.hot && !inWebWorker) {
+  if (!window.$RefreshReg$) {
+    throw new Error(
+      "@vitejs/plugin-react can't detect preamble. Something is wrong."
+    );
+  }
+  prevRefreshReg = window.$RefreshReg$;
+  prevRefreshSig = window.$RefreshSig$;
+  window.$RefreshReg$ = RefreshRuntime.getRefreshReg("C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx");
+  window.$RefreshSig$ = RefreshRuntime.createSignatureFunctionForTransform;
+}
+var _s = $RefreshSig$();
+import { NavLink, useLocation, useNavigate } from "/node_modules/.vite/deps/react-router-dom.js?v=299a1942";
+import {
+  LayoutDashboard,
+  FolderOpen,
+  MessageCircle,
+  Sparkles,
+  ClipboardList,
+  Mic,
+  Settings,
+  User,
+  LogOut,
+  ChevronLeft,
+  X
+} from "/node_modules/.vite/deps/lucide-react.js?v=299a1942";
+import BrandLogo from "/src/components/BrandLogo.tsx?t=1777623640864";
+const item = "group relative flex min-h-[44px] items-center gap-3 rounded-xl px-3 py-2.5 text-[14px] font-semibold transition-colors duration-150";
+const active = "bg-[var(--surface-elevated)] text-[var(--text-main)] shadow-sm ring-1 ring-[var(--border)]";
+const inactiveHover = "hover:bg-[var(--surface-2)] hover:text-[var(--text-main)]";
+export default function AppSidebar({ collapsed, onToggle, mobileOpen = false, onNavigate }) {
+  _s();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const isFlashcardsActive = location.pathname.includes("/flashcards") || location.pathname.startsWith("/classes") && location.state?.tab === "flashcards";
+  const shellClass = "bg-[var(--bg-surface)] text-[var(--text)] border border-[var(--border-subtle)] shadow-[var(--shadow-soft)] rounded-2xl overflow-hidden";
+  const textNeutral = "text-[var(--text-muted)]";
+  const iconNeutral = "text-[var(--text-muted)]";
+  function navActivate() {
+    onNavigate?.();
+  }
+  return /* @__PURE__ */ jsxDEV(
+    "aside",
+    {
+      className: `fixed left-0 top-0 z-[50] h-screen transition-transform duration-200 ease-out ${mobileOpen ? "translate-x-0" : "max-lg:-translate-x-[calc(100%+12px)] max-lg:pointer-events-none"} ${collapsed ? "p-2" : "p-3 sm:p-4"} lg:translate-x-0 lg:pointer-events-auto`,
+      style: { width: collapsed ? "92px" : "276px" },
+      "aria-hidden": false,
+      children: /* @__PURE__ */ jsxDEV("div", { className: `flex h-full flex-col ${collapsed ? "p-2.5" : "p-3"} ${shellClass}`, children: [
+        /* @__PURE__ */ jsxDEV(
+          "header",
+          {
+            className: `relative flex h-[56px] shrink-0 items-center ${collapsed ? "justify-center" : "justify-between"} gap-2 px-1`,
+            children: [
+              onNavigate ? /* @__PURE__ */ jsxDEV(
+                "button",
+                {
+                  type: "button",
+                  onClick: onNavigate,
+                  className: "absolute right-1 top-1/2 z-10 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg text-[var(--text-muted)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text-main)] lg:hidden",
+                  "aria-label": "Close navigation menu",
+                  children: /* @__PURE__ */ jsxDEV(X, { className: "h-5 w-5" }, void 0, false, {
+                    fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+                    lineNumber: 83,
+                    columnNumber: 15
+                  }, this)
+                },
+                void 0,
+                false,
+                {
+                  fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+                  lineNumber: 77,
+                  columnNumber: 11
+                },
+                this
+              ) : null,
+              collapsed ? /* @__PURE__ */ jsxDEV(BrandLogo, { variant: "icon-only", to: "", showText: false }, void 0, false, {
+                fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+                lineNumber: 87,
+                columnNumber: 11
+              }, this) : /* @__PURE__ */ jsxDEV(BrandLogo, { variant: "sidebar", to: "", className: "min-w-0 max-w-[calc(100%-2.5rem)] px-0.5" }, void 0, false, {
+                fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+                lineNumber: 89,
+                columnNumber: 11
+              }, this),
+              /* @__PURE__ */ jsxDEV(
+                "button",
+                {
+                  type: "button",
+                  onClick: onToggle,
+                  className: `hidden h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[var(--text-muted)] transition hover:bg-[var(--surface-2)] hover:text-[var(--primary)] lg:flex ${collapsed ? "mt-0.5" : ""}`,
+                  "aria-label": collapsed ? "Expand sidebar" : "Collapse sidebar",
+                  children: /* @__PURE__ */ jsxDEV(
+                    ChevronLeft,
+                    {
+                      className: "h-4 w-4",
+                      style: {
+                        transition: "transform 0.35s cubic-bezier(0.4, 0, 0.2, 1)",
+                        transform: collapsed ? "rotate(180deg)" : "rotate(0deg)"
+                      }
+                    },
+                    void 0,
+                    false,
+                    {
+                      fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+                      lineNumber: 99,
+                      columnNumber: 13
+                    },
+                    this
+                  )
+                },
+                void 0,
+                false,
+                {
+                  fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+                  lineNumber: 91,
+                  columnNumber: 11
+                },
+                this
+              )
+            ]
+          },
+          void 0,
+          true,
+          {
+            fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+            lineNumber: 73,
+            columnNumber: 9
+          },
+          this
+        ),
+        /* @__PURE__ */ jsxDEV("div", { className: "mx-1 shrink-0 border-b border-[var(--border)] opacity-80" }, void 0, false, {
+          fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+          lineNumber: 108,
+          columnNumber: 9
+        }, this),
+        /* @__PURE__ */ jsxDEV("nav", { className: "mt-4 min-h-0 flex-1 space-y-1 overflow-y-auto overscroll-contain pb-2", children: [
+          /* @__PURE__ */ jsxDEV(
+            NavLink,
+            {
+              to: "/dashboard",
+              onClick: navActivate,
+              className: ({ isActive }) => `${item} ${isActive ? active : inactiveHover} ${collapsed ? "justify-center px-2" : ""} ${isActive ? "text-[var(--text-main)]" : textNeutral}`,
+              title: collapsed ? "Dashboard" : void 0,
+              children: ({ isActive }) => /* @__PURE__ */ jsxDEV(Fragment, { children: [
+                /* @__PURE__ */ jsxDEV(
+                  LayoutDashboard,
+                  {
+                    className: `h-5 w-5 ${isActive ? "text-[var(--primary)]" : `${iconNeutral}`}`
+                  },
+                  void 0,
+                  false,
+                  {
+                    fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+                    lineNumber: 122,
+                    columnNumber: 17
+                  },
+                  this
+                ),
+                !collapsed && /* @__PURE__ */ jsxDEV("span", { children: "Dashboard" }, void 0, false, {
+                  fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+                  lineNumber: 125,
+                  columnNumber: 32
+                }, this)
+              ] }, void 0, true, {
+                fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+                lineNumber: 121,
+                columnNumber: 13
+              }, this)
+            },
+            void 0,
+            false,
+            {
+              fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+              lineNumber: 110,
+              columnNumber: 11
+            },
+            this
+          ),
+          /* @__PURE__ */ jsxDEV(
+            NavLink,
+            {
+              to: "/classes",
+              onClick: navActivate,
+              className: ({ isActive }) => `${item} ${isActive ? active : inactiveHover} ${collapsed ? "justify-center px-2" : ""} ${isActive ? "text-[var(--text-main)]" : textNeutral}`,
+              title: collapsed ? "Classes" : void 0,
+              children: ({ isActive }) => /* @__PURE__ */ jsxDEV(Fragment, { children: [
+                /* @__PURE__ */ jsxDEV(
+                  FolderOpen,
+                  {
+                    className: `h-5 w-5 ${isActive ? "text-[var(--primary)]" : `${iconNeutral}`}`
+                  },
+                  void 0,
+                  false,
+                  {
+                    fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+                    lineNumber: 142,
+                    columnNumber: 17
+                  },
+                  this
+                ),
+                !collapsed && /* @__PURE__ */ jsxDEV("span", { children: "Classes" }, void 0, false, {
+                  fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+                  lineNumber: 145,
+                  columnNumber: 32
+                }, this)
+              ] }, void 0, true, {
+                fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+                lineNumber: 141,
+                columnNumber: 13
+              }, this)
+            },
+            void 0,
+            false,
+            {
+              fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+              lineNumber: 130,
+              columnNumber: 11
+            },
+            this
+          ),
+          /* @__PURE__ */ jsxDEV(
+            "button",
+            {
+              type: "button",
+              onClick: () => {
+                navActivate();
+                navigate("/flashcards");
+              },
+              className: `w-full text-left ${item} ${isFlashcardsActive ? active : inactiveHover} ${collapsed ? "justify-center px-2" : ""} ${isFlashcardsActive ? "text-[var(--text-main)]" : textNeutral}`,
+              title: collapsed ? "Flashcards" : void 0,
+              children: [
+                /* @__PURE__ */ jsxDEV(
+                  Sparkles,
+                  {
+                    className: `h-5 w-5 ${isFlashcardsActive ? "text-[var(--primary)]" : `${iconNeutral}`}`
+                  },
+                  void 0,
+                  false,
+                  {
+                    fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+                    lineNumber: 161,
+                    columnNumber: 13
+                  },
+                  this
+                ),
+                !collapsed && /* @__PURE__ */ jsxDEV("span", { children: "Flashcards" }, void 0, false, {
+                  fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+                  lineNumber: 164,
+                  columnNumber: 28
+                }, this)
+              ]
+            },
+            void 0,
+            true,
+            {
+              fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+              lineNumber: 150,
+              columnNumber: 11
+            },
+            this
+          ),
+          /* @__PURE__ */ jsxDEV(
+            NavLink,
+            {
+              to: "/quizzes",
+              onClick: navActivate,
+              className: ({ isActive }) => `${item} ${isActive ? active : inactiveHover} ${collapsed ? "justify-center px-2" : ""} ${isActive ? "text-[var(--text-main)]" : textNeutral}`,
+              title: collapsed ? "Quizzes" : void 0,
+              children: ({ isActive }) => /* @__PURE__ */ jsxDEV(Fragment, { children: [
+                /* @__PURE__ */ jsxDEV(
+                  ClipboardList,
+                  {
+                    className: `h-5 w-5 ${isActive ? "text-[var(--primary)]" : iconNeutral}`
+                  },
+                  void 0,
+                  false,
+                  {
+                    fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+                    lineNumber: 180,
+                    columnNumber: 17
+                  },
+                  this
+                ),
+                !collapsed && /* @__PURE__ */ jsxDEV("span", { children: "Quizzes" }, void 0, false, {
+                  fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+                  lineNumber: 183,
+                  columnNumber: 32
+                }, this)
+              ] }, void 0, true, {
+                fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+                lineNumber: 179,
+                columnNumber: 13
+              }, this)
+            },
+            void 0,
+            false,
+            {
+              fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+              lineNumber: 168,
+              columnNumber: 11
+            },
+            this
+          ),
+          /* @__PURE__ */ jsxDEV(
+            NavLink,
+            {
+              to: "/chatbot",
+              onClick: navActivate,
+              className: ({ isActive }) => `${item} ${isActive ? active : inactiveHover} ${collapsed ? "justify-center px-2" : ""} ${isActive ? "text-[var(--text-main)]" : textNeutral}`,
+              title: collapsed ? "Study Assistant" : void 0,
+              children: ({ isActive }) => /* @__PURE__ */ jsxDEV(Fragment, { children: [
+                /* @__PURE__ */ jsxDEV(
+                  MessageCircle,
+                  {
+                    className: `h-5 w-5 ${isActive ? "text-[var(--primary)]" : iconNeutral}`
+                  },
+                  void 0,
+                  false,
+                  {
+                    fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+                    lineNumber: 200,
+                    columnNumber: 17
+                  },
+                  this
+                ),
+                !collapsed && /* @__PURE__ */ jsxDEV("span", { children: "Study Assistant" }, void 0, false, {
+                  fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+                  lineNumber: 203,
+                  columnNumber: 32
+                }, this)
+              ] }, void 0, true, {
+                fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+                lineNumber: 199,
+                columnNumber: 13
+              }, this)
+            },
+            void 0,
+            false,
+            {
+              fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+              lineNumber: 188,
+              columnNumber: 11
+            },
+            this
+          ),
+          /* @__PURE__ */ jsxDEV(
+            NavLink,
+            {
+              to: "/voice-revision",
+              onClick: navActivate,
+              className: ({ isActive }) => `${item} ${isActive ? active : inactiveHover} ${collapsed ? "justify-center px-2" : ""} ${isActive ? "text-[var(--text-main)]" : textNeutral}`,
+              title: collapsed ? "Voice Revision" : void 0,
+              children: ({ isActive }) => /* @__PURE__ */ jsxDEV(Fragment, { children: [
+                /* @__PURE__ */ jsxDEV(Mic, { className: `h-5 w-5 shrink-0 ${isActive ? "text-[var(--primary)]" : iconNeutral}` }, void 0, false, {
+                  fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+                  lineNumber: 220,
+                  columnNumber: 17
+                }, this),
+                !collapsed && /* @__PURE__ */ jsxDEV("span", { children: "Voice Revision" }, void 0, false, {
+                  fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+                  lineNumber: 221,
+                  columnNumber: 32
+                }, this)
+              ] }, void 0, true, {
+                fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+                lineNumber: 219,
+                columnNumber: 13
+              }, this)
+            },
+            void 0,
+            false,
+            {
+              fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+              lineNumber: 208,
+              columnNumber: 11
+            },
+            this
+          )
+        ] }, void 0, true, {
+          fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+          lineNumber: 109,
+          columnNumber: 9
+        }, this),
+        !collapsed && /* @__PURE__ */ jsxDEV("div", { className: "mt-4 shrink-0 border-t border-[var(--border)] pt-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted-soft)]", children: "Account" }, void 0, false, {
+          fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+          lineNumber: 228,
+          columnNumber: 9
+        }, this),
+        /* @__PURE__ */ jsxDEV("div", { className: `mt-2 shrink-0 space-y-1 ${collapsed ? "pb-1" : "pb-1"}`, children: [
+          /* @__PURE__ */ jsxDEV(
+            NavLink,
+            {
+              to: "/settings",
+              onClick: navActivate,
+              className: ({ isActive }) => `${item} ${isActive ? active : inactiveHover} ${collapsed ? "justify-center px-2" : ""} ${isActive ? "text-[var(--text-main)]" : textNeutral}`,
+              title: collapsed ? "Settings" : void 0,
+              children: ({ isActive }) => /* @__PURE__ */ jsxDEV(Fragment, { children: [
+                /* @__PURE__ */ jsxDEV(
+                  Settings,
+                  {
+                    className: `h-5 w-5 ${isActive ? "text-[var(--primary)]" : iconNeutral}`
+                  },
+                  void 0,
+                  false,
+                  {
+                    fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+                    lineNumber: 246,
+                    columnNumber: 17
+                  },
+                  this
+                ),
+                !collapsed && /* @__PURE__ */ jsxDEV("span", { children: "Settings" }, void 0, false, {
+                  fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+                  lineNumber: 249,
+                  columnNumber: 32
+                }, this)
+              ] }, void 0, true, {
+                fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+                lineNumber: 245,
+                columnNumber: 13
+              }, this)
+            },
+            void 0,
+            false,
+            {
+              fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+              lineNumber: 234,
+              columnNumber: 11
+            },
+            this
+          ),
+          /* @__PURE__ */ jsxDEV(
+            NavLink,
+            {
+              to: "/profile",
+              onClick: navActivate,
+              className: ({ isActive }) => `${item} ${isActive ? active : inactiveHover} ${collapsed ? "justify-center px-2" : ""} ${isActive ? "text-[var(--text-main)]" : textNeutral}`,
+              title: collapsed ? "Profile" : void 0,
+              children: ({ isActive }) => /* @__PURE__ */ jsxDEV(Fragment, { children: [
+                /* @__PURE__ */ jsxDEV(
+                  User,
+                  {
+                    className: `h-5 w-5 ${isActive ? "text-[var(--primary)]" : iconNeutral}`
+                  },
+                  void 0,
+                  false,
+                  {
+                    fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+                    lineNumber: 266,
+                    columnNumber: 17
+                  },
+                  this
+                ),
+                !collapsed && /* @__PURE__ */ jsxDEV("span", { children: "Profile" }, void 0, false, {
+                  fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+                  lineNumber: 269,
+                  columnNumber: 32
+                }, this)
+              ] }, void 0, true, {
+                fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+                lineNumber: 265,
+                columnNumber: 13
+              }, this)
+            },
+            void 0,
+            false,
+            {
+              fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+              lineNumber: 254,
+              columnNumber: 11
+            },
+            this
+          ),
+          /* @__PURE__ */ jsxDEV(
+            NavLink,
+            {
+              to: "/logout",
+              onClick: navActivate,
+              className: ({ isActive }) => `${item} ${isActive ? active : inactiveHover} ${collapsed ? "justify-center px-2" : ""} ${isActive ? "text-[var(--text-main)]" : textNeutral}`,
+              title: collapsed ? "Logout" : void 0,
+              children: ({ isActive }) => /* @__PURE__ */ jsxDEV(Fragment, { children: [
+                /* @__PURE__ */ jsxDEV(
+                  LogOut,
+                  {
+                    className: `h-5 w-5 ${isActive ? "text-[var(--primary)]" : iconNeutral}`
+                  },
+                  void 0,
+                  false,
+                  {
+                    fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+                    lineNumber: 286,
+                    columnNumber: 17
+                  },
+                  this
+                ),
+                !collapsed && /* @__PURE__ */ jsxDEV("span", { children: "Logout" }, void 0, false, {
+                  fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+                  lineNumber: 289,
+                  columnNumber: 32
+                }, this)
+              ] }, void 0, true, {
+                fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+                lineNumber: 285,
+                columnNumber: 13
+              }, this)
+            },
+            void 0,
+            false,
+            {
+              fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+              lineNumber: 274,
+              columnNumber: 11
+            },
+            this
+          )
+        ] }, void 0, true, {
+          fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+          lineNumber: 233,
+          columnNumber: 9
+        }, this)
+      ] }, void 0, true, {
+        fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+        lineNumber: 72,
+        columnNumber: 7
+      }, this)
+    },
+    void 0,
+    false,
+    {
+      fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx",
+      lineNumber: 65,
+      columnNumber: 5
+    },
+    this
+  );
+}
+_s(AppSidebar, "ZmJpvzBBf8J7VCgSKqUUk0eHjAY=", false, function() {
+  return [useLocation, useNavigate];
+});
+_c = AppSidebar;
+var _c;
+$RefreshReg$(_c, "AppSidebar");
+if (import.meta.hot && !inWebWorker) {
+  window.$RefreshReg$ = prevRefreshReg;
+  window.$RefreshSig$ = prevRefreshSig;
+}
+if (import.meta.hot && !inWebWorker) {
+  RefreshRuntime.__hmr_import(import.meta.url).then((currentExports) => {
+    RefreshRuntime.registerExportsForReactRefresh("C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx", currentExports);
+    import.meta.hot.accept((nextExports) => {
+      if (!nextExports) return;
+      const invalidateMessage = RefreshRuntime.validateRefreshBoundaryAndEnqueueUpdate("C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/AppSidebar.tsx", currentExports, nextExports);
+      if (invalidateMessage) import.meta.hot.invalidate(invalidateMessage);
+    });
+  });
+}
+
+//# sourceMappingURL=data:application/json;base64,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QUFBQSxjQUNULFdBQVcsQ0FBQyxFQUFFSSxTQUFTLE1BQ3JCLEdBQUd4QixJQUFJLElBQUl3QixXQUFXdkIsU0FBU0MsYUFBYSxJQUFJRSxZQUFZLHdCQUF3QixFQUFFLElBQ3BGb0IsV0FBVyw0QkFBNEJOLFdBQVc7QUFBQSxjQUd0RCxPQUFPZCxZQUFZLFdBQVdxQjtBQUFBQSxjQUU3QixXQUFDLEVBQUVELFNBQVMsTUFDWCxtQ0FDRTtBQUFBO0FBQUEsa0JBQUM7QUFBQTtBQUFBLG9CQUNDLFdBQVcsV0FBV0EsV0FBVywwQkFBMEJMLFdBQVc7QUFBQTtBQUFBLGtCQUR4RTtBQUFBO0FBQUE7QUFBQTtBQUFBO0FBQUE7QUFBQTtBQUFBO0FBQUEsZ0JBQzJFO0FBQUEsZ0JBRTFFLENBQUNmLGFBQWEsdUJBQUMsVUFBSyxzQkFBTjtBQUFBO0FBQUE7QUFBQTtBQUFBLHVCQUFZO0FBQUEsbUJBSjdCO0FBQUE7QUFBQTtBQUFBO0FBQUEscUJBS0E7QUFBQTtBQUFBLFlBaEJKO0FBQUE7QUFBQTtBQUFBO0FBQUE7QUFBQTtBQUFBO0FBQUE7QUFBQSxVQWtCQTtBQUFBLGFBM0RGO0FBQUE7QUFBQTtBQUFBO0FBQUEsZUE0REE7QUFBQSxXQTdORjtBQUFBO0FBQUE7QUFBQTtBQUFBLGFBOE5BO0FBQUE7QUFBQSxJQXJPRjtBQUFBO0FBQUE7QUFBQTtBQUFBO0FBQUE7QUFBQTtBQUFBO0FBQUEsRUFzT0E7QUFFSjtBQUFDSSxHQXhQdUJMLFlBQVU7QUFBQSxVQUNmakIsYUFDQUMsV0FBVztBQUFBO0FBQUF1QyxLQUZOdkI7QUFBVSxJQUFBdUI7QUFBQUMsYUFBQUQsSUFBQSIsIm5hbWVzIjpbIk5hdkxpbmsiLCJ1c2VMb2NhdGlvbiIsInVzZU5hdmlnYXRlIiwiTGF5b3V0RGFzaGJvYXJkIiwiRm9sZGVyT3BlbiIsIk1lc3NhZ2VDaXJjbGUiLCJTcGFya2xlcyIsIkNsaXBib2FyZExpc3QiLCJNaWMiLCJTZXR0aW5ncyIsIlVzZXIiLCJMb2dPdXQiLCJDaGV2cm9uTGVmdCIsIlgiLCJCcmFuZExvZ28iLCJpdGVtIiwiYWN0aXZlIiwiaW5hY3RpdmVIb3ZlciIsIkFwcFNpZGViYXIiLCJjb2xsYXBzZWQiLCJvblRvZ2dsZSIsIm1vYmlsZU9wZW4iLCJvbk5hdmlnYXRlIiwiX3MiLCJsb2NhdGlvbiIsIm5hdmlnYXRlIiwiaXNGbGFzaGNhcmRzQWN0aXZlIiwicGF0aG5hbWUiLCJpbmNsdWRlcyIsInN0YXJ0c1dpdGgiLCJzdGF0ZSIsInRhYiIsInNoZWxsQ2xhc3MiLCJ0ZXh0TmV1dHJhbCIsImljb25OZXV0cmFsIiwibmF2QWN0aXZhdGUiLCJ3aWR0aCIsInRyYW5zaXRpb24iLCJ0cmFuc2Zvcm0iLCJpc0FjdGl2ZSIsInVuZGVmaW5lZCIsIl9jIiwiJFJlZnJlc2hSZWckIl0sImlnbm9yZUxpc3QiOltdLCJzb3VyY2VzIjpbIkFwcFNpZGViYXIudHN4Il0sInNvdXJjZXNDb250ZW50IjpbImltcG9ydCB7IE5hdkxpbmssIHVzZUxvY2F0aW9uLCB1c2VOYXZpZ2F0ZSB9IGZyb20gXCJyZWFjdC1yb3V0ZXItZG9tXCI7XHJcbmltcG9ydCB7XHJcbiAgTGF5b3V0RGFzaGJvYXJkLFxyXG4gIEZvbGRlck9wZW4sXHJcbiAgTWVzc2FnZUNpcmNsZSxcclxuICBTcGFya2xlcyxcclxuICBDbGlwYm9hcmRMaXN0LCAvLyDinIUgQURERURcclxuICBNaWMsXHJcbiAgU2V0dGluZ3MsXHJcbiAgVXNlcixcclxuICBMb2dPdXQsXHJcbiAgQ2hldnJvbkxlZnQsXHJcbiAgWCxcclxufSBmcm9tIFwibHVjaWRlLXJlYWN0XCI7XHJcbmltcG9ydCBCcmFuZExvZ28gZnJvbSBcIi4vQnJhbmRMb2dvXCI7XHJcblxyXG50eXBlIFByb3BzID0ge1xyXG4gIGNvbGxhcHNlZDogYm9vbGVhbjtcclxuICBvblRvZ2dsZTogKCkgPT4gdm9pZDtcclxuICBtb2JpbGVPcGVuPzogYm9vbGVhbjtcclxuICBvbk5hdmlnYXRlPzogKCkgPT4gdm9pZDtcclxufTtcclxuXHJcbmNvbnN0IGl0ZW0gPVxyXG4gIFwiZ3JvdXAgcmVsYXRpdmUgZmxleCBtaW4taC1bNDRweF0gaXRlbXMtY2VudGVyIGdhcC0zIHJvdW5kZWQteGwgcHgtMyBweS0yLjUgdGV4dC1bMTRweF0gZm9udC1zZW1pYm9sZCB0cmFuc2l0aW9uLWNvbG9ycyBkdXJhdGlvbi0xNTBcIjtcclxuY29uc3QgYWN0aXZlID1cclxuICBcImJnLVt2YXIoLS1zdXJmYWNlLWVsZXZhdGVkKV0gdGV4dC1bdmFyKC0tdGV4dC1tYWluKV0gc2hhZG93LXNtIHJpbmctMSByaW5nLVt2YXIoLS1ib3JkZXIpXVwiO1xyXG5jb25zdCBpbmFjdGl2ZUhvdmVyID0gXCJob3ZlcjpiZy1bdmFyKC0tc3VyZmFjZS0yKV0gaG92ZXI6dGV4dC1bdmFyKC0tdGV4dC1tYWluKV1cIjtcclxuXHJcbmV4cG9ydCBkZWZhdWx0IGZ1bmN0aW9uIEFwcFNpZGViYXIoeyBjb2xsYXBzZWQsIG9uVG9nZ2xlLCBtb2JpbGVPcGVuID0gZmFsc2UsIG9uTmF2aWdhdGUgfTogUHJvcHMpIHtcclxuICBjb25zdCBsb2NhdGlvbiA9IHVzZUxvY2F0aW9uKCk7XHJcbiAgY29uc3QgbmF2aWdhdGUgPSB1c2VOYXZpZ2F0ZSgpO1xyXG4gIGNvbnN0IGlzRmxhc2hjYXJkc0FjdGl2ZSA9XHJcbiAgICBsb2NhdGlvbi5wYXRobmFtZS5pbmNsdWRlcyhcIi9mbGFzaGNhcmRzXCIpIHx8XHJcbiAgICAobG9jYXRpb24ucGF0aG5hbWUuc3RhcnRzV2l0aChcIi9jbGFzc2VzXCIpICYmIChsb2NhdGlvbi5zdGF0ZSBhcyBhbnkpPy50YWIgPT09IFwiZmxhc2hjYXJkc1wiKTtcclxuICBjb25zdCBzaGVsbENsYXNzID1cclxuICAgIFwiYmctW3ZhcigtLWJnLXN1cmZhY2UpXSB0ZXh0LVt2YXIoLS10ZXh0KV0gYm9yZGVyIGJvcmRlci1bdmFyKC0tYm9yZGVyLXN1YnRsZSldIHNoYWRvdy1bdmFyKC0tc2hhZG93LXNvZnQpXSByb3VuZGVkLTJ4bCBvdmVyZmxvdy1oaWRkZW5cIjtcclxuICBjb25zdCB0ZXh0TmV1dHJhbCA9IFwidGV4dC1bdmFyKC0tdGV4dC1tdXRlZCldXCI7XHJcbiAgY29uc3QgaWNvbk5ldXRyYWwgPSBcInRleHQtW3ZhcigtLXRleHQtbXV0ZWQpXVwiO1xyXG5cclxuICBmdW5jdGlvbiBuYXZBY3RpdmF0ZSgpIHtcclxuICAgIG9uTmF2aWdhdGU/LigpO1xyXG4gIH1cclxuXHJcbiAgcmV0dXJuIChcclxuICAgIDxhc2lkZVxyXG4gICAgICBjbGFzc05hbWU9e2BmaXhlZCBsZWZ0LTAgdG9wLTAgei1bNTBdIGgtc2NyZWVuIHRyYW5zaXRpb24tdHJhbnNmb3JtIGR1cmF0aW9uLTIwMCBlYXNlLW91dCAke1xyXG4gICAgICAgIG1vYmlsZU9wZW4gPyBcInRyYW5zbGF0ZS14LTBcIiA6IFwibWF4LWxnOi10cmFuc2xhdGUteC1bY2FsYygxMDAlKzEycHgpXSBtYXgtbGc6cG9pbnRlci1ldmVudHMtbm9uZVwiXHJcbiAgICAgIH0gJHtjb2xsYXBzZWQgPyBcInAtMlwiIDogXCJwLTMgc206cC00XCJ9IGxnOnRyYW5zbGF0ZS14LTAgbGc6cG9pbnRlci1ldmVudHMtYXV0b2B9XHJcbiAgICAgIHN0eWxlPXt7IHdpZHRoOiBjb2xsYXBzZWQgPyBcIjkycHhcIiA6IFwiMjc2cHhcIiB9fVxyXG4gICAgICBhcmlhLWhpZGRlbj17ZmFsc2V9XHJcbiAgICA+XHJcbiAgICAgIDxkaXYgY2xhc3NOYW1lPXtgZmxleCBoLWZ1bGwgZmxleC1jb2wgJHtjb2xsYXBzZWQgPyBcInAtMi41XCIgOiBcInAtM1wifSAke3NoZWxsQ2xhc3N9YH0+XHJcbiAgICAgICAgPGhlYWRlclxyXG4gICAgICAgICAgY2xhc3NOYW1lPXtgcmVsYXRpdmUgZmxleCBoLVs1NnB4XSBzaHJpbmstMCBpdGVtcy1jZW50ZXIgJHtjb2xsYXBzZWQgPyBcImp1c3RpZnktY2VudGVyXCIgOiBcImp1c3RpZnktYmV0d2VlblwifSBnYXAtMiBweC0xYH1cclxuICAgICAgICA+XHJcbiAgICAgICAgICB7b25OYXZpZ2F0ZSA/IChcclxuICAgICAgICAgICAgPGJ1dHRvblxyXG4gICAgICAgICAgICAgIHR5cGU9XCJidXR0b25cIlxyXG4gICAgICAgICAgICAgIG9uQ2xpY2s9e29uTmF2aWdhdGV9XHJcbiAgICAgICAgICAgICAgY2xhc3NOYW1lPVwiYWJzb2x1dGUgcmlnaHQtMSB0b3AtMS8yIHotMTAgZmxleCBoLTkgdy05IC10cmFuc2xhdGUteS0xLzIgaXRlbXMtY2VudGVyIGp1c3RpZnktY2VudGVyIHJvdW5kZWQtbGcgdGV4dC1bdmFyKC0tdGV4dC1tdXRlZCldIHRyYW5zaXRpb24gaG92ZXI6YmctW3ZhcigtLXN1cmZhY2UtMildIGhvdmVyOnRleHQtW3ZhcigtLXRleHQtbWFpbildIGxnOmhpZGRlblwiXHJcbiAgICAgICAgICAgICAgYXJpYS1sYWJlbD1cIkNsb3NlIG5hdmlnYXRpb24gbWVudVwiXHJcbiAgICAgICAgICAgID5cclxuICAgICAgICAgICAgICA8WCBjbGFzc05hbWU9XCJoLTUgdy01XCIgLz5cclxuICAgICAgICAgICAgPC9idXR0b24+XHJcbiAgICAgICAgICApIDogbnVsbH1cclxuICAgICAgICAgIHtjb2xsYXBzZWQgPyAoXHJcbiAgICAgICAgICAgIDxCcmFuZExvZ28gdmFyaWFudD1cImljb24tb25seVwiIHRvPVwiXCIgc2hvd1RleHQ9e2ZhbHNlfSAvPlxyXG4gICAgICAgICAgKSA6IChcclxuICAgICAgICAgICAgPEJyYW5kTG9nbyB2YXJpYW50PVwic2lkZWJhclwiIHRvPVwiXCIgY2xhc3NOYW1lPVwibWluLXctMCBtYXgtdy1bY2FsYygxMDAlLTIuNXJlbSldIHB4LTAuNVwiIC8+XHJcbiAgICAgICAgICApfVxyXG4gICAgICAgICAgPGJ1dHRvblxyXG4gICAgICAgICAgICB0eXBlPVwiYnV0dG9uXCJcclxuICAgICAgICAgICAgb25DbGljaz17b25Ub2dnbGV9XHJcbiAgICAgICAgICAgIGNsYXNzTmFtZT17YGhpZGRlbiBoLTkgdy05IHNocmluay0wIGl0ZW1zLWNlbnRlciBqdXN0aWZ5LWNlbnRlciByb3VuZGVkLWxnIHRleHQtW3ZhcigtLXRleHQtbXV0ZWQpXSB0cmFuc2l0aW9uIGhvdmVyOmJnLVt2YXIoLS1zdXJmYWNlLTIpXSBob3Zlcjp0ZXh0LVt2YXIoLS1wcmltYXJ5KV0gbGc6ZmxleCAke1xyXG4gICAgICAgICAgICAgIGNvbGxhcHNlZCA/IFwibXQtMC41XCIgOiBcIlwiXHJcbiAgICAgICAgICAgIH1gfVxyXG4gICAgICAgICAgICBhcmlhLWxhYmVsPXtjb2xsYXBzZWQgPyBcIkV4cGFuZCBzaWRlYmFyXCIgOiBcIkNvbGxhcHNlIHNpZGViYXJcIn1cclxuICAgICAgICAgID5cclxuICAgICAgICAgICAgPENoZXZyb25MZWZ0XHJcbiAgICAgICAgICAgICAgY2xhc3NOYW1lPVwiaC00IHctNFwiXHJcbiAgICAgICAgICAgICAgc3R5bGU9e3tcclxuICAgICAgICAgICAgICAgIHRyYW5zaXRpb246IFwidHJhbnNmb3JtIDAuMzVzIGN1YmljLWJlemllcigwLjQsIDAsIDAuMiwgMSlcIixcclxuICAgICAgICAgICAgICAgIHRyYW5zZm9ybTogY29sbGFwc2VkID8gXCJyb3RhdGUoMTgwZGVnKVwiIDogXCJyb3RhdGUoMGRlZylcIixcclxuICAgICAgICAgICAgICB9fVxyXG4gICAgICAgICAgICAvPlxyXG4gICAgICAgICAgPC9idXR0b24+XHJcbiAgICAgICAgPC9oZWFkZXI+XHJcbiAgICAgICAgPGRpdiBjbGFzc05hbWU9XCJteC0xIHNocmluay0wIGJvcmRlci1iIGJvcmRlci1bdmFyKC0tYm9yZGVyKV0gb3BhY2l0eS04MFwiIC8+XHJcbiAgICAgICAgPG5hdiBjbGFzc05hbWU9XCJtdC00IG1pbi1oLTAgZmxleC0xIHNwYWNlLXktMSBvdmVyZmxvdy15LWF1dG8gb3ZlcnNjcm9sbC1jb250YWluIHBiLTJcIj5cclxuICAgICAgICAgIDxOYXZMaW5rXHJcbiAgICAgICAgICAgIHRvPVwiL2Rhc2hib2FyZFwiXHJcbiAgICAgICAgICAgIG9uQ2xpY2s9e25hdkFjdGl2YXRlfVxyXG4gICAgICAgICAgICBjbGFzc05hbWU9eyh7IGlzQWN0aXZlIH0pID0+XHJcbiAgICAgICAgICAgICAgYCR7aXRlbX0gJHtpc0FjdGl2ZSA/IGFjdGl2ZSA6IGluYWN0aXZlSG92ZXJ9ICR7Y29sbGFwc2VkID8gXCJqdXN0aWZ5LWNlbnRlciBweC0yXCIgOiBcIlwifSAke1xyXG4gICAgICAgICAgICAgICAgaXNBY3RpdmUgPyBcInRleHQtW3ZhcigtLXRleHQtbWFpbildXCIgOiB0ZXh0TmV1dHJhbFxyXG4gICAgICAgICAgICAgIH1gXHJcbiAgICAgICAgICAgIH1cclxuICAgICAgICAgICAgdGl0bGU9e2NvbGxhcHNlZCA/IFwiRGFzaGJvYXJkXCIgOiB1bmRlZmluZWR9XHJcbiAgICAgICAgICA+XHJcbiAgICAgICAgICAgIHsoeyBpc0FjdGl2ZSB9KSA9PiAoXHJcbiAgICAgICAgICAgICAgPD5cclxuICAgICAgICAgICAgICAgIDxMYXlvdXREYXNoYm9hcmRcclxuICAgICAgICAgICAgICAgICAgY2xhc3NOYW1lPXtgaC01IHctNSAke2lzQWN0aXZlID8gXCJ0ZXh0LVt2YXIoLS1wcmltYXJ5KV1cIiA6IGAke2ljb25OZXV0cmFsfWB9YH1cclxuICAgICAgICAgICAgICAgIC8+XHJcbiAgICAgICAgICAgICAgICB7IWNvbGxhcHNlZCAmJiA8c3Bhbj5EYXNoYm9hcmQ8L3NwYW4+fVxyXG4gICAgICAgICAgICAgIDwvPlxyXG4gICAgICAgICAgICApfVxyXG4gICAgICAgICAgPC9OYXZMaW5rPlxyXG5cclxuICAgICAgICAgIDxOYXZMaW5rXHJcbiAgICAgICAgICAgIHRvPVwiL2NsYXNzZXNcIlxyXG4gICAgICAgICAgICBvbkNsaWNrPXtuYXZBY3RpdmF0ZX1cclxuICAgICAgICAgICAgY2xhc3NOYW1lPXsoeyBpc0FjdGl2ZSB9KSA9PlxyXG4gICAgICAgICAgICAgIGAke2l0ZW19ICR7aXNBY3RpdmUgPyBhY3RpdmUgOiBpbmFjdGl2ZUhvdmVyfSAke2NvbGxhcHNlZCA/IFwianVzdGlmeS1jZW50ZXIgcHgtMlwiIDogXCJcIn0gJHtcclxuICAgICAgICAgICAgICAgIGlzQWN0aXZlID8gXCJ0ZXh0LVt2YXIoLS10ZXh0LW1haW4pXVwiIDogdGV4dE5ldXRyYWxcclxuICAgICAgICAgICAgICB9YFxyXG4gICAgICAgICAgICB9XHJcbiAgICAgICAgICAgIHRpdGxlPXtjb2xsYXBzZWQgPyBcIkNsYXNzZXNcIiA6IHVuZGVmaW5lZH1cclxuICAgICAgICAgID5cclxuICAgICAgICAgICAgeyh7IGlzQWN0aXZlIH0pID0+IChcclxuICAgICAgICAgICAgICA8PlxyXG4gICAgICAgICAgICAgICAgPEZvbGRlck9wZW5cclxuICAgICAgICAgICAgICAgICAgY2xhc3NOYW1lPXtgaC01IHctNSAke2lzQWN0aXZlID8gXCJ0ZXh0LVt2YXIoLS1wcmltYXJ5KV1cIiA6IGAke2ljb25OZXV0cmFsfWB9YH1cclxuICAgICAgICAgICAgICAgIC8+XHJcbiAgICAgICAgICAgICAgICB7IWNvbGxhcHNlZCAmJiA8c3Bhbj5DbGFzc2VzPC9zcGFuPn1cclxuICAgICAgICAgICAgICA8Lz5cclxuICAgICAgICAgICAgKX1cclxuICAgICAgICAgIDwvTmF2TGluaz5cclxuXHJcbiAgICAgICAgICA8YnV0dG9uXHJcbiAgICAgICAgICAgIHR5cGU9XCJidXR0b25cIlxyXG4gICAgICAgICAgICBvbkNsaWNrPXsoKSA9PiB7XHJcbiAgICAgICAgICAgICAgbmF2QWN0aXZhdGUoKTtcclxuICAgICAgICAgICAgICBuYXZpZ2F0ZShcIi9mbGFzaGNhcmRzXCIpO1xyXG4gICAgICAgICAgICB9fVxyXG4gICAgICAgICAgICBjbGFzc05hbWU9e2B3LWZ1bGwgdGV4dC1sZWZ0ICR7aXRlbX0gJHtpc0ZsYXNoY2FyZHNBY3RpdmUgPyBhY3RpdmUgOiBpbmFjdGl2ZUhvdmVyfSAke2NvbGxhcHNlZCA/IFwianVzdGlmeS1jZW50ZXIgcHgtMlwiIDogXCJcIn0gJHtcclxuICAgICAgICAgICAgICBpc0ZsYXNoY2FyZHNBY3RpdmUgPyBcInRleHQtW3ZhcigtLXRleHQtbWFpbildXCIgOiB0ZXh0TmV1dHJhbFxyXG4gICAgICAgICAgICB9YH1cclxuICAgICAgICAgICAgdGl0bGU9e2NvbGxhcHNlZCA/IFwiRmxhc2hjYXJkc1wiIDogdW5kZWZpbmVkfVxyXG4gICAgICAgICAgPlxyXG4gICAgICAgICAgICA8U3BhcmtsZXNcclxuICAgICAgICAgICAgICBjbGFzc05hbWU9e2BoLTUgdy01ICR7aXNGbGFzaGNhcmRzQWN0aXZlID8gXCJ0ZXh0LVt2YXIoLS1wcmltYXJ5KV1cIiA6IGAke2ljb25OZXV0cmFsfWB9YH1cclxuICAgICAgICAgICAgLz5cclxuICAgICAgICAgICAgeyFjb2xsYXBzZWQgJiYgPHNwYW4+Rmxhc2hjYXJkczwvc3Bhbj59XHJcbiAgICAgICAgICA8L2J1dHRvbj5cclxuXHJcbiAgICAgICAgICB7Lyog4pyFIEFEREVEOiBRVUlaWkVTICovfVxyXG4gICAgICAgICAgPE5hdkxpbmtcclxuICAgICAgICAgICAgdG89XCIvcXVpenplc1wiXHJcbiAgICAgICAgICAgIG9uQ2xpY2s9e25hdkFjdGl2YXRlfVxyXG4gICAgICAgICAgICBjbGFzc05hbWU9eyh7IGlzQWN0aXZlIH0pID0+XHJcbiAgICAgICAgICAgICAgYCR7aXRlbX0gJHtpc0FjdGl2ZSA/IGFjdGl2ZSA6IGluYWN0aXZlSG92ZXJ9ICR7Y29sbGFwc2VkID8gXCJqdXN0aWZ5LWNlbnRlciBweC0yXCIgOiBcIlwifSAke1xyXG4gICAgICAgICAgICAgICAgaXNBY3RpdmUgPyBcInRleHQtW3ZhcigtLXRleHQtbWFpbildXCIgOiB0ZXh0TmV1dHJhbFxyXG4gICAgICAgICAgICAgIH1gXHJcbiAgICAgICAgICAgIH1cclxuICAgICAgICAgICAgdGl0bGU9e2NvbGxhcHNlZCA/IFwiUXVpenplc1wiIDogdW5kZWZpbmVkfVxyXG4gICAgICAgICAgPlxyXG4gICAgICAgICAgICB7KHsgaXNBY3RpdmUgfSkgPT4gKFxyXG4gICAgICAgICAgICAgIDw+XHJcbiAgICAgICAgICAgICAgICA8Q2xpcGJvYXJkTGlzdFxyXG4gICAgICAgICAgICAgICAgICBjbGFzc05hbWU9e2BoLTUgdy01ICR7aXNBY3RpdmUgPyBcInRleHQtW3ZhcigtLXByaW1hcnkpXVwiIDogaWNvbk5ldXRyYWx9YH1cclxuICAgICAgICAgICAgICAgIC8+XHJcbiAgICAgICAgICAgICAgICB7IWNvbGxhcHNlZCAmJiA8c3Bhbj5RdWl6emVzPC9zcGFuPn1cclxuICAgICAgICAgICAgICA8Lz5cclxuICAgICAgICAgICAgKX1cclxuICAgICAgICAgIDwvTmF2TGluaz5cclxuXHJcbiAgICAgICAgICA8TmF2TGlua1xyXG4gICAgICAgICAgICB0bz1cIi9jaGF0Ym90XCJcclxuICAgICAgICAgICAgb25DbGljaz17bmF2QWN0aXZhdGV9XHJcbiAgICAgICAgICAgIGNsYXNzTmFtZT17KHsgaXNBY3RpdmUgfSkgPT5cclxuICAgICAgICAgICAgICBgJHtpdGVtfSAke2lzQWN0aXZlID8gYWN0aXZlIDogaW5hY3RpdmVIb3Zlcn0gJHtjb2xsYXBzZWQgPyBcImp1c3RpZnktY2VudGVyIHB4LTJcIiA6IFwiXCJ9ICR7XHJcbiAgICAgICAgICAgICAgICBpc0FjdGl2ZSA/IFwidGV4dC1bdmFyKC0tdGV4dC1tYWluKV1cIiA6IHRleHROZXV0cmFsXHJcbiAgICAgICAgICAgICAgfWBcclxuICAgICAgICAgICAgfVxyXG4gICAgICAgICAgICB0aXRsZT17Y29sbGFwc2VkID8gXCJTdHVkeSBBc3Npc3RhbnRcIiA6IHVuZGVmaW5lZH1cclxuICAgICAgICAgID5cclxuICAgICAgICAgICAgeyh7IGlzQWN0aXZlIH0pID0+IChcclxuICAgICAgICAgICAgICA8PlxyXG4gICAgICAgICAgICAgICAgPE1lc3NhZ2VDaXJjbGVcclxuICAgICAgICAgICAgICAgICAgY2xhc3NOYW1lPXtgaC01IHctNSAke2lzQWN0aXZlID8gXCJ0ZXh0LVt2YXIoLS1wcmltYXJ5KV1cIiA6IGljb25OZXV0cmFsfWB9XHJcbiAgICAgICAgICAgICAgICAvPlxyXG4gICAgICAgICAgICAgICAgeyFjb2xsYXBzZWQgJiYgPHNwYW4+U3R1ZHkgQXNzaXN0YW50PC9zcGFuPn1cclxuICAgICAgICAgICAgICA8Lz5cclxuICAgICAgICAgICAgKX1cclxuICAgICAgICAgIDwvTmF2TGluaz5cclxuXHJcbiAgICAgICAgICA8TmF2TGlua1xyXG4gICAgICAgICAgICB0bz1cIi92b2ljZS1yZXZpc2lvblwiXHJcbiAgICAgICAgICAgIG9uQ2xpY2s9e25hdkFjdGl2YXRlfVxyXG4gICAgICAgICAgICBjbGFzc05hbWU9eyh7IGlzQWN0aXZlIH0pID0+XHJcbiAgICAgICAgICAgICAgYCR7aXRlbX0gJHtpc0FjdGl2ZSA/IGFjdGl2ZSA6IGluYWN0aXZlSG92ZXJ9ICR7Y29sbGFwc2VkID8gXCJqdXN0aWZ5LWNlbnRlciBweC0yXCIgOiBcIlwifSAke1xyXG4gICAgICAgICAgICAgICAgaXNBY3RpdmUgPyBcInRleHQtW3ZhcigtLXRleHQtbWFpbildXCIgOiB0ZXh0TmV1dHJhbFxyXG4gICAgICAgICAgICAgIH1gXHJcbiAgICAgICAgICAgIH1cclxuICAgICAgICAgICAgdGl0bGU9e2NvbGxhcHNlZCA/IFwiVm9pY2UgUmV2aXNpb25cIiA6IHVuZGVmaW5lZH1cclxuICAgICAgICAgID5cclxuICAgICAgICAgICAgeyh7IGlzQWN0aXZlIH0pID0+IChcclxuICAgICAgICAgICAgICA8PlxyXG4gICAgICAgICAgICAgICAgPE1pYyBjbGFzc05hbWU9e2BoLTUgdy01IHNocmluay0wICR7aXNBY3RpdmUgPyBcInRleHQtW3ZhcigtLXByaW1hcnkpXVwiIDogaWNvbk5ldXRyYWx9YH0gLz5cclxuICAgICAgICAgICAgICAgIHshY29sbGFwc2VkICYmIDxzcGFuPlZvaWNlIFJldmlzaW9uPC9zcGFuPn1cclxuICAgICAgICAgICAgICA8Lz5cclxuICAgICAgICAgICAgKX1cclxuICAgICAgICAgIDwvTmF2TGluaz5cclxuICAgICAgICA8L25hdj5cclxuXHJcbiAgICAgICAgeyFjb2xsYXBzZWQgJiYgKFxyXG4gICAgICAgICAgPGRpdiBjbGFzc05hbWU9XCJtdC00IHNocmluay0wIGJvcmRlci10IGJvcmRlci1bdmFyKC0tYm9yZGVyKV0gcHQtMyB0ZXh0LVsxMHB4XSBmb250LXNlbWlib2xkIHVwcGVyY2FzZSB0cmFja2luZy1bMC4xOGVtXSB0ZXh0LVt2YXIoLS10ZXh0LW11dGVkLXNvZnQpXVwiPlxyXG4gICAgICAgICAgICBBY2NvdW50XHJcbiAgICAgICAgICA8L2Rpdj5cclxuICAgICAgICApfVxyXG5cclxuICAgICAgICA8ZGl2IGNsYXNzTmFtZT17YG10LTIgc2hyaW5rLTAgc3BhY2UteS0xICR7Y29sbGFwc2VkID8gXCJwYi0xXCIgOiBcInBiLTFcIn1gfT5cclxuICAgICAgICAgIDxOYXZMaW5rXHJcbiAgICAgICAgICAgIHRvPVwiL3NldHRpbmdzXCJcclxuICAgICAgICAgICAgb25DbGljaz17bmF2QWN0aXZhdGV9XHJcbiAgICAgICAgICAgIGNsYXNzTmFtZT17KHsgaXNBY3RpdmUgfSkgPT5cclxuICAgICAgICAgICAgICBgJHtpdGVtfSAke2lzQWN0aXZlID8gYWN0aXZlIDogaW5hY3RpdmVIb3Zlcn0gJHtjb2xsYXBzZWQgPyBcImp1c3RpZnktY2VudGVyIHB4LTJcIiA6IFwiXCJ9ICR7XHJcbiAgICAgICAgICAgICAgICBpc0FjdGl2ZSA/IFwidGV4dC1bdmFyKC0tdGV4dC1tYWluKV1cIiA6IHRleHROZXV0cmFsXHJcbiAgICAgICAgICAgICAgfWBcclxuICAgICAgICAgICAgfVxyXG4gICAgICAgICAgICB0aXRsZT17Y29sbGFwc2VkID8gXCJTZXR0aW5nc1wiIDogdW5kZWZpbmVkfVxyXG4gICAgICAgICAgPlxyXG4gICAgICAgICAgICB7KHsgaXNBY3RpdmUgfSkgPT4gKFxyXG4gICAgICAgICAgICAgIDw+XHJcbiAgICAgICAgICAgICAgICA8U2V0dGluZ3NcclxuICAgICAgICAgICAgICAgICAgY2xhc3NOYW1lPXtgaC01IHctNSAke2lzQWN0aXZlID8gXCJ0ZXh0LVt2YXIoLS1wcmltYXJ5KV1cIiA6IGljb25OZXV0cmFsfWB9XHJcbiAgICAgICAgICAgICAgICAvPlxyXG4gICAgICAgICAgICAgICAgeyFjb2xsYXBzZWQgJiYgPHNwYW4+U2V0dGluZ3M8L3NwYW4+fVxyXG4gICAgICAgICAgICAgIDwvPlxyXG4gICAgICAgICAgICApfVxyXG4gICAgICAgICAgPC9OYXZMaW5rPlxyXG5cclxuICAgICAgICAgIDxOYXZMaW5rXHJcbiAgICAgICAgICAgIHRvPVwiL3Byb2ZpbGVcIlxyXG4gICAgICAgICAgICBvbkNsaWNrPXtuYXZBY3RpdmF0ZX1cclxuICAgICAgICAgICAgY2xhc3NOYW1lPXsoeyBpc0FjdGl2ZSB9KSA9PlxyXG4gICAgICAgICAgICAgIGAke2l0ZW19ICR7aXNBY3RpdmUgPyBhY3RpdmUgOiBpbmFjdGl2ZUhvdmVyfSAke2NvbGxhcHNlZCA/IFwianVzdGlmeS1jZW50ZXIgcHgtMlwiIDogXCJcIn0gJHtcclxuICAgICAgICAgICAgICAgIGlzQWN0aXZlID8gXCJ0ZXh0LVt2YXIoLS10ZXh0LW1haW4pXVwiIDogdGV4dE5ldXRyYWxcclxuICAgICAgICAgICAgICB9YFxyXG4gICAgICAgICAgICB9XHJcbiAgICAgICAgICAgIHRpdGxlPXtjb2xsYXBzZWQgPyBcIlByb2ZpbGVcIiA6IHVuZGVmaW5lZH1cclxuICAgICAgICAgID5cclxuICAgICAgICAgICAgeyh7IGlzQWN0aXZlIH0pID0+IChcclxuICAgICAgICAgICAgICA8PlxyXG4gICAgICAgICAgICAgICAgPFVzZXJcclxuICAgICAgICAgICAgICAgICAgY2xhc3NOYW1lPXtgaC01IHctNSAke2lzQWN0aXZlID8gXCJ0ZXh0LVt2YXIoLS1wcmltYXJ5KV1cIiA6IGljb25OZXV0cmFsfWB9XHJcbiAgICAgICAgICAgICAgICAvPlxyXG4gICAgICAgICAgICAgICAgeyFjb2xsYXBzZWQgJiYgPHNwYW4+UHJvZmlsZTwvc3Bhbj59XHJcbiAgICAgICAgICAgICAgPC8+XHJcbiAgICAgICAgICAgICl9XHJcbiAgICAgICAgICA8L05hdkxpbms+XHJcblxyXG4gICAgICAgICAgPE5hdkxpbmtcclxuICAgICAgICAgICAgdG89XCIvbG9nb3V0XCJcclxuICAgICAgICAgICAgb25DbGljaz17bmF2QWN0aXZhdGV9XHJcbiAgICAgICAgICAgIGNsYXNzTmFtZT17KHsgaXNBY3RpdmUgfSkgPT5cclxuICAgICAgICAgICAgICBgJHtpdGVtfSAke2lzQWN0aXZlID8gYWN0aXZlIDogaW5hY3RpdmVIb3Zlcn0gJHtjb2xsYXBzZWQgPyBcImp1c3RpZnktY2VudGVyIHB4LTJcIiA6IFwiXCJ9ICR7XHJcbiAgICAgICAgICAgICAgICBpc0FjdGl2ZSA/IFwidGV4dC1bdmFyKC0tdGV4dC1tYWluKV1cIiA6IHRleHROZXV0cmFsXHJcbiAgICAgICAgICAgICAgfWBcclxuICAgICAgICAgICAgfVxyXG4gICAgICAgICAgICB0aXRsZT17Y29sbGFwc2VkID8gXCJMb2dvdXRcIiA6IHVuZGVmaW5lZH1cclxuICAgICAgICAgID5cclxuICAgICAgICAgICAgeyh7IGlzQWN0aXZlIH0pID0+IChcclxuICAgICAgICAgICAgICA8PlxyXG4gICAgICAgICAgICAgICAgPExvZ091dFxyXG4gICAgICAgICAgICAgICAgICBjbGFzc05hbWU9e2BoLTUgdy01ICR7aXNBY3RpdmUgPyBcInRleHQtW3ZhcigtLXByaW1hcnkpXVwiIDogaWNvbk5ldXRyYWx9YH1cclxuICAgICAgICAgICAgICAgIC8+XHJcbiAgICAgICAgICAgICAgICB7IWNvbGxhcHNlZCAmJiA8c3Bhbj5Mb2dvdXQ8L3NwYW4+fVxyXG4gICAgICAgICAgICAgIDwvPlxyXG4gICAgICAgICAgICApfVxyXG4gICAgICAgICAgPC9OYXZMaW5rPlxyXG4gICAgICAgIDwvZGl2PlxyXG4gICAgICA8L2Rpdj5cclxuICAgIDwvYXNpZGU+XHJcbiAgKTtcclxufVxyXG4iXSwiZmlsZSI6IkM6L1VzZXJzL1JhYmJpeWEvRGVza3RvcC9Ob3Rlc2NhcGUvZnJvbnRlbmQvc3JjL2NvbXBvbmVudHMvQXBwU2lkZWJhci50c3gifQ==

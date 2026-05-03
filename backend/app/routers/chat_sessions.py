@@ -2,12 +2,13 @@ from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 import logging
 from psycopg.types.json import Json
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.db import db_conn
 from app.dependencies import get_request_user_uid
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
+alias_router = APIRouter(prefix="/api/chats", tags=["chat"])
 _schema_checked = False
 log = logging.getLogger("uvicorn.error")
 
@@ -22,7 +23,7 @@ async def _ensure_chat_schema():
             CREATE TABLE IF NOT EXISTS chat_sessions (
               id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
               user_id TEXT NOT NULL,
-              class_id INT NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+              class_id INT REFERENCES classes(id) ON DELETE CASCADE,
               document_id UUID REFERENCES files(id) ON DELETE SET NULL,
               title TEXT NOT NULL DEFAULT 'Chat session',
               created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -33,6 +34,7 @@ async def _ensure_chat_schema():
         await cur.execute(
             "ALTER TABLE chat_sessions ALTER COLUMN title SET DEFAULT 'Chat session'"
         )
+        await cur.execute("ALTER TABLE chat_sessions ALTER COLUMN class_id DROP NOT NULL")
         await cur.execute(
             """
             CREATE TABLE IF NOT EXISTS chat_messages (
@@ -61,6 +63,12 @@ async def _ensure_chat_schema():
         await cur.execute(
             "CREATE INDEX IF NOT EXISTS chat_sessions_user_class_doc_idx ON chat_sessions (user_id, class_id, document_id, updated_at DESC)"
         )
+        await cur.execute(
+            "CREATE INDEX IF NOT EXISTS chat_sessions_user_updated_idx ON chat_sessions (user_id, updated_at DESC)"
+        )
+        await cur.execute(
+            "CREATE INDEX IF NOT EXISTS chat_sessions_user_doc_idx ON chat_sessions (user_id, document_id, updated_at DESC)"
+        )
         await cur.execute("CREATE INDEX IF NOT EXISTS chat_messages_session_idx ON chat_messages (session_id, created_at ASC)")
         await conn.commit()
     async with db_conn() as (conn, cur):
@@ -79,8 +87,10 @@ async def _ensure_chat_schema():
 
 
 class ChatSessionCreate(BaseModel):
-    class_id: int
-    document_id: Optional[str] = None
+    model_config = ConfigDict(populate_by_name=True)
+
+    class_id: Optional[int] = Field(default=None, alias="classId")
+    document_id: Optional[str] = Field(default=None, alias="documentId")
     title: Optional[str] = None
 
 
@@ -89,8 +99,12 @@ class ChatSessionUpdate(BaseModel):
 
 
 class ChatMessageCreate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    class_id: Optional[int] = Field(default=None, alias="classId")
+    document_id: Optional[str] = Field(default=None, alias="documentId")
     user_content: str
-    assistant_content: str
+    assistant_content: Optional[str] = None
     citations: Optional[List[Dict[str, Any]]] = None
     selected_text: Optional[str] = None
     page_number: Optional[int] = None
@@ -111,18 +125,33 @@ async def _ensure_class_owner(class_id: int, user_id: str):
             raise HTTPException(status_code=404, detail="Class not found")
 
 
+async def _ensure_file_owner(document_id: str, user_id: str, class_id: Optional[int] = None) -> int:
+    await _ensure_chat_schema()
+    async with db_conn() as (conn, cur):
+        await cur.execute(
+            """
+            SELECT f.class_id
+            FROM files f
+            JOIN classes c ON c.id=f.class_id
+            WHERE f.id=%s AND c.owner_uid=%s AND (%s::int IS NULL OR f.class_id=%s::int)
+            """,
+            (document_id, user_id, class_id, class_id),
+        )
+        row = await cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="File not found")
+    return int(row[0])
+
+
 @router.post("/sessions")
 async def create_session(payload: ChatSessionCreate, user_id: str = Depends(get_request_user_uid)):
     await _ensure_chat_schema()
-    await _ensure_class_owner(payload.class_id, user_id)
+    class_id = payload.class_id
+    if class_id is not None:
+        await _ensure_class_owner(class_id, user_id)
     if payload.document_id:
-        async with db_conn() as (conn, cur):
-            await cur.execute(
-                "SELECT 1 FROM files WHERE id=%s AND class_id=%s",
-                (payload.document_id, payload.class_id),
-            )
-            if not await cur.fetchone():
-                raise HTTPException(status_code=404, detail="File not found in class")
+        owner_class_id = await _ensure_file_owner(payload.document_id, user_id, class_id)
+        class_id = class_id or owner_class_id
     async with db_conn() as (conn, cur):
         title = (payload.title or "Chat session").strip() or "Chat session"
         await cur.execute(
@@ -131,15 +160,15 @@ async def create_session(payload: ChatSessionCreate, user_id: str = Depends(get_
             VALUES (%s, %s, %s, %s)
             RETURNING id::text, class_id, document_id::text, title, created_at, updated_at
             """,
-            (user_id, payload.class_id, payload.document_id, title),
+            (user_id, class_id, payload.document_id, title),
         )
         row = await cur.fetchone()
         await conn.commit()
     log.info(
-        "[chat] session created user_id=%s session_id=%s class_id=%s document_id=%s",
+        "[CHAT_API] create chat user_id=%s session_id=%s class_id=%s document_id=%s",
         user_id,
         row[0],
-        payload.class_id,
+        class_id or "general",
         payload.document_id or "none",
     )
     cols = ["id", "class_id", "document_id", "title", "created_at", "updated_at"]
@@ -148,31 +177,52 @@ async def create_session(payload: ChatSessionCreate, user_id: str = Depends(get_
 
 @router.get("/sessions")
 async def list_sessions(
-    class_id: int,
+    class_id: Optional[int] = Query(default=None),
     document_id: Optional[str] = Query(default=None),
     user_id: str = Depends(get_request_user_uid),
 ):
     await _ensure_chat_schema()
-    await _ensure_class_owner(class_id, user_id)
+    if class_id is not None:
+        await _ensure_class_owner(class_id, user_id)
+    if document_id:
+        owner_class_id = await _ensure_file_owner(document_id, user_id, class_id)
+        class_id = class_id or owner_class_id
     async with db_conn() as (conn, cur):
         await cur.execute(
             """
             SELECT id::text, class_id, document_id::text, title, created_at, updated_at
             FROM chat_sessions
-            WHERE user_id=%s AND class_id=%s AND (%s::uuid IS NULL OR document_id=%s::uuid)
+            WHERE user_id=%s
+              AND (%s::int IS NULL OR class_id=%s::int)
+              AND (%s::uuid IS NULL OR document_id=%s::uuid)
             ORDER BY updated_at DESC
             """,
-            (user_id, class_id, document_id, document_id),
+            (user_id, class_id, class_id, document_id, document_id),
         )
         rows = await cur.fetchall()
     log.info(
-        "[chat] sessions listed user_id=%s class_id=%s return=%d",
+        "[CHAT_API] list chats user_id=%s class_id=%s document_id=%s count=%d",
         user_id,
         class_id,
+        document_id or "none",
         len(rows),
     )
     cols = ["id", "class_id", "document_id", "title", "created_at", "updated_at"]
     return [dict(zip(cols, r)) for r in rows]
+
+
+@alias_router.get("")
+async def list_sessions_alias(
+    class_id: Optional[int] = Query(default=None, alias="classId"),
+    document_id: Optional[str] = Query(default=None, alias="documentId"),
+    user_id: str = Depends(get_request_user_uid),
+):
+    return await list_sessions(class_id=class_id, document_id=document_id, user_id=user_id)
+
+
+@alias_router.post("")
+async def create_session_alias(payload: ChatSessionCreate, user_id: str = Depends(get_request_user_uid)):
+    return await create_session(payload=payload, user_id=user_id)
 
 
 @router.patch("/sessions/{session_id}")
@@ -204,16 +254,20 @@ async def update_session(
 
 
 @router.get("/sessions/{session_id}")
-async def get_session(session_id: str, user_id: str = Depends(get_request_user_uid)):
+async def get_session(
+    session_id: str,
+    class_id: Optional[int] = Query(default=None, alias="classId"),
+    user_id: str = Depends(get_request_user_uid),
+):
     await _ensure_chat_schema()
     async with db_conn() as (conn, cur):
         await cur.execute(
             """
             SELECT id::text, class_id, document_id::text, title, created_at, updated_at
             FROM chat_sessions
-            WHERE id=%s AND user_id=%s
+            WHERE id=%s AND user_id=%s AND (%s::int IS NULL OR class_id=%s::int)
             """,
-            (session_id, user_id),
+            (session_id, user_id, class_id, class_id),
         )
         sess = await cur.fetchone()
         if not sess:
@@ -240,7 +294,7 @@ async def get_session(session_id: str, user_id: str = Depends(get_request_user_u
             )
         msgs = await cur.fetchall()
     log.info(
-        "[chat] list_messages session_id=%s user_id=%s count=%d",
+        "[CHAT_API] get messages session_id=%s user_id=%s count=%d",
         session_id,
         user_id,
         len(msgs),
@@ -270,16 +324,20 @@ async def get_session(session_id: str, user_id: str = Depends(get_request_user_u
 
 
 @router.get("/sessions/{session_id}/messages")
-async def list_session_messages(session_id: str, user_id: str = Depends(get_request_user_uid)):
+async def list_session_messages(
+    session_id: str,
+    class_id: Optional[int] = Query(default=None, alias="classId"),
+    user_id: str = Depends(get_request_user_uid),
+):
     await _ensure_chat_schema()
     async with db_conn() as (conn, cur):
         await cur.execute(
             """
             SELECT 1
             FROM chat_sessions
-            WHERE id=%s AND user_id=%s
+            WHERE id=%s AND user_id=%s AND (%s::int IS NULL OR class_id=%s::int)
             """,
-            (session_id, user_id),
+            (session_id, user_id, class_id, class_id),
         )
         if not await cur.fetchone():
             raise HTTPException(status_code=404, detail="Session not found")
@@ -304,7 +362,7 @@ async def list_session_messages(session_id: str, user_id: str = Depends(get_requ
                 (session_id,),
             )
         msgs = await cur.fetchall()
-    log.info(f"[chat] list_messages session_id={session_id} count={len(msgs)}")
+    log.info("[CHAT_API] get messages session_id=%s count=%d", session_id, len(msgs))
     msg_cols = (
         [
             "id",
@@ -323,6 +381,15 @@ async def list_session_messages(session_id: str, user_id: str = Depends(get_requ
         else ["id", "role", "content", "citations", "created_at"]
     )
     return [dict(zip(msg_cols, m)) for m in msgs]
+
+
+@alias_router.get("/{session_id}/messages")
+async def list_session_messages_alias(
+    session_id: str,
+    class_id: Optional[int] = Query(default=None, alias="classId"),
+    user_id: str = Depends(get_request_user_uid),
+):
+    return await list_session_messages(session_id=session_id, class_id=class_id, user_id=user_id)
 
 
 @router.delete("/sessions/{session_id}")
@@ -387,21 +454,35 @@ async def add_messages(session_id: str, payload: ChatMessageCreate, user_id: str
             raise HTTPException(status_code=404, detail="Session not found")
         class_id = row[0]
         document_id = row[1]
+        if payload.class_id is not None and class_id is not None and int(payload.class_id) != int(class_id):
+            raise HTTPException(status_code=404, detail="Session not found in class")
         log.info(
-            "[chat] add_messages session_id=%s user_id=%s class_id=%s document_id=%s",
+            "[CHAT_API] save user message session_id=%s user_id=%s class_id=%s document_id=%s",
             session_id,
             user_id,
             class_id,
             document_id or "none",
         )
         if payload.file_id:
+            if class_id is None:
+                raise HTTPException(status_code=400, detail="File-scoped messages require a class")
             await cur.execute(
                 "SELECT 1 FROM files WHERE id=%s AND class_id=%s",
                 (payload.file_id, class_id),
             )
             if not await cur.fetchone():
                 raise HTTPException(status_code=404, detail="File not found in class")
+        if payload.document_id:
+            owner_class_id = await _ensure_file_owner(payload.document_id, user_id, class_id)
+            if class_id is None:
+                class_id = owner_class_id
+                await cur.execute(
+                    "UPDATE chat_sessions SET class_id=%s, document_id=%s WHERE id=%s",
+                    (class_id, payload.document_id, session_id),
+                )
         if document_id and payload.file_id and payload.file_id != document_id:
+            raise HTTPException(status_code=404, detail="File not found in session scope")
+        if document_id and payload.document_id and payload.document_id != document_id:
             raise HTTPException(status_code=404, detail="File not found in session scope")
         if _schema_checked:
             await cur.execute(
@@ -420,13 +501,14 @@ async def add_messages(session_id: str, payload: ChatMessageCreate, user_id: str
                     image_attachment_json,
                 ),
             )
-            await cur.execute(
-                """
-                INSERT INTO chat_messages (session_id, role, content, citations, selected_text, page_number, bounding_box, file_id, file_scope, image_attachment)
-                VALUES (%s, 'assistant', %s, %s, NULL, NULL, NULL, NULL, %s, NULL)
-                """,
-                (session_id, payload.assistant_content, citations_json, file_scope_json),
-            )
+            if payload.assistant_content is not None:
+                await cur.execute(
+                    """
+                    INSERT INTO chat_messages (session_id, role, content, citations, selected_text, page_number, bounding_box, file_id, file_scope, image_attachment)
+                    VALUES (%s, 'assistant', %s, %s, NULL, NULL, NULL, NULL, %s, NULL)
+                    """,
+                    (session_id, payload.assistant_content, citations_json, file_scope_json),
+                )
         else:
             await cur.execute(
                 """
@@ -435,13 +517,14 @@ async def add_messages(session_id: str, payload: ChatMessageCreate, user_id: str
                 """,
                 (session_id, payload.user_content),
             )
-            await cur.execute(
-                """
-                INSERT INTO chat_messages (session_id, role, content, citations)
-                VALUES (%s, 'assistant', %s, %s)
-                """,
-                (session_id, payload.assistant_content, citations_json),
-            )
+            if payload.assistant_content is not None:
+                await cur.execute(
+                    """
+                    INSERT INTO chat_messages (session_id, role, content, citations)
+                    VALUES (%s, 'assistant', %s, %s)
+                    """,
+                    (session_id, payload.assistant_content, citations_json),
+                )
         await cur.execute(
             "UPDATE chat_sessions SET updated_at=now() WHERE id=%s",
             (session_id,),
@@ -470,9 +553,10 @@ async def add_messages(session_id: str, payload: ChatMessageCreate, user_id: str
             )
         msgs = await cur.fetchall()
     log.info(
-        "[chat] add_messages session_id=%s user_id=%s saved=2 total=%d",
+        "[CHAT_API] save assistant response session_id=%s user_id=%s saved=%d total=%d",
         session_id,
         user_id,
+        2 if payload.assistant_content is not None else 1,
         len(msgs),
     )
     msg_cols = (
@@ -493,3 +577,12 @@ async def add_messages(session_id: str, payload: ChatMessageCreate, user_id: str
         else ["id", "role", "content", "citations", "created_at"]
     )
     return {"ok": True, "messages": [dict(zip(msg_cols, m)) for m in msgs]}
+
+
+@alias_router.post("/{session_id}/messages")
+async def add_messages_alias(
+    session_id: str,
+    payload: ChatMessageCreate,
+    user_id: str = Depends(get_request_user_uid),
+):
+    return await add_messages(session_id=session_id, payload=payload, user_id=user_id)

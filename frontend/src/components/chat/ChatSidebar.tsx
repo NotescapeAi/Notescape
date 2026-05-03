@@ -30,6 +30,7 @@ export default function ChatSidebar({
   useEffect(() => {
     if (editingId && editInputRef.current) {
       editInputRef.current.focus();
+      editInputRef.current.select();
     }
   }, [editingId]);
 
@@ -67,7 +68,7 @@ export default function ChatSidebar({
     const date = new Date(dateStr);
     const now = new Date();
     const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
-    
+
     let label = "Older";
     if (diffDays === 0) label = "Today";
     else if (diffDays === 1) label = "Yesterday";
@@ -83,113 +84,126 @@ export default function ChatSidebar({
 
   return (
     <div className="flex h-full flex-col bg-[var(--surface)]">
-      <div className="p-3">
+      <div className="shrink-0 p-3">
         <button
           onClick={onNewChat}
-          className="flex w-full items-center gap-2 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] px-4 py-2.5 text-sm font-semibold text-[var(--text-main)] transition-all hover:border-[var(--primary)] hover:shadow-sm active:scale-[0.98]"
+          className="flex h-9 w-full items-center justify-center gap-2 rounded-[var(--radius-md)] bg-[var(--primary)] px-3 text-[13px] font-semibold text-[var(--text-inverse)] shadow-[var(--shadow-xs)] transition hover:bg-[var(--primary-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
         >
-          <Plus size={18} className="text-[var(--primary)]" />
-          <span>New Chat</span>
+          <Plus size={16} />
+          <span>New chat</span>
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-3 pb-3">
+      <div className="ns-scroll min-h-0 flex-1 overflow-y-auto px-2 pb-3">
         {isLoading && sessions.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-10 text-[var(--text-secondary)]">
+          <div className="flex flex-col items-center justify-center py-10 text-[var(--text-muted)]">
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-[var(--primary)] border-t-transparent" />
-            <span className="mt-2 text-xs">Loading chats...</span>
+            <span className="mt-2 text-xs">Loading chats…</span>
           </div>
         ) : sessions.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-10 text-center text-[var(--text-secondary)]">
-            <MessageSquare size={32} className="mb-2 opacity-20" />
+          <div className="flex flex-col items-center justify-center px-4 py-10 text-center text-[var(--text-muted)]">
+            <MessageSquare size={28} className="mb-2 opacity-25" />
             <p className="text-xs">No conversations yet.</p>
+            <p className="mt-0.5 text-[11px] text-[var(--text-muted-soft)]">
+              Start a new chat to ask about your materials.
+            </p>
           </div>
         ) : (
-          <div className="space-y-6">
+          <div className="space-y-4">
             {groupOrder.map((label) => {
               const groupSessions = groups[label];
               if (!groupSessions?.length) return null;
 
               return (
                 <div key={label}>
-                  <div className="mb-2 px-2 text-[10px] font-bold uppercase tracking-wider text-[var(--text-secondary)] opacity-80">
+                  <div className="mb-1.5 px-2 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted-soft)]">
                     {label}
                   </div>
-                  <div className="space-y-1">
-                    {groupSessions.map((session) => (
-                      <div
-                        key={session.id}
-                        className={`group relative flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm transition-colors ${
-                          activeSessionId === session.id
-                            ? "bg-[var(--surface-2)] text-[var(--text-main)] font-medium"
-                            : "text-[var(--text-secondary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-main)]"
-                        }`}
-                      >
-                        <MessageCircle size={14} className={`flex-shrink-0 ${activeSessionId === session.id ? "text-[var(--primary)]" : "opacity-50"}`} />
-                        
-                        {editingId === session.id ? (
-                          <input
-                            ref={editInputRef}
-                            value={editValue}
-                            onChange={(e) => setEditValue(e.target.value)}
-                            onBlur={saveEdit}
-                            onKeyDown={handleKeyDown}
-                            className="h-6 min-w-0 flex-1 rounded-md border border-[var(--primary)] bg-[var(--bg-page)] px-1.5 text-xs outline-none"
+                  <ul className="space-y-0.5">
+                    {groupSessions.map((session) => {
+                      const isActive = activeSessionId === session.id;
+                      return (
+                        <li
+                          key={session.id}
+                          className={`group relative flex items-center gap-2 rounded-[var(--radius-sm)] px-2 py-1.5 text-sm transition ${
+                            isActive
+                              ? "bg-[var(--primary-soft)] text-[var(--primary)]"
+                              : "text-[var(--text-muted)] hover:bg-[var(--surface-2)] hover:text-[var(--text-main)]"
+                          }`}
+                        >
+                          <MessageCircle
+                            size={14}
+                            className={`shrink-0 ${isActive ? "text-[var(--primary)]" : "opacity-55"}`}
                           />
-                        ) : (
-                          <button
-                            onClick={() => onSelectSession(session.id)}
-                            className="flex-1 min-w-0 text-left truncate"
-                            title={session.title}
-                          >
-                            {session.title}
-                          </button>
-                        )}
 
-                        {/* Kebab Menu */}
-                        {activeSessionId === session.id && !editingId && (
-                          <div className="relative flex-shrink-0">
+                          {editingId === session.id ? (
+                            <input
+                              ref={editInputRef}
+                              value={editValue}
+                              onChange={(e) => setEditValue(e.target.value)}
+                              onBlur={saveEdit}
+                              onKeyDown={handleKeyDown}
+                              className="h-6 min-w-0 flex-1 rounded-[var(--radius-xs)] border border-[color-mix(in_srgb,var(--primary)_50%,var(--border))] bg-[var(--surface)] px-1.5 text-[12.5px] outline-none focus:ring-2 focus:ring-[var(--ring)]"
+                            />
+                          ) : (
                             <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setMenuOpenId(menuOpenId === session.id ? null : session.id);
-                              }}
-                              className="rounded-md p-0.5 text-[var(--text-secondary)] hover:bg-[var(--bg-page)] hover:text-[var(--text-main)]"
+                              onClick={() => onSelectSession(session.id)}
+                              className={`min-w-0 flex-1 truncate text-left text-[13px] ${
+                                isActive ? "font-semibold" : "font-medium"
+                              }`}
+                              title={session.title}
                             >
-                              <MoreVertical size={14} />
+                              {session.title}
                             </button>
+                          )}
 
-                            {menuOpenId === session.id && (
-                              <div
-                                ref={menuRef}
-                                className="absolute right-0 top-6 z-20 w-32 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface)] shadow-lg"
+                          {/* Kebab menu — visible on hover or active */}
+                          {!editingId && (
+                            <div className={`relative shrink-0 ${isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100 focus-within:opacity-100"} transition-opacity`}>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setMenuOpenId(menuOpenId === session.id ? null : session.id);
+                                }}
+                                className="flex h-6 w-6 items-center justify-center rounded-[var(--radius-xs)] text-[var(--text-muted)] hover:bg-[var(--surface)] hover:text-[var(--text-main)]"
+                                aria-label="Chat actions"
+                                title="More"
                               >
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    startEditing(session);
-                                  }}
-                                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-[var(--surface-2)]"
+                                <MoreVertical size={14} />
+                              </button>
+
+                              {menuOpenId === session.id && (
+                                <div
+                                  ref={menuRef}
+                                  className="absolute right-0 top-6 z-20 w-36 overflow-hidden rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface)] p-1 shadow-[var(--shadow-elevated)]"
                                 >
-                                  <Edit2 size={12} /> Rename
-                                </button>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    onDeleteSession(session.id);
-                                    setMenuOpenId(null);
-                                  }}
-                                  className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-red-500 hover:bg-[var(--surface-2)]"
-                                >
-                                  <Trash2 size={12} /> Delete
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      startEditing(session);
+                                    }}
+                                    className="flex w-full items-center gap-2 rounded-[var(--radius-xs)] px-2 py-1.5 text-left text-xs text-[var(--text-main)] hover:bg-[var(--surface-2)]"
+                                  >
+                                    <Edit2 size={12} /> Rename
+                                  </button>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onDeleteSession(session.id);
+                                      setMenuOpenId(null);
+                                    }}
+                                    className="flex w-full items-center gap-2 rounded-[var(--radius-xs)] px-2 py-1.5 text-left text-xs text-[var(--danger)] hover:bg-[var(--danger-soft)]"
+                                  >
+                                    <Trash2 size={12} /> Delete
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
                 </div>
               );
             })}

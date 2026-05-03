@@ -162,11 +162,14 @@ class CardGenerator:
 
         hint = c.get("hint")
         diff = (c.get("difficulty") or c.get("level") or "medium")
+        topic = (c.get("topic") or c.get("concept") or c.get("concept_label") or "").strip()
         tags = c.get("tags") or c.get("tag") or []
         if isinstance(tags, str):
             tags = [t.strip() for t in tags.split(",") if t.strip()]
         if not isinstance(tags, list):
             tags = []
+        if topic:
+            tags = [topic, *tags]
 
         diff = str(diff).lower().strip()
         if diff not in ("easy", "medium", "hard"):
@@ -177,6 +180,7 @@ class CardGenerator:
             "answer": a,
             "hint": hint,
             "difficulty": diff,
+            "topic": topic or (str(tags[0]).strip() if tags else "General"),
             "tags": tags,
         }
 
@@ -220,7 +224,7 @@ class CardGenerator:
             "You create concise, exam-style flashcards.\n"
             "Return ONLY valid JSON. No markdown, no extra text.\n"
             "Schema:\n"
-            '{"cards":[{"question":"...","answer":"...","hint":"optional","difficulty":"easy|medium|hard","tags":["..."]}]}\n'
+            '{"cards":[{"front":"...","back":"...","topic":"Short concept label","difficulty":"easy|medium|hard","source":null,"tags":["..."]}]}\n'
         )
 
         style_note = {
@@ -232,9 +236,11 @@ class CardGenerator:
 
         user = (
             f"Context:\n{joined_context}\n\n"
-            f"Make exactly {n_cards} high-yield flashcards. "
+            f"Make up to {n_cards} high-yield flashcards, but generate fewer if the context does not support that many useful cards. "
             f"{style_note} "
-            "Avoid fluff; prefer precise definitions, cause-effect, and contrasts."
+            "Every card must include a short, meaningful topic/concept label such as \"Passive Reconnaissance\" or \"Gradient Descent\". "
+            "Avoid vague topics like \"General\" unless no better label exists. "
+            "Avoid filler, duplicate cards, and questions based only on repeated headings. Prefer precise definitions, cause-effect, examples, practical details, and contrasts."
         )
 
         raw = await self._fn(system, user)
@@ -246,7 +252,7 @@ class CardGenerator:
         repair_system = "You are a JSON formatter. Output ONLY valid JSON. No markdown, no extra text."
         repair_user = (
             "Convert the following into STRICT JSON in this exact schema:\n"
-            '{"cards":[{"question":"...","answer":"...","hint":"optional","difficulty":"easy|medium|hard","tags":["..."]}]}\n\n'
+            '{"cards":[{"front":"...","back":"...","topic":"Short concept label","difficulty":"easy|medium|hard","source":null,"tags":["..."]}]}\n\n'
             f"TEXT TO CONVERT:\n{raw}"
         )
         raw2 = await self._fn(repair_system, repair_user)
@@ -427,6 +433,7 @@ def get_quiz_generator() -> Callable[[str], Any]:
             '"correct_index":0,'
             '"answer_key":"...",'
             '"explanation":"optional",'
+            '"topic":"Short concept label",'
             '"difficulty":"easy|medium|hard",'
             '"source":{"chunk_id":123,"page_start":1,"page_end":1}'
             '}]}'
@@ -460,6 +467,7 @@ def get_quiz_generator() -> Callable[[str], Any]:
             '"correct_index":0,'
             '"answer_key":"...",'
             '"explanation":"optional",'
+            '"topic":"Short concept label",'
             '"difficulty":"easy|medium|hard",'
             '"source":{"chunk_id":123,"page_start":1,"page_end":1}'
             '}]}'
@@ -481,6 +489,7 @@ def get_quiz_generator() -> Callable[[str], Any]:
             '"correct_index":0,'
             '"answer_key":"...",'
             '"explanation":"optional",'
+            '"topic":"Short concept label",'
             '"difficulty":"easy|medium|hard",'
             '"source":{"chunk_id":123,"page_start":1,"page_end":1}'
             '}]}'

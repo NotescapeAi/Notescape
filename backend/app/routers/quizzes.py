@@ -163,6 +163,7 @@ class CreateQuizJobReq(BaseModel):
     mcq_count: Optional[int] = Field(default=None, ge=0, le=50)  # ← ADD THIS
     types: List[QuizType] = Field(default_factory=lambda: ["mcq", "conceptual"])
     difficulty: Difficulty = "medium"
+    topic: Optional[str] = None
     premium_tier: Optional[str] = None
 
 class QuizJobOut(BaseModel):
@@ -198,6 +199,7 @@ class QuizQuestionOut(BaseModel):
     options: Optional[List[str]] = None
     explanation: Optional[str] = None
     difficulty: Optional[str] = None
+    topic: Optional[str] = "General"
     page_start: Optional[int] = None
     page_end: Optional[int] = None
 
@@ -399,7 +401,7 @@ async def _ensure_file_ready_for_quiz(file_id: UUID, class_id: int) -> None:
     if is_pdf and storage_key:
         return
 
-    if status in {"UPLOADING", "PROCESSING", "OCR_QUEUED", "OCR_RUNNING", "RUNNING"}:
+    if status in {"UPLOADING", "UPLOADED", "PROCESSING", "EXTRACTING_TEXT", "OCR_QUEUED", "OCR_RUNNING", "GENERATING_EMBEDDINGS", "RUNNING"}:
         raise HTTPException(
             status_code=409,
             detail="This document is still being processed. Please try generating the quiz again in a moment.",
@@ -441,6 +443,7 @@ async def create_quiz_job(req: CreateQuizJobReq, user_id: str = Depends(get_requ
         "mcq_count": req.mcq_count,  # ← ADD THIS LINE
         "types": req.types,
         "difficulty": req.difficulty,
+        "topic": (req.topic or "").strip() or None,
         "premium_tier": req.premium_tier,
     }
 
@@ -879,8 +882,31 @@ async def get_quiz(
 
         await cur.execute(
             """
-            SELECT id, position, qtype, question, options, explanation, difficulty, page_start, page_end
+            SELECT
+              qq.id,
+              qq.position,
+              qq.qtype,
+              qq.question,
+              qq.options,
+              qq.explanation,
+              qq.difficulty,
+              COALESCE(
+                qq.topic,
+                (
+                  SELECT t.name
+                  FROM quiz_question_tags qqt
+                  JOIN tags t ON t.id = qqt.tag_id
+                  WHERE qqt.question_id = qq.id
+                  ORDER BY t.name
+                  LIMIT 1
+                ),
+                qq.qtype,
+                'General'
+              ) AS topic,
+              qq.page_start,
+              qq.page_end
             FROM quiz_questions
+            qq
             WHERE quiz_id=%s
             ORDER BY position ASC, id ASC
             """,
@@ -904,7 +930,8 @@ async def get_quiz(
         QuizQuestionOut(
             id=r[0], position=r[1], qtype=r[2], question=r[3],
             options=r[4], explanation=r[5], difficulty=r[6],
-            page_start=r[7], page_end=r[8]
+            topic=r[7] or "General",
+            page_start=r[8], page_end=r[9]
         )
         for r in rows
     ]
@@ -1010,15 +1037,44 @@ async def submit_attempt(
         # load all correct keys (MCQ only scored)
         await cur.execute(
             """
-            SELECT id, qtype, correct_index, answer_key, question
-            FROM quiz_questions
-            WHERE quiz_id=%s
+            SELECT
+              qq.id,
+              qq.qtype,
+              qq.correct_index,
+              qq.answer_key,
+              qq.question,
+              qq.explanation,
+              COALESCE(
+                qq.topic,
+                (
+                  SELECT t.name
+                  FROM quiz_question_tags qqt
+                  JOIN tags t ON t.id = qqt.tag_id
+                  WHERE qqt.question_id = qq.id
+                  ORDER BY t.name
+                  LIMIT 1
+                ),
+                qq.qtype,
+                'General'
+              ) AS topic
+            FROM quiz_questions qq
+            WHERE qq.quiz_id=%s
             ORDER BY position ASC, id ASC
             """,
             (quiz_id,),
         )
         qrows = await cur.fetchall()
-        key = {int(r[0]): {"qtype": r[1], "correct_index": r[2], "answer_key": r[3], "question": r[4]} for r in qrows}
+        key = {
+            int(r[0]): {
+                "qtype": r[1],
+                "correct_index": r[2],
+                "answer_key": r[3],
+                "question": r[4],
+                "explanation": r[5],
+                "topic": r[6] or "General",
+            }
+            for r in qrows
+        }
 
         # insert/update attempt answers
         results: List[Dict[str, Any]] = []
@@ -1052,6 +1108,8 @@ async def submit_attempt(
                 is_correct = (selected_index is not None and int(selected_index) == qmeta["correct_index"])
                 if is_correct:
                     marks = 1
+                question_score = 1.0 if is_correct else 0.0
+                feedback = "Correct." if is_correct else "Review the explanation and related flashcards."
             else:
                 # Theory marking logic using LLM
                 # - Empty = 0
@@ -1064,6 +1122,9 @@ async def submit_attempt(
                     )
                 else:
                     marks = 0
+                question_score = max(0.0, min(1.0, float(marks or 0) / 2.0))
+                is_correct = bool(marks >= 2)
+                feedback = "Strong answer." if is_correct else "Review the key answer and retry this topic."
 
             await cur.execute(
                 """
@@ -1103,8 +1164,44 @@ async def submit_attempt(
                     response_time_ms,
                 ),
             )
+            if not bool(is_correct):
+                await cur.execute(
+                    """
+                    INSERT INTO mistake_notebook
+                      (user_id, class_id, document_id, quiz_id, question_id, topic, question,
+                       student_answer, correct_answer, explanation)
+                    SELECT
+                      %s,
+                      q.class_id,
+                      q.file_id,
+                      q.id,
+                      qq.id,
+                      %s,
+                      qq.question,
+                      %s,
+                      COALESCE(qq.answer_key, CASE WHEN qq.correct_index IS NOT NULL AND qq.options IS NOT NULL THEN qq.options[qq.correct_index + 1] ELSE NULL END),
+                      COALESCE(qq.explanation, %s)
+                    FROM quiz_questions qq
+                    JOIN quizzes q ON q.id = qq.quiz_id
+                    WHERE qq.id = %s
+                    """,
+                    (
+                        user_id,
+                        qmeta["topic"],
+                        user_answer_text,
+                        feedback,
+                        qid,
+                    ),
+                )
 
-            item = {"question_id": qid, "qtype": qtype, "is_correct": is_correct, "marks": marks}
+            item = {
+                "question_id": qid,
+                "qtype": qtype,
+                "is_correct": is_correct,
+                "marks": marks,
+                "score": question_score,
+                "topic": qmeta["topic"],
+            }
             if req.reveal_answers:
                 item["correct_index"] = qmeta["correct_index"]
                 item["answer_key"] = qmeta["answer_key"]
@@ -1129,6 +1226,8 @@ async def submit_attempt(
         
         new_mcq_time = current_mcq_time
         new_theory_time = current_theory_time
+        total_mcqs = sum(1 for k in key.values() if k["qtype"] == "mcq")
+        total_theory = sum(1 for k in key.values() if k["qtype"] != "mcq")
 
         if req.section == "mcq":
             new_mcq_done = True
@@ -1142,9 +1241,13 @@ async def submit_attempt(
             new_mcq_done = True
             new_theory_done = True
             current_section = "completed"
-            # If 'all', we might need heuristic or split. 
-            # For now, put it all in theory if mcq done, or split?
-            # Simpler: just add to total later.
+            if total_mcqs > 0 and total_theory > 0:
+                new_mcq_time = max(new_mcq_time, req.time_taken // 2)
+                new_theory_time = max(new_theory_time, req.time_taken - new_mcq_time)
+            elif total_mcqs > 0:
+                new_mcq_time = max(new_mcq_time, req.time_taken)
+            else:
+                new_theory_time = max(new_theory_time, req.time_taken)
         
         if new_mcq_done and new_theory_done:
             current_section = "completed"
@@ -1171,10 +1274,6 @@ async def submit_attempt(
                 mcq_score += marks
             else:
                 theory_score += marks
-
-        # Calculate totals
-        total_mcqs = sum(1 for k in key.values() if k["qtype"] == "mcq")
-        total_theory = sum(1 for k in key.values() if k["qtype"] != "mcq")
 
         if total_mcqs == 0:
             new_mcq_done = True

@@ -40,7 +40,7 @@ services:
     container_name: notescape-api
     environment:
       DATABASE_URL: "postgresql://${PGUSER:-notescape}:${PGPASSWORD:-notescape_pass}@db:5432/${PGDATABASE:-notescape}"
-      CORS_ORIGINS: "http://localhost:3000,http://localhost:5173"
+      CORS_ORIGINS: "${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174}"
       UPLOAD_ROOT: "/app/uploads"
       STORAGE_BACKEND: "${STORAGE_BACKEND:-s3}"
       S3_ENDPOINT_URL: "${S3_ENDPOINT_URL}"
@@ -87,7 +87,7 @@ services:
     command: python -m app.workers.ocr_worker
     environment:
       DATABASE_URL: "postgresql://${PGUSER:-notescape}:${PGPASSWORD:-notescape_pass}@db:5432/${PGDATABASE:-notescape}"
-      CORS_ORIGINS: "http://localhost:3000,http://localhost:5173"
+      CORS_ORIGINS: "${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174}"
       UPLOAD_ROOT: "/app/uploads"
       STORAGE_BACKEND: "${STORAGE_BACKEND:-s3}"
       S3_ENDPOINT_URL: "${S3_ENDPOINT_URL}"
@@ -119,7 +119,7 @@ services:
     command: python -m app.workers.flashcard_worker
     environment:
       DATABASE_URL: "postgresql://${PGUSER:-notescape}:${PGPASSWORD:-notescape_pass}@db:5432/${PGDATABASE:-notescape}"
-      CORS_ORIGINS: "http://localhost:3000,http://localhost:5173"
+      CORS_ORIGINS: "${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174}"
       UPLOAD_ROOT: "/app/uploads"
       STORAGE_BACKEND: "${STORAGE_BACKEND:-s3}"
       S3_ENDPOINT_URL: "${S3_ENDPOINT_URL}"
@@ -162,7 +162,7 @@ services:
     command: python -m app.workers.quiz_worker
     environment:
       DATABASE_URL: "postgresql://${PGUSER:-notescape}:${PGPASSWORD:-notescape_pass}@db:5432/${PGDATABASE:-notescape}"
-      CORS_ORIGINS: "http://localhost:3000,http://localhost:5173"
+      CORS_ORIGINS: "${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174}"
       UPLOAD_ROOT: "/app/uploads"
       STORAGE_BACKEND: "${STORAGE_BACKEND:-s3}"
       S3_ENDPOINT_URL: "${S3_ENDPOINT_URL}"

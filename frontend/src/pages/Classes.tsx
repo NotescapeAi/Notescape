@@ -1,15 +1,20 @@
 // src/pages/Classes.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Download, MessageCircle, Upload, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, BookOpen, Check, ChevronDown, Download, Layers, Lightbulb, MessageCircle, Plus, Sparkles, Target, Upload, X } from "lucide-react";
+import { format, isToday, isYesterday } from "date-fns";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 import ClassSidebar from "../components/ClassSidebar";
-import ClassHeaderButtons from "../components/ClassHeaderButtons";
+import ClassHeaderButtons, { type FlashcardGenerationOptions } from "../components/ClassHeaderButtons";
 import AppShell from "../layouts/AppShell";
 import Button from "../components/Button";
 import KebabMenu from "../components/KebabMenu";
 import PdfStudyViewer, { type PdfSelection, type PdfSnip } from "../components/PdfStudyViewer";
+import PptxPreviewFallback from "../components/PptxPreviewFallback";
 import { useLayout } from "../layouts/LayoutContext";
+import { showAppToast, type AppToastKind } from "../lib/toast";
 
 import {
   listClasses,
@@ -18,38 +23,102 @@ import {
   deleteClass,
   listFiles,
   uploadFile,
+  uploadHandwrittenFile,
   deleteFile,
-  createChunks,
+  updateFile,
+  retryFileProcessing,
+  retryHandwrittenOCR,
+  getOCRReview,
+  saveOCRCleanedText,
+  generateFlashcardsFromOCR,
+  generateQuizFromOCR,
   type FileRow,
+  type OCRReviewResult,
   type ClassRow,
   type ChunkPreview,
-  buildEmbeddings,
   generateFlashcardsAsync,
   getFlashcardJobStatus,
   listFlashcards,
   type Flashcard,
   getWeakCards,
   type WeakCard,
+  getClassRecommendations,
+  type RevisionRecommendation,
   chatAsk,
   createChatSession,
   listChatSessions,
   listChatSessionMessages,
+  updateChatSession,
+  deleteChatSession,
   addChatMessages,
   type ChatSession,
   type ChatMessage,
   ocrImageSnippet,
   getDocumentViewUrl,
+  getDocumentPreview,
+  processDocumentPreview,
+  type DocumentPreview,
+  fetchAuthenticatedBlobUrl,
+  apiErrorMessage,
+  apiServerOrigin,
 } from "../lib/api";
 
 type StudyMsg = ChatMessage & { citations?: any };
+type StudyQuickAction = "summary" | "explain" | "quiz" | "key_points";
+
+const EMPTY_STUDY_CHAT_TITLE = "New chat";
+const STUDY_QUICK_ACTIONS: Array<{ key: StudyQuickAction; label: string; prompt: string }> = [
+  {
+    key: "summary",
+    label: "Summarize",
+    prompt: "Summarize the current document.",
+  },
+  {
+    key: "explain",
+    label: "Explain",
+    prompt: "Explain this document in simple terms.",
+  },
+  {
+    key: "quiz",
+    label: "Generate quiz",
+    prompt:
+      "Generate an intelligent quiz from the current document. Use specific concepts, definitions, comparisons, examples, and applications from the document. Include answers and source slide or page hints.",
+  },
+  {
+    key: "key_points",
+    label: "Key points",
+    prompt: "List the key points from this document.",
+  },
+];
 
 const ALLOWED_MIME = new Set<string>([
   "application/pdf",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "text/plain",
+  "text/markdown",
+  "text/csv",
+  "application/json",
 ]);
 
-const ALLOWED_EXT = new Set<string>([".pdf", ".pptx", ".docx"]);
+const ALLOWED_EXT = new Set<string>([
+  ".pdf",
+  ".pptx",
+  ".docx",
+  ".png",
+  ".jpg",
+  ".jpeg",
+  ".gif",
+  ".webp",
+  ".bmp",
+  ".tif",
+  ".tiff",
+  ".txt",
+  ".md",
+  ".csv",
+  ".json",
+  ".log",
+]);
 
 function hasAllowedExt(name: string) {
   const dot = name.lastIndexOf(".");
@@ -57,14 +126,238 @@ function hasAllowedExt(name: string) {
   return ALLOWED_EXT.has(name.slice(dot).toLowerCase());
 }
 
+function isOldPptUpload(file: File) {
+  return file.name.toLowerCase().endsWith(".ppt") || file.type === "application/vnd.ms-powerpoint";
+}
+
 function isAllowed(file: File) {
-  return ALLOWED_MIME.has(file.type) || hasAllowedExt(file.name);
+  return file.type.startsWith("image/") || file.type.startsWith("text/") || ALLOWED_MIME.has(file.type) || hasAllowedExt(file.name);
 }
 
 function isPdfFile(file?: FileRow | null) {
   if (!file) return false;
   if ((file as any).mime_type && String((file as any).mime_type).includes("pdf")) return true;
   return file.filename.toLowerCase().endsWith(".pdf");
+}
+
+function isReadyStatus(status?: string | null) {
+  const s = String(status || "").toUpperCase();
+  return s === "INDEXED" || s === "READY" || s === "OCR_READY";
+}
+
+function isStudyGenerationReady(file: FileRow): boolean {
+  return isReadyStatus(file.status) && (file.chunk_count ?? 0) > 0;
+}
+
+function isGenericStudyChatTitle(title?: string | null) {
+  const clean = (title || "").trim();
+  return (
+    !clean ||
+    clean === EMPTY_STUDY_CHAT_TITLE ||
+    clean === "Chat session" ||
+    clean === "New Conversation" ||
+    clean.startsWith("Chat about ")
+  );
+}
+
+function generateStudyChatTitle(text: string) {
+  const words = text
+    .replace(/https?:\/\/\S+/gi, " ")
+    .replace(/[^\p{L}\p{N}\s-]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 6);
+  if (words.length === 0) return EMPTY_STUDY_CHAT_TITLE;
+  const title = words.join(" ");
+  return title.length > 50 ? `${title.slice(0, 47).trim()}...` : title;
+}
+
+function studyChatTitleFromMessage(text: string, fileName?: string | null, quickAction?: StudyQuickAction) {
+  const doc = displayFilename(fileName, { removeExtension: true });
+  const cap = (s: string) => (s.length > 50 ? `${s.slice(0, 47).trim()}...` : s);
+  if (quickAction === "quiz") return cap(`Quiz on ${doc}`);
+  if (quickAction === "summary") return cap(`Summary of ${doc}`);
+  if (quickAction === "key_points") return cap(`Key points from ${doc}`);
+  if (quickAction === "explain") return cap(`Explanation of ${doc}`);
+  return generateStudyChatTitle(text);
+}
+
+function formatStudySessionRowMeta(value?: string | null) {
+  if (!value) return "Recently";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Recently";
+  if (isToday(date)) return "Today";
+  if (isYesterday(date)) return "Yesterday";
+  return format(date, "MMM d");
+}
+
+/** User-visible workflow state for the document list and viewer chrome (not raw backend enums). */
+function documentWorkflowLabel(file: FileRow): string {
+  const s = String(file.status || "").toUpperCase();
+  const chunks = file.chunk_count ?? 0;
+  if (s === "FAILED") return "Failed";
+  if (needsConvertedOfficePreview(file) && isStudyGenerationReady(file) && !isOfficeViewerReady(file)) {
+    const viewer = officeViewerStatus(file);
+    if (viewer === "processing") return "Ready, preview processing";
+    if (viewer === "failed") return "Ready, preview failed";
+    return "Ready, preview unavailable";
+  }
+  if (s === "UPLOADING") return "Uploading";
+  if (s === "UPLOADED") return "Uploaded";
+  if (isReadyStatus(s) && chunks > 0) return "Ready";
+  if (s === "FAILED_PREVIEW" && chunks > 0) return "Ready";
+  if (s === "FAILED_PREVIEW") return "Preview failed";
+  if (isReadyStatus(s) && chunks === 0) return "Processing";
+  if (s === "EXTRACTING_TEXT" || s === "RUNNING_OCR") return "Extracting text";
+  if (s === "CHUNKING" || s === "GENERATING_EMBEDDINGS") return "Indexing content";
+  if (s === "CONVERTING_PREVIEW" || s === "PREVIEW_READY") return "Building preview";
+  if (
+    [
+      "PROCESSING",
+      "OCR_QUEUED",
+      "OCR_DONE",
+      "SPLITTING_PAGES",
+      "ENHANCING_IMAGE",
+      "PREPARING_REVIEW",
+    ].includes(s)
+  ) {
+    return "Processing";
+  }
+  if (s === "OCR_NEEDS_REVIEW") return "Needs review";
+  return "Processing";
+}
+
+/** Secondary line under the status pill — no fake percentages. */
+function documentStageDetail(file: FileRow): string | null {
+  const s = String(file.status || "").toUpperCase();
+  if (isStudyGenerationReady(file)) {
+    if (needsConvertedOfficePreview(file) && !isOfficeViewerReady(file)) {
+      const err = (file.conversion_error || file.preview_error || "").trim();
+      const viewer = officeViewerStatus(file);
+      if (viewer === "processing") return "Preparing slide preview...";
+      if (err) return err.length > 160 ? `${err.slice(0, 157)}…` : err;
+      return "Preview PDF was not generated.";
+    }
+    return null;
+  }
+  if (s === "FAILED") {
+    const err = (file.last_error || "").trim();
+    return err.length > 160 ? `${err.slice(0, 157)}…` : err || "Processing failed.";
+  }
+  if (s === "FAILED_PREVIEW") {
+    return (file.chunk_count ?? 0) > 0
+      ? "PDF preview unavailable; search and assistant still work."
+      : "Could not build PDF preview.";
+  }
+  const stages: Record<string, string> = {
+    UPLOADING: "Saving your upload…",
+    UPLOADED: "Waiting for the processor…",
+    PROCESSING: "Handoff to document processor…",
+    OCR_QUEUED: "In queue…",
+    EXTRACTING_TEXT: "Reading text from the file…",
+    CHUNKING: "Splitting content into searchable segments…",
+    GENERATING_EMBEDDINGS: "Vector index for chat and search…",
+    CONVERTING_PREVIEW: "Optional PDF preview (LibreOffice)…",
+    PREVIEW_READY: "Wrapping up…",
+    OCR_DONE: "Almost done…",
+    RUNNING_OCR: "Running OCR on pages…",
+    SPLITTING_PAGES: "Preparing pages…",
+    ENHANCING_IMAGE: "Enhancing scans…",
+    PREPARING_REVIEW: "Preparing review…",
+  };
+  return stages[s] ?? "Working on your document…";
+}
+
+function canOpenDocumentInWorkspace(file: FileRow): boolean {
+  if (String(file.status || "").toUpperCase() === "FAILED") return true;
+  if (isHandwrittenOCR(file) && String(file.status || "").toUpperCase() === "OCR_NEEDS_REVIEW") return false;
+  if (needsConvertedOfficePreview(file)) return isStudyGenerationReady(file) || isOfficeViewerReady(file);
+  return isStudyGenerationReady(file);
+}
+
+function isHandwrittenOCR(file?: FileRow | null) {
+  return String(file?.source_type || "").toLowerCase() === "handwritten_ocr";
+}
+
+function isPptxFile(file?: FileRow | null) {
+  if (!file) return false;
+  const mime = String(file.mime_type || "").toLowerCase();
+  return mime === "application/vnd.openxmlformats-officedocument.presentationml.presentation" || file.filename.toLowerCase().endsWith(".pptx");
+}
+
+function isDocxFile(file?: FileRow | null) {
+  if (!file) return false;
+  const mime = String(file.mime_type || "").toLowerCase();
+  return (
+    mime.includes("wordprocessingml.document") ||
+    mime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    file.filename.toLowerCase().endsWith(".docx")
+  );
+}
+
+/** PPTX/DOCX: fetch JSON preview (includes converted PDF URL when ready). */
+function needsConvertedOfficePreview(file?: FileRow | null) {
+  return isPptxFile(file) || isDocxFile(file);
+}
+
+function officeViewerStatus(file?: FileRow | null) {
+  return String(file?.viewer_status || "").toLowerCase();
+}
+
+function isOfficeViewerReady(file?: FileRow | null) {
+  return needsConvertedOfficePreview(file) && officeViewerStatus(file) === "ready" && !!file?.viewer_file_url;
+}
+
+function officePreviewViewerUrl(preview?: DocumentPreview | null) {
+  const url = preview?.viewer_file_url || preview?.preview?.url || preview?.pdf_url || null;
+  if (!url) return null;
+  return /\.pptx?($|[?#])/i.test(url) || /\.docx?($|[?#])/i.test(url) ? null : url;
+}
+
+function isImageFile(file?: FileRow | null) {
+  if (!file) return false;
+  const mime = String(file.mime_type || "").toLowerCase();
+  const name = file.filename.toLowerCase();
+  return mime.startsWith("image/") || /\.(png|jpe?g|gif|webp|bmp|tiff?)$/.test(name);
+}
+
+function hasTextPreview(file?: FileRow | null) {
+  if (!file) return false;
+  const mime = String(file.mime_type || "").toLowerCase();
+  const name = file.filename.toLowerCase();
+  return (
+    mime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    mime === "application/vnd.openxmlformats-officedocument.presentationml.presentation" ||
+    mime.startsWith("text/") ||
+    /\.(docx|pptx|txt|md|csv|json|log)$/.test(name)
+  );
+}
+
+function DocumentTextPreview({ preview }: { preview: DocumentPreview }) {
+  const label = preview.kind === "pptx" ? "Extracted slide text" : preview.kind === "docx" ? "Document" : "Text";
+  const pages = preview.pages?.length ? preview.pages : ["No previewable text was found in this document."];
+
+  return (
+    <div className="h-full overflow-y-auto bg-[var(--surface)] px-4 py-4 sm:px-6">
+      <div className="mx-auto flex max-w-4xl flex-col gap-4">
+        {pages.map((page, idx) => (
+          <section
+            key={idx}
+            className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-5 shadow-sm"
+          >
+            <div className="mb-3 text-xs font-semibold uppercase text-[var(--text-muted-soft)]">
+              {label} {preview.kind === "docx" && pages.length === 1 ? "Preview" : idx + 1}
+            </div>
+            <div className="whitespace-pre-wrap text-sm leading-7 text-[var(--text-main)]">
+              {page}
+            </div>
+          </section>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function prettyBytes(bytes?: number) {
@@ -88,24 +381,121 @@ function timeLocal(s?: string | null) {
   }
 }
 
-function StatusPill({ status }: { status?: string | null }) {
-  const s = (status || "UPLOADED").toUpperCase();
-  const base = "inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-semibold";
-  const map: Record<string, string> = {
-    UPLOADED: "border-amber-200 bg-amber-50 text-amber-700",
-    OCR_QUEUED: "border-amber-200 bg-amber-50 text-amber-700",
-    OCR_DONE: "border-amber-200 bg-amber-50 text-amber-700",
-    INDEXED: "border-emerald-200 bg-emerald-50 text-emerald-700",
-    FAILED: "border-rose-200 bg-rose-50 text-rose-700",
+function StatusPill({ file }: { file: FileRow }) {
+  const s = (file.status || "UPLOADED").toUpperCase();
+  const toneByStatus: Record<string, "success" | "warning" | "info" | "danger" | "neutral"> = {
+    UPLOADED: "warning",
+    UPLOADING: "warning",
+    PROCESSING: "warning",
+    OCR_QUEUED: "warning",
+    EXTRACTING_TEXT: "warning",
+    CHUNKING: "info",
+    CONVERTING_PREVIEW: "info",
+    PREVIEW_READY: "info",
+    FAILED_PREVIEW: "warning",
+    GENERATING_EMBEDDINGS: "info",
+    OCR_DONE: "warning",
+    OCR_NEEDS_REVIEW: "info",
+    OCR_READY: "success",
+    INDEXED: "success",
+    READY: "success",
+    FAILED: "danger",
   };
-  const label =
-    s === "INDEXED"
-      ? "Ready"
-      : s === "FAILED"
-        ? "Failed"
-        : "Processing";
-  return <span className={`${base} ${map[s] || map.UPLOADED}`}>{label}</span>;
+  const tone = toneByStatus[s] ?? "warning";
+  const dotClass =
+    tone === "success"
+      ? "bg-[var(--success)]"
+      : tone === "danger"
+        ? "bg-[var(--danger)]"
+        : tone === "info"
+          ? "bg-[var(--primary)]"
+          : tone === "warning"
+            ? "bg-[var(--warning)]"
+            : "bg-[var(--text-muted)]";
+  const label = documentWorkflowLabel(file);
+  return (
+    <span className={`pill pill-${tone}`}>
+      <span className={`h-1.5 w-1.5 rounded-full ${dotClass}`} aria-hidden />
+      {label}
+    </span>
+  );
 }
+
+function flashcardSourceStatus(file: FileRow) {
+  if (isStudyGenerationReady(file)) return { disabled: false, label: "Ready for study generation" };
+  if (String(file.status || "").toUpperCase() === "OCR_NEEDS_REVIEW") return { disabled: true, label: "Review OCR first" };
+  if (
+    [
+      "PROCESSING",
+      "UPLOADED",
+      "EXTRACTING_TEXT",
+      "CHUNKING",
+      "CONVERTING_PREVIEW",
+      "PREVIEW_READY",
+      "FAILED_PREVIEW",
+      "GENERATING_EMBEDDINGS",
+      "OCR_QUEUED",
+    ].includes(String(file.status || "").toUpperCase())
+  ) {
+    return { disabled: true, label: "Processing" };
+  }
+  if (String(file.status || "").toUpperCase() === "FAILED") return { disabled: true, label: "Extraction failed" };
+  return { disabled: true, label: "Unsupported" };
+}
+
+function displayFilename(name?: string | null, opts?: { removeExtension?: boolean }) {
+  const raw = (name || "Document").trim();
+  const withoutExt = opts?.removeExtension ? raw.replace(/\.[^.]+$/, "") : raw;
+  return withoutExt.replace(/[-_]+/g, " ").replace(/\s+/g, " ").trim() || raw;
+}
+
+function MarkdownContent({ children }: { children: string }) {
+  return (
+    <div className="assistant-markdown min-w-0 break-words text-sm leading-6 text-main">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        skipHtml
+        components={{
+          a: ({ href, children: linkChildren }) => (
+            <a
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-medium text-[var(--primary)] underline underline-offset-2"
+            >
+              {linkChildren}
+            </a>
+          ),
+          p: ({ children: paragraphChildren }) => <p className="my-2 first:mt-0 last:mb-0">{paragraphChildren}</p>,
+          strong: ({ children: strongChildren }) => <strong className="font-bold text-main">{strongChildren}</strong>,
+          em: ({ children: emChildren }) => <em className="italic">{emChildren}</em>,
+          ul: ({ children: listChildren }) => <ul className="my-2 list-disc space-y-1 pl-5">{listChildren}</ul>,
+          ol: ({ children: listChildren }) => <ol className="my-2 list-decimal space-y-1 pl-5">{listChildren}</ol>,
+          li: ({ children: itemChildren }) => <li className="pl-1">{itemChildren}</li>,
+          code: ({ className, children: codeChildren }) => {
+            const inline = !className;
+            if (inline) {
+              return (
+                <code className="rounded-md border border-token surface-2 px-1 py-0.5 text-[0.85em] text-main">
+                  {codeChildren}
+                </code>
+              );
+            }
+            return <code className={className}>{codeChildren}</code>;
+          },
+          pre: ({ children: preChildren }) => (
+            <pre className="my-3 max-w-full overflow-x-auto rounded-xl border border-token bg-[#111827] p-3 text-xs leading-5 text-white">
+              {preChildren}
+            </pre>
+          ),
+        }}
+      >
+        {children}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
 
 type ClassTab = "documents" | "flashcards";
 const DOCUMENTS_PAGE_SIZE = 5;
@@ -122,17 +512,30 @@ function Tabs({
     ["flashcards", "Flashcards"],
   ];
   return (
-    <div className="flex flex-wrap gap-2">
-      {items.map(([key, label]) => (
-        <button
-          key={key}
-          type="button"
-          onClick={() => onChange(key)}
-          className={`tab-pill ${active === key ? "tab-pill-active" : "tab-pill-muted"}`}
-        >
-          {label}
-        </button>
-      ))}
+    <div
+      role="tablist"
+      aria-label="Class view"
+      className="inline-flex items-center gap-0.5 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-2)] p-0.5"
+    >
+      {items.map(([key, label]) => {
+        const isActive = active === key;
+        return (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={isActive}
+            onClick={() => onChange(key)}
+            className={`inline-flex h-8 items-center justify-center rounded-[var(--radius-sm)] px-3.5 text-[13px] font-semibold transition ${
+              isActive
+                ? "bg-[var(--surface)] text-[var(--text-main)] shadow-[var(--shadow-xs)]"
+                : "text-[var(--text-muted)] hover:text-[var(--text-main)]"
+            }`}
+          >
+            {label}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -144,7 +547,6 @@ function ClassesContent() {
 
   const [files, setFiles] = useState<FileRow[] | undefined>([]);
   const [documentsPage, setDocumentsPage] = useState(0);
-  const [sel, setSel] = useState<Record<string, boolean>>({});
   const [flashcardSourceIds, setFlashcardSourceIds] = useState<string[]>([]);
   const documentRows = useMemo(() => files ?? [], [files]);
   const documentsPageCount = Math.max(1, Math.ceil(documentRows.length / DOCUMENTS_PAGE_SIZE));
@@ -157,11 +559,6 @@ function ClassesContent() {
       ),
     [documentRows, currentDocumentsPage]
   );
-  const selectedIds = useMemo(
-    () => documentRows.filter((f) => sel[f.id]).map((f) => f.id),
-    [documentRows, sel]
-  );
-
   const [busyUpload, setBusyUpload] = useState(false);
   const [busyFlow, setBusyFlow] = useState(false);
   const [dropping, setDropping] = useState(false);
@@ -169,14 +566,35 @@ function ClassesContent() {
 
   const [preview, setPreview] = useState<ChunkPreview[] | null>(null);
   const [, setCards] = useState<Flashcard[]>([]);
+  const [flashcardGenerationSummary, setFlashcardGenerationSummary] = useState<string | null>(null);
   const [weakCards, setWeakCards] = useState<WeakCard[]>([]);
   const [weakCardsLoading, setWeakCardsLoading] = useState(false);
+  const [recommendations, setRecommendations] = useState<RevisionRecommendation[]>([]);
+  const [recommendationsLoading, setRecommendationsLoading] = useState(false);
   const [activeFile, setActiveFile] = useState<FileRow | null>(null);
+  const [detailsFile, setDetailsFile] = useState<FileRow | null>(null);
   const [activeFileViewUrl, setActiveFileViewUrl] = useState<string | null>(null);
   const [activeFileViewError, setActiveFileViewError] = useState<string | null>(null);
   const [activeFileViewLoading, setActiveFileViewLoading] = useState(false);
+  const [activeDocumentPreview, setActiveDocumentPreview] = useState<DocumentPreview | null>(null);
+  const [activeDocumentPreviewError, setActiveDocumentPreviewError] = useState<string | null>(null);
+  const [activeDocumentPreviewLoading, setActiveDocumentPreviewLoading] = useState(false);
+  /** Blob or presigned URL for PDF / PPTX-as-PDF / images — plain fetch cannot send Firebase headers. */
+  const [studyViewerBlobUrl, setStudyViewerBlobUrl] = useState<string | null>(null);
+  const [studyViewerBlobLoading, setStudyViewerBlobLoading] = useState(false);
+  const [studyViewerBlobError, setStudyViewerBlobError] = useState<string | null>(null);
+  /** When converted PPTX→PDF blob fails in react-pdf, parent shows PPTX fallback instead of PDF chrome. */
+  const [pptxConvertedPdfFailed, setPptxConvertedPdfFailed] = useState(false);
+  const [studyViewerRetryNonce, setStudyViewerRetryNonce] = useState(0);
+  const [documentPreviewRetryNonce, setDocumentPreviewRetryNonce] = useState(0);
+  const [viewUrlRetryNonce, setViewUrlRetryNonce] = useState(0);
+  const [ocrReviewOpen, setOcrReviewOpen] = useState(false);
+  const [ocrReviewFile, setOcrReviewFile] = useState<FileRow | null>(null);
+  const [ocrReview, setOcrReview] = useState<OCRReviewResult | null>(null);
+  const [ocrDraftPages, setOcrDraftPages] = useState<Record<number, string>>({});
+  const [ocrBusy, setOcrBusy] = useState(false);
+  const [uploadMode, setUploadMode] = useState<"typed" | "handwritten">("typed");
   const [pdfFocusMode, setPdfFocusMode] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
   const [selectionMenu, setSelectionMenu] = useState<{
     text: string;
     x: number;
@@ -192,14 +610,25 @@ function ClassesContent() {
   const [studySessions, setStudySessions] = useState<ChatSession[]>([]);
   const [studySessionId, setStudySessionId] = useState<string | null>(null);
   const [studyMessages, setStudyMessages] = useState<StudyMsg[]>([]);
+  const [studySessionsLoading, setStudySessionsLoading] = useState(false);
+  const [studyMessagesLoading, setStudyMessagesLoading] = useState(false);
+  const [studyMessagesReloadNonce, setStudyMessagesReloadNonce] = useState(0);
   const [studyInput, setStudyInput] = useState('');
-  const [studyBusy, setStudyBusy] = useState(false);
+  const [renamingStudySession, setRenamingStudySession] = useState<{ id: string; title: string } | null>(null);
+  const [studyHistoryOpen, setStudyHistoryOpen] = useState(false);
+  const [studyHistorySearch, setStudyHistorySearch] = useState("");
+  const studyHistoryDropdownRef = useRef<HTMLDivElement | null>(null);
+  const [studyBusySessionId, setStudyBusySessionId] = useState<string | null>(null);
+  const [studyError, setStudyError] = useState<string | null>(null);
   const [studySelectedQuote, setStudySelectedQuote] = useState<{ text: string; fileId?: string | null; pageNumber?: number | null } | null>(null);
   const studyChatScrollRef = useRef<HTMLDivElement | null>(null);
+  const activeStudySessionRef = useRef<string | null>(null);
+  const studyMessagesRequestRef = useRef(0);
   const activeStudyDocumentRef = useRef<{ classId: number | null; fileId: string | null }>({
     classId: null,
     fileId: null,
   });
+  const fileStatusRef = useRef<Record<string, string>>({});
 
   const location = useLocation();
   const navigate = useNavigate();
@@ -237,7 +666,6 @@ function ClassesContent() {
   useEffect(() => {
     if (selectedId == null) {
       setFiles([]);
-      setSel({});
       setFlashcardSourceIds([]);
       setCards([]);
       setActiveTab("documents");
@@ -257,7 +685,6 @@ function ClassesContent() {
     (async () => {
       const fs = await listFiles(selectedId);
       setFiles(fs ?? []);
-      setSel({});
       try {
         setCards(await listFlashcards(selectedId));
       } catch {
@@ -273,7 +700,7 @@ function ClassesContent() {
       return;
     }
     const fileIds = new Set(currentFiles.map((f) => f.id));
-    const indexedIds = currentFiles.filter((f) => f.status === "INDEXED").map((f) => f.id);
+    const indexedIds = currentFiles.filter((f) => isStudyGenerationReady(f)).map((f) => f.id);
     const defaultId = indexedIds[0] ?? currentFiles[0]?.id ?? null;
     setFlashcardSourceIds((prev) => {
       const kept = prev.filter((id) => fileIds.has(id));
@@ -281,6 +708,18 @@ function ClassesContent() {
       return defaultId ? [defaultId] : [];
     });
   }, [selectedId, files]);
+
+  useEffect(() => {
+    if (!activeFile) return;
+    const fresh = (files ?? []).find((f) => f.id === activeFile.id);
+    if (fresh && fresh !== activeFile) {
+      setActiveFile(fresh);
+    }
+  }, [files, activeFile?.id]);
+
+  useEffect(() => {
+    setPptxConvertedPdfFailed(false);
+  }, [activeFile?.id]);
 
   useEffect(() => {
     setDocumentsPage((page) => Math.min(page, Math.max(0, documentsPageCount - 1)));
@@ -293,15 +732,24 @@ function ClassesContent() {
     };
   }, [selectedId, activeFile?.id]);
 
+  useEffect(() => {
+    activeStudySessionRef.current = studySessionId;
+  }, [studySessionId]);
+
   // Load study sessions when active file changes
   useEffect(() => {
     if (!selectedId || !activeFile) {
       setStudySessions([]);
       setStudySessionId(null);
       setStudyMessages([]);
-      setStudyBusy(false);
+      setStudySessionsLoading(false);
+      setStudyMessagesLoading(false);
+      setStudyBusySessionId(null);
+      setStudyError(null);
       setStudySelectedQuote(null);
       setPendingSnip(null);
+      setStudyHistoryOpen(false);
+      setStudyHistorySearch("");
       return;
     }
     let cancelled = false;
@@ -309,9 +757,14 @@ function ClassesContent() {
     setStudySessions([]);
     setStudySessionId(null);
     setStudyMessages([]);
-    setStudyBusy(false);
+    setStudySessionsLoading(true);
+    setStudyMessagesLoading(false);
+    setStudyBusySessionId(null);
+    setStudyError(null);
     setStudySelectedQuote(null);
     setPendingSnip(null);
+    setStudyHistoryOpen(false);
+    setStudyHistorySearch("");
     (async () => {
       try {
         const sess = await listChatSessions(selectedId, fileId);
@@ -322,46 +775,98 @@ function ClassesContent() {
         ) {
           return;
         }
-        setStudySessions(sess);
+        const scoped = (sess || []).filter((session) => session.class_id === selectedId && session.document_id === fileId);
+        setStudySessions(scoped);
         const stored = localStorage.getItem(`study_session_${selectedId}_${fileId}`);
-        const preferred = stored ? sess.find((s) => s.id === stored)?.id : null;
-        setStudySessionId(preferred ?? sess[0]?.id ?? null);
-      } catch { /* ignore */ }
+        const preferred = stored ? scoped.find((s) => s.id === stored)?.id : null;
+        const documentSession = scoped.find((s) => s.document_id === fileId)?.id ?? null;
+        setStudySessionId(preferred ?? documentSession ?? null);
+      } catch (err) {
+        if (!cancelled) {
+          if (import.meta.env.DEV) console.error("[CHAT] failed to load study chats", err);
+          setStudySessions([]);
+          setStudySessionId(null);
+          setStudyError("Couldn't load chat history. Try reopening the assistant.");
+        }
+      } finally {
+        if (!cancelled) setStudySessionsLoading(false);
+      }
     })();
     return () => {
       cancelled = true;
     };
   }, [selectedId, activeFile?.id]);
 
+  useEffect(() => {
+    if (!studyHistoryOpen) return;
+    const onDown = (e: MouseEvent) => {
+      const el = studyHistoryDropdownRef.current;
+      if (el && !el.contains(e.target as Node)) setStudyHistoryOpen(false);
+    };
+    window.addEventListener("mousedown", onDown);
+    return () => window.removeEventListener("mousedown", onDown);
+  }, [studyHistoryOpen]);
+
+  useEffect(() => {
+    if (!studyHistoryOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setStudyHistoryOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [studyHistoryOpen]);
+
   // Load messages when study session changes
   useEffect(() => {
-    if (!studySessionId) { setStudyMessages([]); return; }
+    const requestId = ++studyMessagesRequestRef.current;
+    if (!studySessionId) {
+      setStudyMessages([]);
+      setStudyMessagesLoading(false);
+      setStudyError(null);
+      return;
+    }
     let cancelled = false;
+    const sessionId = studySessionId;
     const fileId = activeFile?.id ?? null;
+    setStudyMessages([]);
+    setStudyMessagesLoading(true);
+    setStudyError(null);
     (async () => {
       try {
-        const msgs = await listChatSessionMessages(studySessionId);
+        const msgs = await listChatSessionMessages(sessionId, selectedId);
         if (
           cancelled ||
+          requestId !== studyMessagesRequestRef.current ||
+          activeStudySessionRef.current !== sessionId ||
           activeStudyDocumentRef.current.classId !== (selectedId ?? null) ||
           activeStudyDocumentRef.current.fileId !== fileId
         ) {
           return;
         }
         setStudyMessages((msgs || []).map((m) => ({ ...m, citations: m.citations ?? undefined })));
-      } catch { /* ignore */ }
+      } catch (err) {
+        if (!cancelled && requestId === studyMessagesRequestRef.current) {
+          if (import.meta.env.DEV) console.error("[CHAT] failed to load study messages", err);
+          setStudyMessages([]);
+          setStudyError("Couldn't load this chat. Select it again or start a new chat.");
+        }
+      } finally {
+        if (!cancelled && requestId === studyMessagesRequestRef.current) {
+          setStudyMessagesLoading(false);
+        }
+      }
     })();
     return () => {
       cancelled = true;
     };
-  }, [studySessionId, selectedId, activeFile?.id]);
+  }, [studySessionId, selectedId, activeFile?.id, studyMessagesReloadNonce]);
 
   // Auto-scroll study chat
   useEffect(() => {
     const el = studyChatScrollRef.current;
     if (!el) return;
     el.scrollTop = el.scrollHeight;
-  }, [studyMessages.length, studyBusy]);
+  }, [studyMessages.length, studyBusySessionId, studyMessagesLoading]);
 
   // Clear selection menu on scroll/click outside
   useEffect(() => {
@@ -378,32 +883,78 @@ function ClassesContent() {
   useEffect(() => {
     if (!selectedId) return;
     const needsPoll = (files ?? []).some((f) =>
-      ["UPLOADED", "OCR_QUEUED", "OCR_DONE"].includes(String(f.status || ""))
+      officeViewerStatus(f) === "processing" ||
+      [
+        "UPLOADING",
+        "UPLOADED",
+        "PROCESSING",
+        "EXTRACTING_TEXT",
+        "CHUNKING",
+        "CONVERTING_PREVIEW",
+        "PREVIEW_READY",
+        "FAILED_PREVIEW",
+        "OCR_QUEUED",
+        "GENERATING_EMBEDDINGS",
+        "OCR_DONE",
+        "RUNNING_OCR",
+        "SPLITTING_PAGES",
+        "ENHANCING_IMAGE",
+        "PREPARING_REVIEW",
+      ].includes(String(f.status || "").toUpperCase())
     );
     if (!needsPoll) return;
     const id = setInterval(async () => {
       const fs = await listFiles(selectedId);
       setFiles(fs ?? []);
-    }, 5000);
+    }, 2000);
     return () => clearInterval(id);
   }, [selectedId, files]);
+
+  useEffect(() => {
+    const next: Record<string, string> = {};
+    for (const file of files ?? []) {
+      const status = String(file.status || "UPLOADED").toUpperCase();
+      const prev = fileStatusRef.current[file.id];
+      if (prev && prev !== status) {
+        if (isReadyStatus(status)) showToastMessage("Document is ready.");
+        if (status === "FAILED") showToastMessage("Processing failed. Please retry.");
+      }
+      next[file.id] = status;
+    }
+    fileStatusRef.current = next;
+  }, [files]);
 
   useEffect(() => {
     if (!selectedId || activeTab !== "flashcards") {
       setWeakCards([]);
       setWeakCardsLoading(false);
+      setRecommendations([]);
+      setRecommendationsLoading(false);
       return;
     }
     let cancelled = false;
     setWeakCardsLoading(true);
+    setRecommendationsLoading(true);
     (async () => {
       try {
-        const data = await getWeakCards({ deck_id: selectedId, limit: 6, days: 30 });
-        if (!cancelled) setWeakCards(data);
+        const [cards, recs] = await Promise.all([
+          getWeakCards({ deck_id: selectedId, limit: 6, days: 30 }),
+          getClassRecommendations(selectedId),
+        ]);
+        if (!cancelled) {
+          setWeakCards(cards);
+          setRecommendations(recs);
+        }
       } catch {
-        if (!cancelled) setWeakCards([]);
+        if (!cancelled) {
+          setWeakCards([]);
+          setRecommendations([]);
+        }
       } finally {
-        if (!cancelled) setWeakCardsLoading(false);
+        if (!cancelled) {
+          setWeakCardsLoading(false);
+          setRecommendationsLoading(false);
+        }
       }
     })();
     return () => {
@@ -414,6 +965,17 @@ function ClassesContent() {
   useEffect(() => {
     if (!selectedId || !activeFile) {
       setActiveFileViewUrl(null);
+      setActiveFileViewError(null);
+      setActiveFileViewLoading(false);
+      return;
+    }
+    if (needsConvertedOfficePreview(activeFile)) {
+      console.info("[OFFICE_PREVIEW] opening document_id=%s", activeFile.id);
+      console.info("[OFFICE_PREVIEW] skipping getDocumentViewUrl for office file");
+      setActiveFileViewUrl(null);
+      if (activeFileViewError) {
+        console.info("[OFFICE_PREVIEW] clearing stale activeFileViewError");
+      }
       setActiveFileViewError(null);
       setActiveFileViewLoading(false);
       return;
@@ -451,7 +1013,149 @@ function ClassesContent() {
     return () => {
       cancelled = true;
     };
-  }, [selectedId, activeFile?.id]);
+  }, [selectedId, activeFile?.id, activeFile?.filename, activeFile?.mime_type, viewUrlRetryNonce]);
+
+  useEffect(() => {
+    if (!selectedId || !activeFile || isPdfFile(activeFile) || isImageFile(activeFile) || !hasTextPreview(activeFile)) {
+      setActiveDocumentPreview(null);
+      setActiveDocumentPreviewError(null);
+      setActiveDocumentPreviewLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setActiveDocumentPreview(null);
+    setActiveDocumentPreviewError(null);
+    setActiveDocumentPreviewLoading(true);
+    (async () => {
+      try {
+        const officeFile = needsConvertedOfficePreview(activeFile);
+        if (officeFile) {
+          console.info("[OFFICE_PREVIEW] opening document_id=%s", activeFile.id);
+        }
+        let res = await getDocumentPreview(selectedId, activeFile.id);
+        if (officeFile) {
+          console.info(
+            "[OFFICE_PREVIEW] preview response viewer_status=%s viewer_file_url=%s",
+            res.viewer_status,
+            officePreviewViewerUrl(res)
+          );
+          if (!officePreviewViewerUrl(res) && res.viewer_status !== "processing" && res.preview?.status !== "generating") {
+            const retry = await processDocumentPreview(selectedId, activeFile.id);
+            console.info(
+              "[OFFICE_PREVIEW] retry success viewer_file_url=%s",
+              retry.viewer_file_url || retry.pdf_url || null
+            );
+            res = await getDocumentPreview(selectedId, activeFile.id);
+          }
+        }
+        if (!cancelled) {
+          setActiveDocumentPreview(res);
+          if (officeFile && officePreviewViewerUrl(res)) {
+            if (activeFileViewError) {
+              console.info("[OFFICE_PREVIEW] clearing stale activeFileViewError");
+            }
+            setActiveFileViewError(null);
+          }
+        }
+      } catch (err: any) {
+        if (cancelled) return;
+        const status = err?.response?.status;
+        if (status === 401 || status === 403) {
+          setActiveDocumentPreviewError("You're not signed in. Please log in again.");
+        } else if (status === 404) {
+          setActiveDocumentPreviewError(
+            "Preview unavailable. The file could not be found on the server."
+          );
+        } else if (status === 415) {
+          setActiveDocumentPreviewError("Preview is not available for this file type.");
+        } else {
+          setActiveDocumentPreviewError("Could not build a preview for this file. Please download instead.");
+        }
+        if (import.meta.env.DEV) {
+          console.warn("[classes] document preview failed", err);
+        }
+      } finally {
+        if (!cancelled) setActiveDocumentPreviewLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId, activeFile?.id, documentPreviewRetryNonce]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let revoke: (() => void) | undefined;
+
+    async function run() {
+      setStudyViewerBlobUrl(null);
+      setStudyViewerBlobError(null);
+      setStudyViewerBlobLoading(false);
+      if (!selectedId || !activeFile) return;
+
+      const isPdf = isPdfFile(activeFile);
+      const isImg = isImageFile(activeFile);
+      const isOfficePdf = needsConvertedOfficePreview(activeFile);
+
+      const convertedOfficePdfPath =
+        isOfficePdf &&
+        !activeDocumentPreviewLoading &&
+        activeDocumentPreview &&
+        (activeDocumentPreview.preview?.type === "pdf" || activeDocumentPreview.pdf_url || activeDocumentPreview.viewer_file_url)
+          ? officePreviewViewerUrl(activeDocumentPreview)
+          : null;
+
+      let rawUrl: string | null = null;
+      if (isPdf || isImg) {
+        if (activeFileViewLoading || activeFileViewError || !activeFileViewUrl) return;
+        rawUrl = activeFileViewUrl;
+      } else if (isOfficePdf) {
+        if (!convertedOfficePdfPath) return;
+        if (activeFileViewError) {
+          console.info("[OFFICE_PREVIEW] clearing stale activeFileViewError");
+          setActiveFileViewError(null);
+        }
+        rawUrl = convertedOfficePdfPath;
+      } else {
+        return;
+      }
+
+      setStudyViewerBlobLoading(true);
+      try {
+        const out = await fetchAuthenticatedBlobUrl(rawUrl);
+        revoke = out.revoke;
+        if (cancelled) {
+          out.revoke?.();
+          return;
+        }
+        setStudyViewerBlobUrl(out.url);
+      } catch (e) {
+        if (cancelled) return;
+        setStudyViewerBlobError(apiErrorMessage(e, "The file could not be found on the server."));
+      } finally {
+        if (!cancelled) setStudyViewerBlobLoading(false);
+      }
+    }
+
+    run();
+    return () => {
+      cancelled = true;
+      revoke?.();
+    };
+  }, [
+    selectedId,
+    activeFile?.id,
+    activeFile?.filename,
+    activeFile?.mime_type,
+    activeFileViewUrl,
+    activeFileViewLoading,
+    activeFileViewError,
+    activeDocumentPreview,
+    activeDocumentPreviewLoading,
+    activeDocumentPreviewError,
+    studyViewerRetryNonce,
+  ]);
 
   function toggleFocusMode() {
     if (pdfFocusMode) {
@@ -502,7 +1206,6 @@ function ClassesContent() {
     if (selectedId === id) {
       setSelectedId(null);
       setFiles([]);
-      setSel({});
       setCards([]);
       setActiveTab("documents");
     }
@@ -526,10 +1229,11 @@ function ClassesContent() {
   }
 
   function acceptFile(f: File) {
+    if (isOldPptUpload(f)) return false;
     return isAllowed(f);
   }
 
-  async function uploadMany(fileList: FileList | File[]) {
+  async function uploadMany(fileList: FileList | File[], mode: "typed" | "handwritten" = uploadMode) {
     if (!selectedId) {
       alert("Select a class first.");
       return;
@@ -538,6 +1242,9 @@ function ClassesContent() {
     const accepted = arr.filter(acceptFile);
     const rejected = arr.filter((f) => !acceptFile(f));
     setInvalidDropCount(rejected.length);
+    if (rejected.some(isOldPptUpload)) {
+      showToastMessage("Old .ppt files are not supported yet. Please upload .pptx or PDF.");
+    }
 
     if (accepted.length === 0) return;
 
@@ -545,12 +1252,18 @@ function ClassesContent() {
 
     try {
       for (const f of accepted) {
-        const row = await uploadFile(selectedId, f);
+        const row = mode === "handwritten" ? await uploadHandwrittenFile(selectedId, f) : await uploadFile(selectedId, f);
         setFiles((xs) => [row, ...(xs ?? [])]);
+        showToastMessage(
+          mode === "handwritten"
+            ? "Handwritten notes uploaded. OCR review will be ready shortly."
+            : "Document uploaded. Processing started."
+        );
       }
       setDocumentsPage(0);
-    } catch (err: unknown) {
-      showToastMessage("Upload failed. Please try again.");
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail;
+      showToastMessage(typeof detail === "string" && detail.trim() ? detail : "Upload failed. Please try again.");
     } finally {
       setBusyUpload(false);
       setDropping(false);
@@ -576,18 +1289,91 @@ function ClassesContent() {
     await uploadMany(e.dataTransfer.files);
   }
 
-  function toggleAll(checked: boolean) {
-    setSel((prev) => {
-      const next = { ...prev };
-      visibleDocuments.forEach((f) => {
-        if (checked) next[f.id] = true;
-        else delete next[f.id];
-      });
-      return next;
-    });
+  async function openOcrReview(file: FileRow) {
+    setOcrReviewFile(file);
+    setOcrReviewOpen(true);
+    setOcrReview(null);
+    setOcrDraftPages({});
+    setOcrBusy(true);
+    try {
+      const data = await getOCRReview(file.id);
+      setOcrReview(data);
+      const drafts: Record<number, string> = {};
+      for (const page of data.pages || []) drafts[page.page_number] = page.cleaned_text || page.raw_text || "";
+      setOcrDraftPages(drafts);
+    } catch (err: any) {
+      showToastMessage(err?.response?.data?.detail || err?.message || "Failed to load OCR review.");
+    } finally {
+      setOcrBusy(false);
+    }
   }
-  function toggleOne(id: string, checked: boolean) {
-    setSel((prev) => ({ ...prev, [id]: checked }));
+
+  async function saveOcrReview() {
+    if (!ocrReviewFile || !ocrReview) return;
+    setOcrBusy(true);
+    try {
+      await saveOCRCleanedText(
+        ocrReviewFile.id,
+        ocrReview.pages.map((page) => ({
+          page_number: page.page_number,
+          cleaned_text: ocrDraftPages[page.page_number] ?? "",
+        }))
+      );
+      const fresh = await listFiles(ocrReviewFile.class_id || selectedId!);
+      setFiles(fresh);
+      setOcrReviewOpen(false);
+      showToastMessage("Cleaned OCR text saved. This document is ready for flashcards and quizzes.");
+    } catch (err: any) {
+      showToastMessage(err?.response?.data?.detail || err?.message || "Failed to save OCR text.");
+    } finally {
+      setOcrBusy(false);
+    }
+  }
+
+  async function generateOcrFlashcards() {
+    if (!ocrReviewFile) return;
+    setOcrBusy(true);
+    try {
+      await generateFlashcardsFromOCR(ocrReviewFile.id, { style: "mixed" });
+      setOcrReviewOpen(false);
+      setActiveTab("flashcards");
+      showToastMessage("Flashcard generation from reviewed OCR text started.");
+    } catch (err: any) {
+      showToastMessage(err?.response?.data?.detail || err?.message || "Review and save OCR text before generating flashcards.");
+    } finally {
+      setOcrBusy(false);
+    }
+  }
+
+  async function generateOcrQuiz() {
+    if (!ocrReviewFile) return;
+    setOcrBusy(true);
+    try {
+      await generateQuizFromOCR(ocrReviewFile.id, { n_questions: 10, mcq_count: 10, types: ["mcq"], difficulty: "medium" });
+      showToastMessage("Quiz generation from reviewed OCR text started.");
+      setOcrReviewOpen(false);
+      navigate(`/quizzes?class_id=${ocrReviewFile.class_id || selectedId}`);
+    } catch (err: any) {
+      showToastMessage(err?.response?.data?.detail || err?.message || "Review and save OCR text before generating a quiz.");
+    } finally {
+      setOcrBusy(false);
+    }
+  }
+
+  async function rerunOcr() {
+    if (!ocrReviewFile) return;
+    setOcrBusy(true);
+    try {
+      await retryHandwrittenOCR(ocrReviewFile.id);
+      const fresh = await listFiles(ocrReviewFile.class_id || selectedId!);
+      setFiles(fresh);
+      setOcrReviewOpen(false);
+      showToastMessage("OCR retry queued.");
+    } catch (err: any) {
+      showToastMessage(err?.response?.data?.detail || err?.message || "Failed to retry OCR.");
+    } finally {
+      setOcrBusy(false);
+    }
   }
 
   async function onDeleteFile(fileId: string, filename: string) {
@@ -595,23 +1381,55 @@ function ClassesContent() {
     try {
       await deleteFile(fileId);
       setFiles((xs) => (xs ?? []).filter((f) => f.id !== fileId));
-      setSel((prev) => {
-        const next = { ...prev };
-        delete next[fileId];
-        return next;
-      });
+      setDetailsFile((current) => (current?.id === fileId ? null : current));
     } catch {
       alert("Failed to delete file");
     }
   }
 
   function openDocumentInWorkspace(file: FileRow) {
+    if (isHandwrittenOCR(file) && String(file.status || "").toUpperCase() === "OCR_NEEDS_REVIEW") {
+      void openOcrReview(file);
+      return;
+    }
+    if (!canOpenDocumentInWorkspace(file)) {
+      showToastMessage(documentStageDetail(file) || "Document is not ready to open yet.");
+      return;
+    }
     setActiveTab("documents");
     setActiveFile(file);
   }
 
+  function prepareFlashcardsFromFile(file: FileRow) {
+    if (!isStudyGenerationReady(file)) {
+      showToastMessage("Document is still processing or not indexed yet.");
+      return;
+    }
+    setFlashcardSourceIds([file.id]);
+    setActiveTab("flashcards");
+    setDetailsFile(null);
+  }
+
+  function prepareQuizFromFile(file: FileRow) {
+    if (!isStudyGenerationReady(file)) {
+      showToastMessage("Document is still processing or not indexed yet.");
+      return;
+    }
+    if (!selectedId) return;
+    navigate(`/quizzes?class_id=${selectedId}`);
+    showToastMessage("Choose your document and create a quiz on the Quizzes page.");
+  }
+
   function handleStudyAssistantClick() {
-    navigate(selectedId ? `/chatbot?classId=${selectedId}` : "/chatbot");
+    if (!selectedId) {
+      showToastMessage("Select a class first.");
+      return;
+    }
+    if (!activeFile) {
+      showToastMessage("Open a document to use the contextual assistant.");
+      return;
+    }
+    setStudyAssistantOpen((open) => !open);
   }
 
   function closeActiveDocument() {
@@ -619,6 +1437,13 @@ function ClassesContent() {
     setActiveFileViewUrl(null);
     setActiveFileViewError(null);
     setActiveFileViewLoading(false);
+    setStudyViewerBlobUrl(null);
+    setStudyViewerBlobLoading(false);
+    setStudyViewerBlobError(null);
+    setPptxConvertedPdfFailed(false);
+    setStudyViewerRetryNonce(0);
+    setDocumentPreviewRetryNonce(0);
+    setViewUrlRetryNonce(0);
     setSelectionMenu(null);
     setPendingSnip(null);
     window.requestAnimationFrame(() => {
@@ -629,6 +1454,17 @@ function ClassesContent() {
   async function resolveDocumentUrl(file: FileRow): Promise<string | null> {
     if (!selectedId) return null;
     try {
+      if (needsConvertedOfficePreview(file)) {
+        console.info("[OFFICE_PREVIEW] opening document_id=%s", file.id);
+        console.info("[OFFICE_PREVIEW] skipping getDocumentViewUrl for office file");
+        let preview = await getDocumentPreview(selectedId, file.id);
+        if (!officePreviewViewerUrl(preview) && preview.viewer_status !== "processing" && preview.preview?.status !== "generating") {
+          const retry = await processDocumentPreview(selectedId, file.id);
+          console.info("[OFFICE_PREVIEW] retry success viewer_file_url=%s", retry.viewer_file_url || retry.pdf_url || null);
+          preview = await getDocumentPreview(selectedId, file.id);
+        }
+        return officePreviewViewerUrl(preview);
+      }
       const res = await getDocumentViewUrl(selectedId, file.id);
       return res?.url ?? null;
     } catch (err: any) {
@@ -645,27 +1481,78 @@ function ClassesContent() {
   }
 
   async function openDocument(file: FileRow) {
-    const url = await resolveDocumentUrl(file);
-    if (!url) return;
-    window.open(url, "_blank", "noopener,noreferrer");
+    try {
+      const url = await resolveDocumentUrl(file);
+      if (!url) return;
+      const { url: blobOrDirect, revoke } = await fetchAuthenticatedBlobUrl(url);
+      window.open(blobOrDirect, "_blank", "noopener,noreferrer");
+      if (revoke) window.setTimeout(revoke, 120_000);
+    } catch (e) {
+      showToastMessage(apiErrorMessage(e, "Could not open this file."));
+    }
   }
 
   async function downloadDocument(file: FileRow) {
-    const url = await resolveDocumentUrl(file);
-    if (!url) return;
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = file.filename;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
+    try {
+      const url = file.storage_url || (selectedId ? `/api/classes/${selectedId}/documents/${file.id}/download` : null);
+      if (!url) return;
+      const { url: blobOrDirect, revoke } = await fetchAuthenticatedBlobUrl(url);
+      const link = document.createElement("a");
+      link.href = blobOrDirect;
+      link.download = file.filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      if (revoke) window.setTimeout(revoke, 60_000);
+    } catch (e) {
+      showToastMessage(apiErrorMessage(e, "Download failed."));
+    }
   }
 
-  async function onGenerateFlashcards(opts: {
-    difficulty: "easy" | "medium" | "hard";
-    n_cards: number;
-    style: "mixed" | "definitions" | "conceptual" | "qa";
-  }) {
+  async function retryOfficeDocumentPreview() {
+    if (!selectedId || !activeFile || !needsConvertedOfficePreview(activeFile)) return;
+    console.info("[OFFICE_PREVIEW] retry started document_id=%s", activeFile.id);
+    if (activeFileViewError) {
+      console.info("[OFFICE_PREVIEW] clearing stale activeFileViewError");
+    }
+    setActiveFileViewError(null);
+    setActiveDocumentPreviewError(null);
+    setActiveDocumentPreviewLoading(true);
+    setPptxConvertedPdfFailed(false);
+    setStudyViewerBlobError(null);
+    try {
+      setFiles((xs) =>
+        (xs ?? []).map((f) =>
+          f.id === activeFile.id ? { ...f, viewer_status: "processing", conversion_error: null, preview_error: null } : f
+        )
+      );
+      setActiveFile((current) =>
+        current?.id === activeFile.id
+          ? { ...current, viewer_status: "processing", conversion_error: null, preview_error: null }
+          : current
+      );
+      const retry = await processDocumentPreview(selectedId, activeFile.id);
+      console.info("[OFFICE_PREVIEW] retry success viewer_file_url=%s", retry.viewer_file_url || retry.pdf_url || null);
+      const preview = await getDocumentPreview(selectedId, activeFile.id);
+      setActiveDocumentPreview(preview);
+      if (officePreviewViewerUrl(preview)) {
+        setActiveFileViewError(null);
+      }
+      const fresh = await listFiles(selectedId);
+      setFiles(fresh ?? []);
+      const updated = (fresh ?? []).find((f) => f.id === activeFile.id);
+      if (updated) setActiveFile(updated);
+    } catch (e) {
+      showToastMessage(apiErrorMessage(e, "Could not rebuild preview on the server."));
+    } finally {
+      setActiveDocumentPreviewLoading(false);
+    }
+    setDocumentPreviewRetryNonce((n) => n + 1);
+    setStudyViewerRetryNonce((n) => n + 1);
+    setPptxConvertedPdfFailed(false);
+  }
+
+  async function onGenerateFlashcards(opts: FlashcardGenerationOptions) {
     if (!selectedId) return alert("Select a class first");
     if ((files?.length ?? 0) === 0) return alert("Upload at least one file first");
     if (flashcardSourceIds.length === 0) {
@@ -674,29 +1561,20 @@ function ClassesContent() {
     }
 
     const ids = flashcardSourceIds;
-    const pending = (files ?? []).filter((f) => ids.includes(f.id) && f.status !== "INDEXED");
+    const pending = (files ?? []).filter((f) => ids.includes(f.id) && !isStudyGenerationReady(f));
     if (pending.length > 0) {
-      return alert("Some files are still processing. Wait for INDEXED before generating flashcards.");
+      return alert("Some files are still processing. Wait until they are ready before generating flashcards.");
     }
 
     setBusyFlow(true);
+    setFlashcardGenerationSummary(null);
     try {
-      const res: ChunkPreview[] = await createChunks({
-        file_ids: ids,
-        by: "page",
-        size: 1,
-        overlap: 0,
-        preview_limit_per_file: 2,
-      });
-      setPreview(res);
-
-      await buildEmbeddings(selectedId, 1000);
-
       const job = await generateFlashcardsAsync({
         class_id: selectedId,
         file_ids: ids,
         top_k: 12,
-        n_cards: opts.n_cards,
+        cardCountMode: opts.cardCountMode,
+        requestedCount: opts.requestedCount,
         style: opts.style,
         difficulty: opts.difficulty,
       });
@@ -704,11 +1582,22 @@ function ClassesContent() {
 
       const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
       let completed = false;
+      let completedSummary: string | null = null;
       for (let i = 0; i < 90; i++) {
         await sleep(2000);
         const status = await getFlashcardJobStatus(job.job_id);
         if (status.status === "completed") {
           completed = true;
+          const countText = typeof status.generatedCount === "number"
+            ? `Generated ${status.generatedCount} flashcards from ${ids.length} document${ids.length === 1 ? "" : "s"}.`
+            : "Flashcards generated.";
+          const modeText = status.cardCountMode === "auto" && typeof status.generatedCount === "number"
+            ? ` Auto selected ${status.generatedCount} card${status.generatedCount === 1 ? "" : "s"} based on document length.`
+            : "";
+          const summary = `${countText}${modeText}${status.warning ? ` ${status.warning}` : ""}`;
+          completedSummary = summary;
+          setFlashcardGenerationSummary(summary);
+          showToastMessage(summary);
           break;
         }
         if (status.status === "failed") {
@@ -722,7 +1611,9 @@ function ClassesContent() {
 
       const created = await listFlashcards(selectedId);
       setCards(created);
-      alert(`Flashcards ready (${created.length} total).`);
+      if (!completedSummary) {
+        setFlashcardGenerationSummary(`Flashcards ready (${created.length} total).`);
+      }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Failed to generate flashcards";
       alert(msg);
@@ -759,37 +1650,123 @@ function ClassesContent() {
     showToastMessage("Snippet captured — add a prompt and send.");
   }
 
-  function showToastMessage(message: string) {
-    setToast(message);
-    window.setTimeout(() => setToast(null), 2500);
+  function inferToastKind(message: string): AppToastKind {
+    const lower = message.toLowerCase();
+    if (lower.includes("failed") || lower.includes("couldn't") || lower.includes("not supported") || lower.includes("error")) return "error";
+    if (lower.includes("queued") || lower.includes("processing") || lower.includes("running")) return "loading";
+    if (lower.includes("ready") || lower.includes("saved") || lower.includes("uploaded")) return "success";
+    return "info";
   }
 
-  async function startNewStudySession() {
+  function showToastMessage(message: string, kind: AppToastKind = inferToastKind(message)) {
+    showAppToast(message, kind);
+  }
+
+  function startNewStudySession() {
     if (!selectedId || !activeFile) return;
-    const s = await createChatSession({ class_id: selectedId, document_id: activeFile.id, title: "New chat" });
-    setStudySessions((prev) => [s, ...prev]);
-    setStudySessionId(s.id);
+    activeStudySessionRef.current = null;
+    setStudySessionId(null);
     setStudyMessages([]);
-    localStorage.setItem(`study_session_${selectedId}_${activeFile.id}`, s.id);
+    setStudyMessagesLoading(false);
+    setStudyError(null);
+    setStudyInput("");
+    setStudySelectedQuote(null);
+    setPendingSnip(null);
+    setStudyHistoryOpen(false);
+    setStudyHistorySearch("");
+    localStorage.removeItem(`study_session_${selectedId}_${activeFile.id}`);
   }
 
-  async function onStudyAsk(overrideContent?: string) {
-    if (!selectedId || !activeFile) return;
+  function selectStudySession(sessionId: string) {
+    activeStudySessionRef.current = sessionId;
+    setStudySessionId(sessionId);
+    setStudyMessages([]);
+    setStudyMessagesLoading(true);
+    setStudyInput("");
+    setStudySelectedQuote(null);
+    setPendingSnip(null);
+    setStudyError(null);
+    setStudyHistoryOpen(false);
+    setStudyHistorySearch("");
+    if (selectedId && activeFile) {
+      localStorage.setItem(`study_session_${selectedId}_${activeFile.id}`, sessionId);
+    }
+  }
+
+  async function saveStudySessionRename() {
+    if (!renamingStudySession) return;
+    const title = renamingStudySession.title.trim();
+    if (!title) {
+      showToastMessage("Chat title cannot be empty.", "error");
+      return;
+    }
+    try {
+      const updated = await updateChatSession(renamingStudySession.id, { title });
+      setStudySessions((prev) =>
+        prev.map((session) => (session.id === updated.id ? { ...session, ...updated } : session))
+      );
+      setRenamingStudySession(null);
+      showToastMessage("Chat renamed.", "success");
+    } catch (err) {
+      if (import.meta.env.DEV) console.error("[CHAT] failed to rename study chat", err);
+      showToastMessage("Could not rename this chat.", "error");
+    }
+  }
+
+  async function deleteStudySession(sessionId: string) {
+    if (!selectedId || !window.confirm("Delete this chat? This cannot be undone.")) return;
+    try {
+      await deleteChatSession(sessionId, selectedId);
+      const remaining = studySessions.filter((session) => session.id !== sessionId);
+      setStudySessions(remaining);
+      setRenamingStudySession((current) => (current?.id === sessionId ? null : current));
+      if (studySessionId === sessionId) {
+        const next = remaining[0]?.id ?? null;
+        if (next) {
+          selectStudySession(next);
+        } else {
+          startNewStudySession();
+        }
+      }
+      showToastMessage("Chat deleted.", "success");
+    } catch (err) {
+      if (import.meta.env.DEV) console.error("[CHAT] failed to delete study chat", err);
+      showToastMessage("Could not delete this chat.", "error");
+    }
+  }
+
+  async function onStudyAsk(overrideContent?: string, options?: { quickAction?: StudyQuickAction }) {
+    if (!selectedId || !activeFile || studyBusySessionId) return;
     const requestClassId = selectedId;
     const requestFile = activeFile;
-    const requestDocumentKey = `${requestClassId}:${requestFile.id}`;
     const content = (overrideContent ?? studyInput).trim();
     if (!content && !pendingSnip) return;
     const finalContent = content || "Explain this snippet.";
 
     let sessionId = studySessionId;
-    if (!sessionId) {
-      const s = await createChatSession({ class_id: requestClassId, document_id: requestFile.id, title: "New chat" });
-      setStudySessions((prev) => [s, ...prev]);
-      sessionId = s.id;
-      setStudySessionId(s.id);
-      localStorage.setItem(`study_session_${requestClassId}_${requestFile.id}`, s.id);
+    const selectedSession = studySessions.find((session) => session.id === sessionId);
+    const sessionDocumentId = selectedSession?.document_id ?? null;
+    if (!sessionId || !selectedSession || (sessionDocumentId && sessionDocumentId !== requestFile.id)) {
+      try {
+        const s = await createChatSession({
+          class_id: requestClassId,
+          document_id: requestFile.id,
+          title: studyChatTitleFromMessage(finalContent, requestFile.filename, options?.quickAction),
+        });
+        setStudySessions((prev) => [s, ...prev.filter((session) => session.id !== s.id)]);
+        sessionId = s.id;
+        activeStudySessionRef.current = s.id;
+        setStudySessionId(s.id);
+        localStorage.setItem(`study_session_${requestClassId}_${requestFile.id}`, s.id);
+      } catch (err) {
+        if (import.meta.env.DEV) console.error("[CHAT] failed to create study chat", err);
+        showToastMessage("Couldn't create a chat. Please try again.", "error");
+        return;
+      }
+    } else if (sessionId) {
+      localStorage.setItem(`study_session_${requestClassId}_${requestFile.id}`, sessionId);
     }
+    const requestSessionId = sessionId!;
 
     const snip = pendingSnip;
     const quote = studySelectedQuote;
@@ -804,44 +1781,55 @@ function ClassesContent() {
       image_attachment: snip ?? null,
     };
     setStudyMessages((prev) => [...prev, userMsg]);
+    setStudyMessagesLoading(false);
+    setStudyError(null);
     setStudyInput("");
     setPendingSnip(null);
     setStudySelectedQuote(null);
-    setStudyBusy(true);
+    setStudyBusySessionId(requestSessionId);
 
-    let assistantText = "Sorry, I couldn't finish that response. Please try again.";
+    let assistantText =
+      isStudyGenerationReady(requestFile)
+        ? "Sorry, I couldn't finish that response. Please try again."
+        : "This document is still processing or not indexed yet. Document-specific answers will be available once it is ready.";
     let citations: any = null;
+    let generationFailed = false;
     try {
-      let question = quote?.text
-        ? `Selected text from "${requestFile.filename}":
+      if (isStudyGenerationReady(requestFile)) {
+        let question = quote?.text
+          ? `Selected text from "${requestFile.filename}":
 "${quote.text}"
 
 ${finalContent}`
-        : `Current document: "${requestFile.filename}"
+          : `Current document: "${requestFile.filename}"
 Use this document as the primary context unless I explicitly ask for something else.
 
 ${finalContent}`;
-      if (snip?.data_url && !quote?.text) {
-        try {
-          const ocr = await ocrImageSnippet(snip.data_url);
-          if (ocr?.text) {
-            question = `Snippet text from "${requestFile.filename}":
+        if (snip?.data_url && !quote?.text) {
+          try {
+            const ocr = await ocrImageSnippet(snip.data_url);
+            if (ocr?.text) {
+              question = `Snippet text from "${requestFile.filename}":
 "${ocr.text}"
 
 ${finalContent}`;
-          }
-        } catch { /* ignore */ }
+            }
+          } catch { /* ignore */ }
+        }
+        const res = await chatAsk({
+          class_id: requestClassId,
+          question,
+          top_k: 8,
+          file_ids: [requestFile.id],
+          mode: "rag",
+        });
+        assistantText = (res.answer || "").trim() || "Not found in the uploaded material.";
+        citations = res.citations ?? null;
       }
-      const res = await chatAsk({
-        class_id: requestClassId,
-        question,
-        top_k: 8,
-        file_ids: [requestFile.id],
-        mode: "rag",
-      });
-      assistantText = (res.answer || "").trim() || "Not found in the uploaded material.";
-      citations = res.citations ?? null;
-    } catch { /* ignore */ }
+    } catch (err) {
+      generationFailed = true;
+      if (import.meta.env.DEV) console.error("[study assistant] ask failed", err);
+    }
 
     const botMsg: StudyMsg = {
       id: crypto.randomUUID?.() ?? String(Date.now() + 1),
@@ -850,17 +1838,23 @@ ${finalContent}`;
       citations: citations ?? undefined,
     };
     if (
+      !generationFailed &&
+      activeStudySessionRef.current === requestSessionId &&
       activeStudyDocumentRef.current.classId === requestClassId &&
       activeStudyDocumentRef.current.fileId === requestFile.id
     ) {
       setStudyMessages((prev) => [...prev, botMsg]);
+    } else if (generationFailed) {
+      showToastMessage("Couldn't finish that response. Your message was saved.");
     }
 
     try {
-      await addChatMessages({
-        session_id: sessionId!,
+      const saved = await addChatMessages({
+        session_id: requestSessionId,
+        class_id: requestClassId,
+        document_id: requestFile.id,
         user_content: userMsg.content,
-        assistant_content: botMsg.content,
+        assistant_content: generationFailed ? null : botMsg.content,
         citations,
         selected_text: quote?.text ?? null,
         page_number: userMsg.page_number ?? null,
@@ -869,12 +1863,57 @@ ${finalContent}`;
         file_scope: [requestFile.id],
         image_attachment: snip ?? null,
       });
-    } catch { /* ignore */ }
-    if (
-      activeStudyDocumentRef.current.classId === requestClassId &&
-      activeStudyDocumentRef.current.fileId === requestFile.id
-    ) {
-      setStudyBusy(false);
+      if (
+        activeStudySessionRef.current === requestSessionId &&
+        activeStudyDocumentRef.current.classId === requestClassId &&
+        activeStudyDocumentRef.current.fileId === requestFile.id &&
+        Array.isArray(saved?.messages)
+      ) {
+        setStudyMessages(saved.messages.map((m) => ({ ...m, citations: m.citations ?? undefined })));
+      }
+      setStudySessions((prev) => {
+        const updatedAt = new Date().toISOString();
+        return prev
+          .map((session) => {
+            if (session.id !== requestSessionId) return session;
+            const title = isGenericStudyChatTitle(session.title)
+              ? studyChatTitleFromMessage(userMsg.content, requestFile.filename, options?.quickAction)
+              : session.title;
+            if (title !== session.title) updateChatSession(requestSessionId, { title }).catch(() => {});
+            return { ...session, title, updated_at: updatedAt };
+          })
+          .sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || "")));
+      });
+    } catch (err) {
+      if (import.meta.env.DEV) console.error("[CHAT] failed to save study messages", err);
+      showToastMessage("Couldn't save this chat message. Please try again.", "error");
+    } finally {
+      setStudyBusySessionId((current) => (current === requestSessionId ? null : current));
+    }
+  }
+
+  async function onRenameFile(file: FileRow) {
+    const next = window.prompt("Rename document", file.filename);
+    if (!next || !next.trim() || next.trim() === file.filename) return;
+    try {
+      const res = await updateFile(file.id, { filename: next.trim() });
+      setFiles((xs) => (xs ?? []).map((f) => (f.id === file.id ? { ...f, filename: res.filename } : f)));
+    } catch {
+      showToastMessage("Rename failed. Please try again.");
+    }
+  }
+
+  async function onRetryProcessing(file: FileRow) {
+    try {
+      await retryFileProcessing(file.id);
+      setFiles((xs) =>
+        (xs ?? []).map((f) =>
+          f.id === file.id ? { ...f, status: "OCR_QUEUED", last_error: null } : f
+        )
+      );
+      showToastMessage("Document uploaded. Processing started.");
+    } catch {
+      showToastMessage("Processing failed. Please retry.");
     }
   }
 
@@ -888,6 +1927,34 @@ ${finalContent}`;
       : activeFile
         ? "Using full document"
         : null;
+  const isCurrentStudyBusy = !!studyBusySessionId && studyBusySessionId === studySessionId;
+  const isStudySendDisabled = !!studyBusySessionId || (!studyInput.trim() && !pendingSnip);
+
+  const studySessionsSortedFiltered = useMemo(() => {
+    const q = studyHistorySearch.trim().toLowerCase();
+    const sorted = [...studySessions].sort((a, b) =>
+      String(b.updated_at || "").localeCompare(String(a.updated_at || ""))
+    );
+    if (!q) return sorted;
+    return sorted.filter((s) => {
+      const t = (s.title || "").replace(/^\[Study\]\s*/, "").toLowerCase();
+      return t.includes(q);
+    });
+  }, [studySessions, studyHistorySearch]);
+
+  const studyHistoryButtonLabel = useMemo(() => {
+    if (!studySessionId) return "Chat history";
+    const s = studySessions.find((x) => x.id === studySessionId);
+    const raw = (s?.title || "").replace(/^\[Study\]\s*/, "").trim() || "Chat history";
+    return raw.length > 42 ? `${raw.slice(0, 39)}…` : raw;
+  }, [studySessionId, studySessions]);
+
+  const studyEmptyTitle = activeFile ? "Ask about this document" : selectedId ? "Ask about this class" : "Select a class or document";
+  const studyEmptyDescription = activeFile
+    ? "Questions and suggested actions will use the current document."
+    : selectedId
+      ? "Open a document for document-specific answers, or ask about this class."
+      : "Choose a class or open a document to start a contextual chat.";
   const isWorkspaceWide = activeTab === "documents" && !!activeFile;
   const layoutClass = pdfFocusMode
     ? "grid-cols-1"
@@ -897,8 +1964,8 @@ ${finalContent}`;
 
   const hasAnyFiles = (files?.length ?? 0) > 0;
   const selectedFlashcardFiles = (files ?? []).filter((f) => flashcardSourceIds.includes(f.id));
-  const selectedIndexedCount = selectedFlashcardFiles.filter((f) => f.status === "INDEXED").length;
-  const selectedPendingCount = selectedFlashcardFiles.filter((f) => f.status !== "INDEXED").length;
+  const selectedIndexedCount = selectedFlashcardFiles.filter((f) => isStudyGenerationReady(f)).length;
+  const selectedPendingCount = selectedFlashcardFiles.filter((f) => !isStudyGenerationReady(f)).length;
   const canGenerateFlashcards =
     Boolean(selectedId) && flashcardSourceIds.length > 0 && selectedIndexedCount > 0 && selectedPendingCount === 0;
   const generateDisabledReason = !selectedId
@@ -921,7 +1988,7 @@ ${finalContent}`;
         <div
           className="grid h-full min-h-0 gap-3"
           style={{
-            gridTemplateColumns: classesPanelCollapsed ? "84px minmax(0,1fr)" : "300px minmax(0,1fr)",
+            gridTemplateColumns: classesPanelCollapsed ? "72px minmax(0,1fr)" : "280px minmax(0,1fr)",
             transition: "grid-template-columns 0.25s ease",
           }}
         >
@@ -963,19 +2030,37 @@ ${finalContent}`;
               )
             ) : (
               <>
-                <div className="flex flex-shrink-0 flex-col gap-2.5 border-b border-token pb-3">
+                <div className="flex flex-shrink-0 flex-col gap-2.5 border-b border-[var(--border)] pb-3">
                   <div className="min-w-0">
-                    <h2 className="truncate text-2xl font-semibold leading-tight text-main">{currentClass}</h2>
+                    <h2 className="truncate text-[22px] font-semibold leading-tight tracking-tight text-[var(--text-main)]">
+                      {currentClass}
+                    </h2>
                   </div>
-                  <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2.5">
                     <Tabs active={activeTab} onChange={setActiveTab} />
-                    <div className="flex flex-wrap items-center justify-end gap-3">
-                      {busyUpload && <span className="text-xs text-muted">Uploading...</span>}
-                      {busyFlow && <span className="text-xs text-muted">Processing...</span>}
+                    <div className="flex flex-wrap items-center justify-end gap-2.5">
+                      {busyUpload && (
+                        <span className="inline-flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
+                          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--primary)]" />
+                          Uploading…
+                        </span>
+                      )}
+                      {busyFlow && (
+                        <span className="inline-flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
+                          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[var(--primary)]" />
+                          Processing…
+                        </span>
+                      )}
                       <button
                         type="button"
                         onClick={handleStudyAssistantClick}
-                        className="inline-flex items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-2 text-sm font-semibold text-[var(--text-main)] transition-all hover:border-violet-500 hover:text-violet-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/30"
+                        className={`inline-flex h-9 items-center gap-2 rounded-[var(--radius-md)] border px-3.5 text-sm font-semibold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
+                          studyAssistantOpen
+                            ? "border-[color-mix(in_srgb,var(--primary)_45%,transparent)] bg-[var(--primary-soft)] text-[var(--primary)]"
+                            : "border-[var(--border)] bg-[var(--surface)] text-[var(--text-main)] hover:border-[var(--border-strong)] hover:bg-[var(--surface-2)]"
+                        }`}
+                        aria-pressed={studyAssistantOpen}
+                        aria-label="Toggle Study Assistant"
                       >
                         <MessageCircle className="h-4 w-4 flex-shrink-0" />
                         Study Assistant
@@ -990,145 +2075,531 @@ ${finalContent}`;
                       <div className="relative">
                         <div className={`grid gap-4 ${layoutClass}`}>
                       {/* PDF Viewer */}
-                      <div className="space-y-4">
-                          <div className="panel panel-elevated space-y-0 overflow-hidden">
-                            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-5 py-4">
-                              <div>
-                                <div className="text-sm font-semibold text-main">{activeFile.filename}</div>
-                                <div className="text-xs text-[var(--text-muted-soft)]">
-                                  {activeFile.status === "INDEXED" ? "Ready" : "Processing"}
+                      <div>
+                          <div className="overflow-hidden rounded-[var(--radius-xl)] border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow-sm)]">
+                            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] bg-[var(--surface)] px-4 py-2.5">
+                              <div className="flex min-w-0 flex-1 items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={closeActiveDocument}
+                                  className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface)] hover:text-[var(--text-main)] sm:inline-flex"
+                                  aria-label="Back to documents"
+                                  title="Back to documents"
+                                >
+                                  <ArrowLeft className="h-4 w-4" />
+                                </button>
+                                <div className="min-w-0 flex-1">
+                                  <div
+                                    className="truncate text-[14px] font-semibold text-[var(--text-main)]"
+                                    title={activeFile.filename}
+                                  >
+                                    {displayFilename(activeFile.filename)}
+                                  </div>
+                                  <div className="mt-0.5 text-[11.5px] text-[var(--text-muted-soft)]">
+                                    {documentWorkflowLabel(activeFile)}
+                                  </div>
                                 </div>
                               </div>
-                              <div className="flex items-center gap-2">
-                                <a
-                                  href={activeFileViewUrl ?? "#"}
-                                  download
-                                  className={`inline-flex h-9 items-center gap-1 rounded-lg border border-[var(--border)] px-3 text-xs font-semibold text-[var(--text-muted)] transition hover:border-[var(--primary)] hover:text-[var(--primary)] ${
-                                    activeFileViewUrl ? "" : "pointer-events-none opacity-50"
-                                  }`}
+                              <div className="hidden items-center gap-2 sm:flex">
+                                <button
+                                  type="button"
+                                  className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface)] px-2.5 text-xs font-semibold text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-2)] hover:text-[var(--text-main)]"
+                                  onClick={() => downloadDocument(activeFile)}
                                 >
                                   <Download className="h-3.5 w-3.5" />
                                   Download
-                                </a>
-                                <button
-                                  className="inline-flex h-9 items-center gap-1 rounded-lg border border-[var(--border)] px-3 text-xs font-semibold text-[var(--text-muted)] transition hover:border-[var(--primary)] hover:text-[var(--primary)]"
-                                  onClick={closeActiveDocument}
-                                >
-                                  <X className="h-3.5 w-3.5" />
-                                  Close
                                 </button>
                               </div>
+                              <div className="sm:hidden">
+                                <KebabMenu
+                                  items={[
+                                    { label: "Download", onClick: () => downloadDocument(activeFile) },
+                                    { label: "Back to documents", onClick: closeActiveDocument },
+                                  ]}
+                                />
+                              </div>
                             </div>
-                            <div className="min-h-[84vh] surface-2">
-                              {activeFileViewLoading ? (
+                            <div className="min-h-[78vh] surface-2">
+                              {activeFileViewLoading && !needsConvertedOfficePreview(activeFile) ? (
                                 <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted">
                                   Preparing document...
                                 </div>
-                              ) : activeFileViewError ? (
+                              ) : activeFileViewError && !needsConvertedOfficePreview(activeFile) ? (
                                 <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-sm text-muted">
                                   <div>{activeFileViewError}</div>
                                   <button
                                     className="rounded-lg border border-token px-3 py-2 text-xs font-semibold text-muted"
-                                    onClick={() => setActiveFile((prev) => (prev ? { ...prev } : prev))}
+                                    onClick={() => setViewUrlRetryNonce((n) => n + 1)}
                                   >
                                     Retry
                                   </button>
                                 </div>
                               ) : isPdfFile(activeFile) && activeFileViewUrl ? (
-                                <PdfStudyViewer
-                                  fileUrl={activeFileViewUrl}
-                                  fileName={activeFile.filename}
-                                  onContextSelect={handlePdfContextSelect}
-                                  onSnip={handlePdfSnip}
-                                  onSnipError={showToastMessage}
-                                  onToggleFocus={toggleFocusMode}
-                                  isFocusMode={pdfFocusMode}
-                                  isChatVisible={studyAssistantOpen}
-                                  onToggleChatVisibility={() => setStudyAssistantOpen((v) => !v)}
-                                />
+                                studyViewerBlobLoading ? (
+                                  <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted">
+                                    Loading preview…
+                                  </div>
+                                ) : studyViewerBlobError ? (
+                                  <div className="flex h-full min-h-[50vh] flex-col items-center justify-center gap-4 px-6 text-center">
+                                    <div>
+                                      <div className="text-sm font-semibold text-main">Preview unavailable</div>
+                                      <p className="mt-2 text-sm text-muted">{studyViewerBlobError}</p>
+                                    </div>
+                                    <div className="flex flex-wrap items-center justify-center gap-2">
+                                      <Button
+                                        type="button"
+                                        variant="secondary"
+                                        onClick={() => setStudyViewerRetryNonce((n) => n + 1)}
+                                      >
+                                        Retry
+                                      </Button>
+                                      <Button type="button" variant="secondary" onClick={closeActiveDocument}>
+                                        Back to documents
+                                      </Button>
+                                      <Button type="button" onClick={() => downloadDocument(activeFile)}>
+                                        Download
+                                      </Button>
+                                    </div>
+                                  </div>
+                                ) : studyViewerBlobUrl ? (
+                                  <PdfStudyViewer
+                                    fileUrl={studyViewerBlobUrl}
+                                    fileName={activeFile.filename}
+                                    onContextSelect={handlePdfContextSelect}
+                                    onSnip={handlePdfSnip}
+                                    onSnipError={showToastMessage}
+                                    onToggleFocus={toggleFocusMode}
+                                    isFocusMode={pdfFocusMode}
+                                    isChatVisible={studyAssistantOpen}
+                                    onToggleChatVisibility={() => setStudyAssistantOpen((v) => !v)}
+                                  />
+                                ) : (
+                                  <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted">
+                                    Loading preview…
+                                  </div>
+                                )
+                              ) : needsConvertedOfficePreview(activeFile) ? (
+                                activeDocumentPreviewLoading && !officePreviewViewerUrl(activeDocumentPreview) ? (
+                                  <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted">
+                                    {isPptxFile(activeFile)
+                                      ? "Preparing PowerPoint preview…"
+                                      : "Preparing Word document preview…"}
+                                  </div>
+                                ) : activeDocumentPreviewError && !officePreviewViewerUrl(activeDocumentPreview) ? (
+                                  <PptxPreviewFallback
+                                    file={activeFile}
+                                    errorHint={activeDocumentPreviewError}
+                                    indexedReady={isStudyGenerationReady(activeFile)}
+                                    processingFailed={String(activeFile.status || "").toUpperCase() === "FAILED"}
+                                    onDownload={() => downloadDocument(activeFile)}
+                                    onBack={closeActiveDocument}
+                                    onRetryPreview={() => void retryOfficeDocumentPreview()}
+                                    onRetryProcessing={() => onRetryProcessing(activeFile)}
+                                    onGenerateFlashcards={
+                                      isStudyGenerationReady(activeFile)
+                                        ? () => prepareFlashcardsFromFile(activeFile)
+                                        : undefined
+                                    }
+                                    onGenerateQuiz={
+                                      isStudyGenerationReady(activeFile)
+                                        ? () => prepareQuizFromFile(activeFile)
+                                        : undefined
+                                    }
+                                  />
+                                ) : !activeDocumentPreview ? (
+                                  <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted">
+                                    {isPptxFile(activeFile)
+                                      ? "Preparing PowerPoint preview…"
+                                      : "Preparing Word document preview…"}
+                                  </div>
+                                ) : pptxConvertedPdfFailed || studyViewerBlobError ? (
+                                  <PptxPreviewFallback
+                                    file={activeFile}
+                                    errorHint={studyViewerBlobError}
+                                    indexedReady={isStudyGenerationReady(activeFile)}
+                                    processingFailed={String(activeFile.status || "").toUpperCase() === "FAILED"}
+                                    onDownload={() => downloadDocument(activeFile)}
+                                    onBack={closeActiveDocument}
+                                    onRetryPreview={() => void retryOfficeDocumentPreview()}
+                                    onRetryProcessing={() => onRetryProcessing(activeFile)}
+                                    onGenerateFlashcards={
+                                      isStudyGenerationReady(activeFile)
+                                        ? () => prepareFlashcardsFromFile(activeFile)
+                                        : undefined
+                                    }
+                                    onGenerateQuiz={
+                                      isStudyGenerationReady(activeFile)
+                                        ? () => prepareQuizFromFile(activeFile)
+                                        : undefined
+                                    }
+                                  />
+                                ) : (activeDocumentPreview.preview?.status === "generating" ||
+                                  activeDocumentPreview.viewer_status === "processing") &&
+                                  !officePreviewViewerUrl(activeDocumentPreview) ? (
+                                  <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted">
+                                    {isPptxFile(activeFile)
+                                      ? "Preparing slide preview..."
+                                      : "Preparing document preview..."}
+                                  </div>
+                                ) : officePreviewViewerUrl(activeDocumentPreview) ? (
+                                  studyViewerBlobLoading ? (
+                                    <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted">
+                                      {isPptxFile(activeFile) ? "Loading slide preview…" : "Loading document preview…"}
+                                    </div>
+                                  ) : studyViewerBlobUrl ? (
+                                    <PdfStudyViewer
+                                      fileUrl={studyViewerBlobUrl}
+                                      fileName={activeFile.filename}
+                                      pageLabelKind={isPptxFile(activeFile) ? "slide" : "page"}
+                                      onContextSelect={handlePdfContextSelect}
+                                      onSnip={handlePdfSnip}
+                                      onSnipError={showToastMessage}
+                                      onToggleFocus={toggleFocusMode}
+                                      isFocusMode={pdfFocusMode}
+                                      isChatVisible={studyAssistantOpen}
+                                      onToggleChatVisibility={() => setStudyAssistantOpen((v) => !v)}
+                                      onBlobPdfLoadFailed={() => setPptxConvertedPdfFailed(true)}
+                                    />
+                                  ) : (
+                                    <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted">
+                                      {isPptxFile(activeFile) ? "Loading slide preview…" : "Loading document preview…"}
+                                    </div>
+                                  )
+                                ) : activeDocumentPreview ? (
+                                  <PptxPreviewFallback
+                                    file={activeFile}
+                                    errorHint={
+                                      activeDocumentPreview.conversion_error ||
+                                      activeDocumentPreview.preview?.error ||
+                                      (activeDocumentPreview.viewer_status === "failed" ? "Preview PDF was not generated." : undefined)
+                                    }
+                                    conversionFailed={activeDocumentPreview.preview?.status === "failed"}
+                                    indexedReady={isStudyGenerationReady(activeFile)}
+                                    processingFailed={String(activeFile.status || "").toUpperCase() === "FAILED"}
+                                    onDownload={() => downloadDocument(activeFile)}
+                                    onBack={closeActiveDocument}
+                                    onRetryPreview={() => void retryOfficeDocumentPreview()}
+                                    onRetryProcessing={() => onRetryProcessing(activeFile)}
+                                    onGenerateFlashcards={
+                                      isStudyGenerationReady(activeFile)
+                                        ? () => prepareFlashcardsFromFile(activeFile)
+                                        : undefined
+                                    }
+                                    onGenerateQuiz={
+                                      isStudyGenerationReady(activeFile)
+                                        ? () => prepareQuizFromFile(activeFile)
+                                        : undefined
+                                    }
+                                  >
+                                    <DocumentTextPreview preview={activeDocumentPreview} />
+                                  </PptxPreviewFallback>
+                                ) : (
+                                  <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted">
+                                    {isPptxFile(activeFile)
+                                      ? "Preparing PowerPoint preview…"
+                                      : "Preparing Word document preview…"}
+                                  </div>
+                                )
+                              ) : isImageFile(activeFile) && activeFileViewUrl ? (
+                                studyViewerBlobLoading ? (
+                                  <div className="flex h-full min-h-[40vh] items-center justify-center px-6 text-center text-sm text-muted">
+                                    Loading image…
+                                  </div>
+                                ) : studyViewerBlobError ? (
+                                  <div className="flex h-full min-h-[40vh] flex-col items-center justify-center gap-3 px-6 text-center text-sm text-muted">
+                                    <div>{studyViewerBlobError}</div>
+                                    <Button type="button" variant="secondary" onClick={() => setStudyViewerRetryNonce((n) => n + 1)}>
+                                      Retry
+                                    </Button>
+                                  </div>
+                                ) : studyViewerBlobUrl ? (
+                                  <div className="flex h-full min-h-[84vh] items-center justify-center bg-[var(--surface)] p-4">
+                                    <img
+                                      src={studyViewerBlobUrl}
+                                      alt={activeFile.filename}
+                                      className="max-h-[80vh] max-w-full rounded-lg border border-[var(--border)] bg-white object-contain shadow-sm"
+                                    />
+                                  </div>
+                                ) : (
+                                  <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted">
+                                    Loading image…
+                                  </div>
+                                )
+                              ) : hasTextPreview(activeFile) ? (
+                                activeDocumentPreviewLoading ? (
+                                  <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted">
+                                    Preparing preview...
+                                  </div>
+                                ) : activeDocumentPreviewError ? (
+                                  <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted">
+                                    {activeDocumentPreviewError}
+                                  </div>
+                                ) : activeDocumentPreview ? (
+                                  <DocumentTextPreview preview={activeDocumentPreview} />
+                                ) : (
+                                  <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted">
+                                    Preview is not available for this document yet.
+                                  </div>
+                                )
                               ) : (
                                 <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted">
-                                  Preview is available for PDF files. You can open or download this file instead.
+                                  Preview is not available for this file type. You can open or download this file instead.
                                 </div>
                               )}
                             </div>
                           </div>
                         </div>
 
-                      {/* Study Assistant — docked inline beside PDF, same card style */}
+                      {/* Study Assistant — docked inline beside PDF */}
                       {studyAssistantOpen && (
-                        <aside className="panel panel-elevated hidden lg:flex min-h-0 flex-col overflow-hidden space-y-0" style={{height:"calc(84vh + 72px)"}}>
-
-                          {/* Header — mirrors PDF viewer header exactly */}
-                          <div className="flex items-center justify-between border-b border-[var(--border)] px-5 py-4 flex-shrink-0">
-                            <div className="flex items-center gap-2">
-                              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-600">
-                                <MessageCircle className="h-4 w-4 text-white" />
-                              </div>
-                              <div>
-                                <div className="text-sm font-semibold text-main">Study Assistant</div>
-                                <div className="text-xs text-[var(--text-muted-soft)]">
-                                  {studySessions.length > 0 ? `${studySessions.length} session${studySessions.length > 1 ? "s" : ""}` : "New session"}
+                        <aside
+                          className="fixed inset-x-3 bottom-3 z-40 flex max-h-[88vh] min-h-0 flex-col overflow-hidden rounded-[var(--radius-xl)] border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow-elevated)] lg:static lg:max-h-none"
+                          style={{ height: "calc(78vh + 64px)" }}
+                          aria-label="Study Assistant"
+                        >
+                          <div className="shrink-0 border-b border-[var(--border)] bg-[var(--surface)] px-4 py-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex min-w-0 flex-1 items-start gap-2.5">
+                                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--primary-soft)] text-[var(--primary)]">
+                                  <MessageCircle className="h-4 w-4" />
+                                </span>
+                                <div className="min-w-0 flex-1">
+                                  <div className="text-[14px] font-semibold leading-tight tracking-tight text-[var(--text-main)]">
+                                    Study Assistant
+                                  </div>
+                                  <div
+                                    className="mt-1 truncate text-[12px] leading-snug text-[var(--text-muted)]"
+                                    title={`${currentClass ?? ""} · ${activeFile.filename}`}
+                                  >
+                                    {currentClass ? `${currentClass} · ` : ""}
+                                    {displayFilename(activeFile.filename, { removeExtension: true })}
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              {studySessions.length > 1 && (
-                                <select
-                                  className="h-8 max-w-[130px] rounded-lg border border-[var(--border)] bg-[var(--surface-2)] px-2 text-xs text-[var(--text-main)] focus:outline-none focus:ring-1 focus:ring-violet-500/40"
-                                  value={studySessionId ?? ""}
-                                  onChange={(e) => setStudySessionId(e.target.value)}
-                                >
-                                  {studySessions.map((s) => (
-                                    <option key={s.id} value={s.id}>{s.title.replace(/^\[Study\]\s*/,"")}</option>
-                                  ))}
-                                </select>
-                              )}
                               <button
-                                onClick={startNewStudySession}
-                                className="inline-flex h-8 items-center gap-1 rounded-lg border border-[var(--border)] px-2.5 text-xs font-semibold text-[var(--text-muted)] transition hover:border-violet-500 hover:text-violet-500"
-                              >+ New</button>
-                              <button
+                                type="button"
                                 onClick={() => setStudyAssistantOpen(false)}
-                                className="inline-flex h-8 items-center gap-1 rounded-lg border border-[var(--border)] px-2.5 text-xs font-semibold text-[var(--text-muted)] transition hover:border-[var(--primary)] hover:text-[var(--primary)]"
+                                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface)] hover:text-[var(--text-main)]"
+                                aria-label="Close Study Assistant"
+                                title="Close"
                               >
-                                <X className="h-3.5 w-3.5" />
-                                Close
+                                <X className="h-4 w-4" />
                               </button>
                             </div>
-                          </div>
 
-                          <div className="flex flex-wrap items-center gap-2 border-b border-[var(--border)] px-5 py-3 surface">
-                            <span className="rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-2.5 py-1 text-[11px] font-medium text-[var(--text-main)]">
-                              Current document: {activeFile.filename}
-                            </span>
-                            {currentStudyScopeLabel && (
-                              <span className="rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-[11px] font-medium text-violet-700 dark:border-violet-900/40 dark:bg-violet-900/20 dark:text-violet-300">
-                                {currentStudyScopeLabel}
-                              </span>
-                            )}
+                            <div className="mt-3 flex gap-2">
+                              <button
+                                type="button"
+                                onClick={startNewStudySession}
+                                className="inline-flex h-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] px-3 text-[13px] font-semibold text-[var(--text-main)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-2)]"
+                              >
+                                <Plus className="h-3.5 w-3.5" />
+                                New chat
+                              </button>
+                              <div className="relative min-w-0 flex-1" ref={studyHistoryDropdownRef}>
+                                <button
+                                  type="button"
+                                  onClick={() => setStudyHistoryOpen((o) => !o)}
+                                  className="flex h-9 w-full min-w-0 items-center justify-between gap-2 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] px-3 text-left text-[13px] font-medium text-[var(--text-main)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-2)]"
+                                  aria-expanded={studyHistoryOpen}
+                                  aria-haspopup="listbox"
+                                >
+                                  <span className="min-w-0 flex-1 truncate">{studyHistoryButtonLabel}</span>
+                                  <ChevronDown
+                                    className={`h-4 w-4 shrink-0 text-[var(--text-muted)] transition ${studyHistoryOpen ? "rotate-180" : ""}`}
+                                  />
+                                </button>
+                                {studyHistoryOpen ? (
+                                  <div
+                                    className="absolute left-0 right-0 top-full z-[55] mt-1 flex max-h-[min(320px,55vh)] flex-col overflow-hidden rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow-elevated)]"
+                                    role="listbox"
+                                  >
+                                    <div className="shrink-0 border-b border-[var(--border)] p-2">
+                                      <input
+                                        type="search"
+                                        value={studyHistorySearch}
+                                        onChange={(e) => setStudyHistorySearch(e.target.value)}
+                                        placeholder="Search chats…"
+                                        className="h-8 w-full rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface-2)] px-2.5 text-[13px] text-[var(--text-main)] outline-none placeholder:text-[var(--text-muted-soft)] focus:border-[color-mix(in_srgb,var(--primary)_55%,var(--border))] focus:ring-2 focus:ring-[var(--ring)]"
+                                        onClick={(e) => e.stopPropagation()}
+                                      />
+                                    </div>
+                                    <div className="shrink-0 px-3 pb-1 pt-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted-soft)]">
+                                      Recent chats
+                                    </div>
+                                    <div
+                                      className="ns-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-1.5 pb-2"
+                                      style={{ maxHeight: "min(240px, 40vh)" }}
+                                    >
+                                      {studySessionsLoading ? (
+                                        <div className="space-y-1.5 py-1">
+                                          {[0, 1, 2, 3].map((idx) => (
+                                            <div key={idx} className="h-9 animate-pulse rounded-[var(--radius-sm)] bg-[var(--surface-2)]" />
+                                          ))}
+                                        </div>
+                                      ) : studySessionsSortedFiltered.length === 0 ? (
+                                        <div className="rounded-[var(--radius-sm)] border border-dashed border-[var(--border)] px-3 py-3 text-center text-[12px] text-[var(--text-muted)]">
+                                          {studySessions.length === 0
+                                            ? "No chats yet. Start with New chat or a quick action."
+                                            : "No chats match your search."}
+                                        </div>
+                                      ) : (
+                                        studySessionsSortedFiltered.map((s) => {
+                                          const title = s.title.replace(/^\[Study\]\s*/, "").trim() || "Untitled chat";
+                                          const active = s.id === studySessionId;
+                                          const editing = renamingStudySession?.id === s.id;
+                                          return (
+                                            <div
+                                              key={s.id}
+                                              className={`mb-0.5 flex min-h-10 items-center gap-1 rounded-[var(--radius-sm)] px-1.5 transition ${
+                                                active
+                                                  ? "bg-[var(--primary-soft)]"
+                                                  : "hover:bg-[var(--surface-2)]"
+                                              }`}
+                                            >
+                                              {editing ? (
+                                                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 py-1.5">
+                                                  <input
+                                                    autoFocus
+                                                    value={renamingStudySession.title}
+                                                    onChange={(e) =>
+                                                      setRenamingStudySession((current) =>
+                                                        current ? { ...current, title: e.target.value } : current
+                                                      )
+                                                    }
+                                                    onKeyDown={(e) => {
+                                                      if (e.key === "Enter") void saveStudySessionRename();
+                                                      if (e.key === "Escape") setRenamingStudySession(null);
+                                                    }}
+                                                    className="h-8 min-w-0 flex-1 rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--primary)_55%,var(--border))] bg-[var(--surface)] px-2 text-[13px] text-[var(--text-main)] outline-none focus:ring-2 focus:ring-[var(--ring)]"
+                                                  />
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => void saveStudySessionRename()}
+                                                    className="rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[12px] font-semibold text-[var(--primary)] hover:bg-[var(--primary-soft)]"
+                                                  >
+                                                    Save
+                                                  </button>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => setRenamingStudySession(null)}
+                                                    className="rounded-[var(--radius-sm)] px-2.5 py-1.5 text-[12px] font-medium text-[var(--text-muted)] hover:bg-[var(--surface-2)]"
+                                                  >
+                                                    Cancel
+                                                  </button>
+                                                </div>
+                                              ) : (
+                                                <>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => selectStudySession(s.id)}
+                                                    className="flex min-w-0 flex-1 items-start gap-2 py-2 pl-1 text-left"
+                                                  >
+                                                    <span className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center">
+                                                      {active ? (
+                                                        <Check className="h-3.5 w-3.5 text-[var(--primary)]" strokeWidth={2.5} />
+                                                      ) : null}
+                                                    </span>
+                                                    <span className="min-w-0 flex-1">
+                                                      <span className={`block truncate text-[13px] font-semibold leading-snug ${active ? "text-[var(--primary)]" : "text-[var(--text-main)]"}`}>
+                                                        {title}
+                                                      </span>
+                                                      <span className="mt-0.5 block truncate text-[11px] text-[var(--text-muted-soft)]">
+                                                        {formatStudySessionRowMeta(s.updated_at)}
+                                                      </span>
+                                                    </span>
+                                                  </button>
+                                                  <KebabMenu
+                                                    portal
+                                                    items={[
+                                                      {
+                                                        label: "Rename",
+                                                        onClick: () => setRenamingStudySession({ id: s.id, title }),
+                                                      },
+                                                      {
+                                                        label: "Delete",
+                                                        onClick: () => void deleteStudySession(s.id),
+                                                      },
+                                                    ]}
+                                                  />
+                                                </>
+                                              )}
+                                            </div>
+                                          );
+                                        })
+                                      )}
+                                    </div>
+                                  </div>
+                                ) : null}
+                              </div>
+                            </div>
+
+                            <div className="mt-2.5 flex flex-wrap items-center gap-2 text-[11.5px] leading-snug">
+                              {isStudyGenerationReady(activeFile) ? (
+                                <span className="pill pill-success">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-[var(--success)]" aria-hidden />
+                                  Using current document
+                                </span>
+                              ) : (
+                                <span className="pill pill-warning">
+                                  <span className="h-1.5 w-1.5 rounded-full bg-[var(--warning)]" aria-hidden />
+                                  Document not indexed yet
+                                </span>
+                              )}
+                              {currentStudyScopeLabel && currentStudyScopeLabel !== "Using full document" ? (
+                                <span className="text-[var(--text-muted-soft)]">· {currentStudyScopeLabel}</span>
+                              ) : null}
+                            </div>
                           </div>
 
                           {/* Messages */}
                           <div
                             ref={studyChatScrollRef}
-                            className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4 surface-2"
-                            style={{scrollbarWidth:"thin",scrollbarColor:"var(--border) transparent"}}
+                            className="ns-scroll min-h-0 flex-1 space-y-3 overflow-y-auto bg-[var(--surface-2)] px-4 py-4"
                           >
-                            {studyMessages.length === 0 ? (
-                              <div className="flex flex-col items-center justify-center h-full text-center gap-4 py-8">
-                                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-violet-100 dark:bg-violet-900/30">
-                                  <MessageCircle className="h-6 w-6 text-violet-600" />
+                            {studyMessagesLoading ? (
+                              <div className="flex h-full flex-col items-center justify-center gap-3 py-8 text-center">
+                                <div className="flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-3 shadow-[var(--shadow-xs)]">
+                                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[var(--primary)]" style={{animationDelay:"0ms"}} />
+                                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[var(--primary)]" style={{animationDelay:"150ms"}} />
+                                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[var(--primary)]" style={{animationDelay:"300ms"}} />
+                                </div>
+                                <div className="text-xs font-medium text-[var(--text-muted)]">Loading this chat…</div>
+                              </div>
+                            ) : studyError ? (
+                              <div className="flex h-full flex-col items-center justify-center gap-3 px-4 py-8 text-center">
+                                <div className="rounded-[var(--radius-lg)] border border-[color-mix(in_srgb,var(--danger)_35%,transparent)] bg-[var(--danger-soft)] px-4 py-3 text-sm font-medium text-[var(--danger)]">
+                                  {studyError}
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setStudyMessagesReloadNonce((n) => n + 1)}
+                                  className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs font-semibold text-[var(--text-main)] hover:border-[var(--border-strong)] hover:bg-[var(--surface-2)]"
+                                >
+                                  Try again
+                                </button>
+                              </div>
+                            ) : studyMessages.length === 0 ? (
+                              <div className="flex h-full flex-col items-center justify-center gap-4 px-3 py-8 text-center">
+                                <div className="flex h-12 w-12 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--primary-soft)]">
+                                  <MessageCircle className="h-5 w-5 text-[var(--primary)]" />
                                 </div>
                                 <div>
-                                  <div className="text-sm font-semibold text-main">Ask about this document</div>
-                                  <div className="text-xs text-muted mt-1 max-w-[200px]">Select text, take a snip, or type a question below.</div>
+                                  <div className="text-[15px] font-semibold text-[var(--text-main)]">{studyEmptyTitle}</div>
+                                  <div className="mx-auto mt-1 max-w-[280px] text-[13px] leading-relaxed text-[var(--text-muted)]">
+                                    {studyEmptyDescription}
+                                  </div>
                                 </div>
-                                <div className="grid grid-cols-2 gap-2 w-full max-w-[260px]">
-                                  {[["Summarize","Summarize this document"],["Key points","What are the key points?"],["Quiz me","Quiz me on this content"],["Explain","Explain the main ideas"]].map(([label, prompt]) => (
-                                    <button key={label} onClick={() => setStudyInput(prompt)}
-                                      className="rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs font-medium text-[var(--text-secondary)] hover:border-violet-500 hover:text-violet-500 transition-all text-left">
-                                      {label}
+                                <div className="flex w-full max-w-[320px] flex-wrap justify-center gap-2">
+                                  {STUDY_QUICK_ACTIONS.map((action) => (
+                                    <button
+                                      key={action.key}
+                                      type="button"
+                                      onClick={() => void onStudyAsk(action.prompt, { quickAction: action.key })}
+                                      disabled={!!studyBusySessionId}
+                                      className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-[12.5px] font-semibold text-[var(--text-main)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-2)] disabled:cursor-not-allowed disabled:opacity-50"
+                                    >
+                                      {action.label}
                                     </button>
                                   ))}
                                 </div>
@@ -1136,32 +2607,50 @@ ${finalContent}`;
                             ) : (
                               studyMessages.map((m) => (
                                 <div key={m.id} className={`flex gap-2.5 ${m.role === "user" ? "flex-row-reverse" : "flex-row"}`}>
-                                  <div className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold ${
-                                    m.role === "user"
-                                      ? "bg-[var(--surface)] border border-[var(--border)] text-[var(--text-secondary)]"
-                                      : "bg-violet-600 text-white"
-                                  }`}>{m.role === "user" ? "You" : "AI"}</div>
-                                  <div className={`flex flex-col max-w-[85%] gap-1 ${m.role === "user" ? "items-end" : "items-start"}`}>
+                                  <div
+                                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
+                                      m.role === "user"
+                                        ? "border border-[var(--border)] bg-[var(--surface)] text-[var(--text-muted)]"
+                                        : "bg-[var(--primary)] text-[var(--text-inverse)]"
+                                    }`}
+                                  >
+                                    {m.role === "user" ? "You" : "AI"}
+                                  </div>
+                                  <div className={`flex max-w-[88%] flex-col gap-1 ${m.role === "user" ? "items-end" : "items-start"}`}>
                                     {m.selected_text && (
-                                      <div className="text-[10px] px-2.5 py-1.5 rounded-xl border-l-2 border-violet-400 bg-violet-50 dark:bg-violet-900/20 text-violet-700 dark:text-violet-300 italic max-w-full">
+                                      <div className="max-w-full rounded-[var(--radius-sm)] border-l-2 border-[var(--primary)] bg-[var(--primary-soft)] px-2.5 py-1.5 text-[11px] italic text-[var(--primary)]">
                                         <span className="line-clamp-2">{m.selected_text}</span>
                                       </div>
                                     )}
                                     {m.image_attachment?.data_url && (
-                                      <img src={m.image_attachment.data_url} alt="Snippet" className="max-h-28 rounded-xl border border-[var(--border)] object-contain" />
+                                      <img
+                                        src={m.image_attachment.data_url}
+                                        alt="Snippet"
+                                        className="max-h-28 rounded-[var(--radius-sm)] border border-[var(--border)] object-contain"
+                                      />
                                     )}
-                                    <div className={`text-sm leading-relaxed px-3.5 py-2.5 rounded-2xl ${
-                                      m.role === "user"
-                                        ? "bg-[var(--surface)] border border-[var(--border)] text-main rounded-tr-sm"
-                                        : "text-main rounded-tl-sm"
-                                    }`}>
-                                      <div className="whitespace-pre-wrap">{m.content}</div>
+                                    <div
+                                      className={`min-w-0 max-w-full rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface)] px-3.5 py-2.5 text-[var(--text-main)] ${
+                                        m.role === "user" ? "rounded-tr-sm" : "rounded-tl-sm shadow-[var(--shadow-xs)]"
+                                      }`}
+                                    >
+                                      {m.role === "assistant" ? (
+                                        <div className="text-[13px] leading-relaxed">
+                                          <MarkdownContent>{m.content}</MarkdownContent>
+                                        </div>
+                                      ) : (
+                                        <div className="whitespace-pre-wrap break-words text-[13px] leading-relaxed">{m.content}</div>
+                                      )}
                                     </div>
                                     {m.citations && m.citations.length > 0 && (
-                                      <div className="flex flex-wrap gap-1 mt-0.5">
+                                      <div className="mt-0.5 flex flex-wrap gap-1">
                                         {m.citations.slice(0, 3).map((c: any, i: number) => (
-                                          <span key={i} className="text-[10px] px-2 py-0.5 rounded-full border border-[var(--border)] surface-2 text-muted truncate max-w-[140px]">
-                                            📄 {c.filename}{c.page_start ? ` p.${c.page_start}` : ""}
+                                          <span
+                                            key={i}
+                                            className="max-w-[160px] truncate rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-2 py-0.5 text-[10px] text-[var(--text-muted)]"
+                                          >
+                                            {c.filename}
+                                            {c.page_start ? ` · p.${c.page_start}` : ""}
                                           </span>
                                         ))}
                                       </div>
@@ -1170,39 +2659,53 @@ ${finalContent}`;
                                 </div>
                               ))
                             )}
-                            {studyBusy && (
+                            {isCurrentStudyBusy && (
                               <div className="flex gap-2.5">
-                                <div className="flex-shrink-0 w-7 h-7 rounded-full bg-violet-600 flex items-center justify-center text-[11px] font-bold text-white">AI</div>
-                                <div className="flex items-center gap-1 px-3.5 py-2.5 rounded-2xl surface border border-[var(--border)]">
-                                  <span className="h-1.5 w-1.5 rounded-full bg-violet-400 animate-bounce" style={{animationDelay:"0ms"}} />
-                                  <span className="h-1.5 w-1.5 rounded-full bg-violet-400 animate-bounce" style={{animationDelay:"150ms"}} />
-                                  <span className="h-1.5 w-1.5 rounded-full bg-violet-400 animate-bounce" style={{animationDelay:"300ms"}} />
+                                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[var(--primary)] text-[11px] font-bold text-[var(--text-inverse)]">
+                                  AI
+                                </div>
+                                <div className="flex items-center gap-1 rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface)] px-3.5 py-2.5">
+                                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[var(--primary)]" style={{ animationDelay: "0ms" }} />
+                                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[var(--primary)]" style={{ animationDelay: "150ms" }} />
+                                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-[var(--primary)]" style={{ animationDelay: "300ms" }} />
                                 </div>
                               </div>
                             )}
                           </div>
 
                           {/* Input area */}
-                          <div className="border-t border-[var(--border)] px-4 py-3 flex-shrink-0 space-y-2 bg-[var(--surface)]">
+                          <div className="flex-shrink-0 space-y-2 border-t border-[var(--border)] bg-[var(--surface)] px-4 py-3">
                             {studySelectedQuote && (
-                              <div className="flex items-start gap-2 rounded-xl border-l-2 border-amber-400 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-xs">
-                                <div className="flex-1 min-w-0">
-                                  <div className="font-semibold text-amber-800 dark:text-amber-200 mb-0.5">Selected text</div>
-                                  <div className="line-clamp-2 italic text-amber-900/80 dark:text-amber-100/80">{studySelectedQuote.text}</div>
+                              <div className="flex items-start gap-2 rounded-[var(--radius-sm)] border-l-2 border-[var(--warning)] bg-[var(--warning-soft)] px-3 py-2 text-xs">
+                                <div className="min-w-0 flex-1">
+                                  <div className="mb-0.5 font-semibold text-[var(--warning)]">Selected text</div>
+                                  <div className="line-clamp-2 italic text-[var(--text-main)]">{studySelectedQuote.text}</div>
                                 </div>
-                                <button onClick={() => setStudySelectedQuote(null)} className="text-amber-500 hover:text-amber-700 flex-shrink-0"><X className="h-3.5 w-3.5" /></button>
+                                <button
+                                  onClick={() => setStudySelectedQuote(null)}
+                                  className="flex-shrink-0 text-[var(--text-muted)] hover:text-[var(--text-main)]"
+                                  aria-label="Remove selected text"
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </button>
                               </div>
                             )}
                             {pendingSnip && (
-                              <div className="rounded-xl border border-[var(--border)] surface-2 px-3 py-2 text-xs">
-                                <div className="flex items-center justify-between mb-1.5">
-                                  <span className="font-semibold text-main">Snippet attached</span>
-                                  <button onClick={() => setPendingSnip(null)} className="text-muted"><X className="h-3.5 w-3.5" /></button>
+                              <div className="rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-xs">
+                                <div className="mb-1.5 flex items-center justify-between">
+                                  <span className="font-semibold text-[var(--text-main)]">Snippet attached</span>
+                                  <button
+                                    onClick={() => setPendingSnip(null)}
+                                    className="text-[var(--text-muted)] hover:text-[var(--text-main)]"
+                                    aria-label="Remove snippet"
+                                  >
+                                    <X className="h-3.5 w-3.5" />
+                                  </button>
                                 </div>
-                                <img src={pendingSnip.data_url} alt="Snippet" className="max-h-20 rounded-lg border border-[var(--border)]" />
+                                <img src={pendingSnip.data_url} alt="Snippet" className="max-h-20 rounded-[var(--radius-sm)] border border-[var(--border)]" />
                               </div>
                             )}
-                            <div className="flex items-end gap-2 rounded-xl border border-[var(--border)] surface-2 px-3 py-2 focus-within:border-violet-500 focus-within:ring-1 focus-within:ring-violet-500/20 transition-all">
+                            <div className="flex items-end gap-2 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 transition focus-within:border-[color-mix(in_srgb,var(--primary)_55%,var(--border))] focus-within:ring-2 focus-within:ring-[var(--ring)]">
                               <textarea
                                 value={studyInput}
                                 onChange={(e) => {
@@ -1211,29 +2714,36 @@ ${finalContent}`;
                                   el.style.height = "auto";
                                   el.style.height = Math.min(el.scrollHeight, 120) + "px";
                                 }}
-                                placeholder="Ask about this document..."
+                                placeholder={activeFile ? "Ask about this document…" : "Ask about this class…"}
                                 rows={1}
-                                className="flex-1 min-w-0 resize-none bg-transparent text-sm text-main placeholder:text-muted focus:outline-none leading-relaxed"
+                                className="min-w-0 flex-1 resize-none border-0 bg-transparent p-0 text-[13.5px] leading-relaxed text-[var(--text-main)] placeholder:text-[var(--text-muted-soft)] focus:outline-none focus:ring-0"
                                 style={{ maxHeight: "120px", minHeight: "22px" }}
                                 onKeyDown={(e) => {
-                                  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onStudyAsk(); }
+                                  if (e.key === "Enter" && !e.shiftKey) {
+                                    e.preventDefault();
+                                    onStudyAsk();
+                                  }
                                 }}
                               />
                               <button
                                 onClick={() => onStudyAsk()}
-                                disabled={studyBusy || (!studyInput.trim() && !pendingSnip)}
-                                className={`flex-shrink-0 h-8 w-8 rounded-lg flex items-center justify-center transition-all ${
-                                  (studyInput.trim() || pendingSnip) && !studyBusy
-                                    ? "bg-violet-600 text-white hover:bg-violet-700 active:scale-95"
-                                    : "border border-[var(--border)] text-muted opacity-40 cursor-not-allowed"
+                                disabled={isStudySendDisabled}
+                                className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-[var(--radius-sm)] transition ${
+                                  !isStudySendDisabled
+                                    ? "bg-[var(--primary)] text-[var(--text-inverse)] hover:bg-[var(--primary-hover)] active:scale-95"
+                                    : "border border-[var(--border)] text-[var(--text-muted)] opacity-40"
                                 }`}
+                                aria-label="Send message"
                               >
                                 <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                  <path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/>
+                                  <path d="M22 2L11 13" />
+                                  <path d="M22 2L15 22 11 13 2 9l20-7z" />
                                 </svg>
                               </button>
                             </div>
-                            <div className="text-[10px] text-muted px-1">⏎ Send · ⇧⏎ New line</div>
+                            <div className="px-1 text-[10.5px] text-[var(--text-muted-soft)]">
+                              ⏎ Send · ⇧⏎ New line
+                            </div>
                           </div>
                         </aside>
                       )}
@@ -1249,7 +2759,10 @@ ${finalContent}`;
                       "application/pdf",
                       "application/vnd.openxmlformats-officedocument.presentationml.presentation",
                       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                      ".pdf,.pptx,.docx",
+                      "image/*",
+                      "text/*",
+                      "application/json",
+                      ".pdf,.pptx,.docx,.png,.jpg,.jpeg,.gif,.webp,.bmp,.tif,.tiff,.txt,.md,.csv,.json,.log",
                     ].join(",")}
                     className="hidden"
                     multiple
@@ -1259,100 +2772,166 @@ ${finalContent}`;
                   <div
                     ref={documentListRef}
                     tabIndex={-1}
-                    className={`rounded-2xl border surface shadow-sm transition ${
-                      dropping ? "border-dashed border-[var(--primary)] bg-[var(--surface-2)]" : "border-token"
+                    className={`overflow-hidden rounded-[var(--radius-xl)] border bg-[var(--surface)] shadow-[var(--shadow-sm)] transition ${
+                      dropping ? "border-dashed border-[var(--primary)] bg-[var(--surface-2)]" : "border-[var(--border)]"
                     }`}
                     onDragOver={onDragOver}
                     onDragLeave={onDragLeave}
                     onDrop={onDrop}
                   >
-                    <div className="flex items-center justify-between gap-3 border-b border-token px-4 py-3">
-                      <div>
-                        <div className="text-sm font-semibold">Documents</div>
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] px-4 py-3">
+                      <div className="min-w-0">
+                        <div className="text-[14px] font-semibold text-[var(--text-main)]">Documents</div>
+                        <div className="mt-0.5 text-[12px] text-[var(--text-muted)]">
+                          {uploadMode === "handwritten"
+                            ? "Handwritten notes use OCR first. Review extracted text before generating flashcards."
+                            : "Upload PDFs, slides, docs, or images. Drop files to upload."}
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2 text-xs text-muted">
-                        <button
-                          className="inline-flex items-center gap-1 rounded-lg border border-token surface px-2.5 py-1.5 text-xs font-semibold text-muted hover:border-[var(--primary)]"
-                          onClick={() => fileInputRef.current?.click()}
-                        >
-                          <Upload className="h-3.5 w-3.5" />
-                          Upload
-                        </button>
-                        {selectedIds.length > 0 && (
+                      <div className="flex items-center gap-2">
+                        <div className="hidden items-center gap-0.5 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-2)] p-0.5 sm:flex">
                           <button
-                            className="rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-xs font-semibold text-rose-700"
-                            onClick={async () => {
-                              const toDelete = (files ?? []).filter((f) => selectedIds.includes(f.id));
-                              if (!confirm(`Delete ${toDelete.length} file(s)?`)) return;
-                              for (const f of toDelete) await onDeleteFile(f.id, f.filename);
-                              setSel({});
-                            }}
+                            type="button"
+                            onClick={() => setUploadMode("typed")}
+                            className={`h-7 rounded-[var(--radius-sm)] px-2.5 text-[12px] font-semibold transition ${
+                              uploadMode === "typed"
+                                ? "bg-[var(--surface)] text-[var(--text-main)] shadow-[var(--shadow-xs)]"
+                                : "text-[var(--text-muted)] hover:text-[var(--text-main)]"
+                            }`}
                           >
-                            Delete selected
+                            Typed
                           </button>
-                        )}
+                          <button
+                            type="button"
+                            onClick={() => setUploadMode("handwritten")}
+                            className={`h-7 rounded-[var(--radius-sm)] px-2.5 text-[12px] font-semibold transition ${
+                              uploadMode === "handwritten"
+                                ? "bg-[var(--surface)] text-[var(--text-main)] shadow-[var(--shadow-xs)]"
+                                : "text-[var(--text-muted)] hover:text-[var(--text-main)]"
+                            }`}
+                          >
+                            Handwritten OCR
+                          </button>
+                        </div>
+                        <button
+                          className="inline-flex h-9 items-center justify-center gap-1.5 rounded-[var(--radius-md)] bg-[var(--primary)] px-3 text-[13px] font-semibold text-[var(--text-inverse)] shadow-[var(--shadow-xs)] transition hover:bg-[var(--primary-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                          onClick={() => fileInputRef.current?.click()}
+                          aria-label="Upload document"
+                          title="Upload document"
+                        >
+                          <Upload className="h-4 w-4" />
+                          <span>{uploadMode === "handwritten" ? "Upload notes" : "Upload"}</span>
+                        </button>
                       </div>
+                    </div>
+                    <div className="flex gap-2 border-b border-token px-4 py-2 sm:hidden">
+                      <button
+                        type="button"
+                        onClick={() => setUploadMode("typed")}
+                        className={`flex-1 rounded-lg border border-token px-2 py-2 text-xs font-semibold ${uploadMode === "typed" ? "surface-2 text-main" : "text-muted"}`}
+                      >
+                        Typed PDF / document
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setUploadMode("handwritten")}
+                        className={`flex-1 rounded-lg border border-token px-2 py-2 text-xs font-semibold ${uploadMode === "handwritten" ? "surface-2 text-main" : "text-muted"}`}
+                      >
+                        Handwritten notes
+                      </button>
                     </div>
                     {invalidDropCount > 0 && (
                       <div className="mx-4 mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
                         Ignored {invalidDropCount} unsupported file{invalidDropCount > 1 ? "s" : ""}.
                       </div>
                     )}
-                    <div className="overflow-x-auto">
+                    <div>
                       <table className="w-full text-sm">
-                        <thead className="surface-2 text-xs text-muted">
+                        <thead className="hidden border-b border-[var(--border)] bg-[var(--surface-2)] text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted-soft)] sm:table-header-group">
                           <tr>
-                            <th className="px-4 py-2 text-left">
-                              <input
-                                type="checkbox"
-                                aria-label="Select all"
-                                checked={visibleDocuments.length > 0 && visibleDocuments.every((f) => !!sel[f.id])}
-                                onChange={(e) => toggleAll(e.target.checked)}
-                              />
-                            </th>
-                            <th className="px-4 py-2 text-left">File</th>
-                            <th className="px-4 py-2 text-left">Size</th>
-                            <th className="px-4 py-2 text-left">Uploaded</th>
-                            <th className="px-4 py-2 text-left">Status</th>
-                            <th className="px-4 py-2 text-left">Open</th>
-                            <th className="px-4 py-2 text-left">Actions</th>
+                            <th className="px-4 py-2.5 text-left">File</th>
+                            <th className="px-4 py-2.5 text-left">Status</th>
+                            <th className="px-4 py-2.5 text-left"></th>
+                            <th className="px-4 py-2.5 text-right"></th>
                           </tr>
                         </thead>
                         <tbody>
                           {visibleDocuments.map((f) => (
-                            <tr key={f.id} className="border-t border-token">
-                              <td className="px-4 py-3">
-                                <input
-                                  type="checkbox"
-                                  checked={!!sel[f.id]}
-                                  onChange={(e) => toggleOne(f.id, e.target.checked)}
-                                  aria-label={`Select ${f.filename}`}
-                                />
-                              </td>
-                              <td className="px-4 py-3">
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    className="font-semibold text-main hover:underline"
-                                    onClick={() => openDocumentInWorkspace(f)}
-                                  >
-                                    {f.filename}
-                                  </button>
-                                  <span className="rounded-full border border-token surface-2 px-2 py-0.5 text-[11px] text-muted">
-                                    {(f.filename.split(".").pop() || "").toUpperCase()}
+                            <tr
+                              key={f.id}
+                              className="block border-t border-[var(--border)] px-4 py-3 transition hover:bg-[var(--surface-2)] sm:table-row sm:px-0 sm:py-0"
+                            >
+                              <td className="block sm:table-cell sm:px-4 sm:py-3">
+                                <div className="flex min-w-0 items-center gap-2.5">
+                                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--primary-soft)] text-[10px] font-bold uppercase text-[var(--primary)]">
+                                    {(f.filename.split(".").pop() || "F").slice(0, 4).toUpperCase()}
                                   </span>
+                                  <div className="min-w-0 flex-1">
+                                    <button
+                                      className="block w-full min-w-0 truncate text-left text-[14px] font-semibold text-[var(--text-main)] hover:underline"
+                                      onClick={() => openDocumentInWorkspace(f)}
+                                      title={f.filename}
+                                    >
+                                      {f.filename}
+                                    </button>
+                                    {isHandwrittenOCR(f) && (
+                                      <span className="mt-0.5 inline-flex items-center gap-1 text-[11px] font-medium text-[var(--primary)]">
+                                        OCR notes
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
                               </td>
-                              <td className="px-4 py-3 text-muted">{prettyBytes(f.size_bytes)}</td>
-                              <td className="px-4 py-3 text-muted">{timeLocal(f.uploaded_at)}</td>
-                              <td className="px-4 py-3">
-                                <StatusPill status={f.status ?? "UPLOADED"} />
+                              <td className="mt-2 block sm:mt-0 sm:table-cell sm:px-4 sm:py-3">
+                                <div className="flex flex-col gap-1">
+                                  <StatusPill file={f} />
+                                  {documentStageDetail(f) && String(f.status || "").toUpperCase() !== "FAILED" ? (
+                                    <p className="max-w-[240px] text-[11px] leading-snug text-[var(--text-muted)]">
+                                      {documentStageDetail(f)}
+                                    </p>
+                                  ) : String(f.status || "").toUpperCase() === "FAILED" ? (
+                                    <p className="max-w-[240px] text-[11px] leading-snug text-[var(--danger)]">
+                                      {documentStageDetail(f)}
+                                    </p>
+                                  ) : null}
+                                </div>
                               </td>
-                              <td className="px-4 py-3">
+                              <td className="mt-3 inline-block pr-3 sm:mt-0 sm:table-cell sm:px-4 sm:py-3">
+                                {isHandwrittenOCR(f) && String(f.status || "").toUpperCase() === "OCR_NEEDS_REVIEW" ? (
+                                  <button
+                                    type="button"
+                                    className="inline-flex h-8 items-center rounded-[var(--radius-sm)] border border-[color-mix(in_srgb,var(--primary)_40%,transparent)] bg-[var(--primary-soft)] px-3 text-[12.5px] font-semibold text-[var(--primary)] transition hover:brightness-105"
+                                    onClick={() => openOcrReview(f)}
+                                  >
+                                    Review OCR
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    disabled={!canOpenDocumentInWorkspace(f)}
+                                    className="inline-flex h-8 items-center rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface)] px-3 text-[12.5px] font-semibold text-[var(--text-main)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-2)] disabled:cursor-not-allowed disabled:opacity-40"
+                                    onClick={() => openDocumentInWorkspace(f)}
+                                  >
+                                    Open
+                                  </button>
+                                )}
+                              </td>
+                              <td className="mt-3 inline-block align-middle sm:mt-0 sm:table-cell sm:px-4 sm:py-3 sm:text-right">
                                 <KebabMenu
+                                  portal
                                   items={[
-                                    { label: "Open in viewer", onClick: () => openDocumentInWorkspace(f) },
+                                    { label: "Details", onClick: () => setDetailsFile(f) },
                                     { label: "Open in new tab", onClick: () => openDocument(f) },
                                     { label: "Download", onClick: () => downloadDocument(f) },
+                                    { label: "Rename", onClick: () => onRenameFile(f) },
+                                    ...(isHandwrittenOCR(f)
+                                      ? [{ label: "Review OCR", onClick: () => openOcrReview(f) }]
+                                      : []),
+                                    { label: "Regenerate flashcards", onClick: () => prepareFlashcardsFromFile(f) },
+                                    ...(String(f.status || "").toUpperCase() === "FAILED" ||
+                                    (String(f.status || "").toUpperCase() === "OCR_DONE" && (f.chunk_count ?? 0) === 0)
+                                      ? [{ label: "Retry processing", onClick: () => onRetryProcessing(f) }]
+                                      : []),
                                     { label: "Delete", onClick: () => onDeleteFile(f.id, f.filename) },
                                   ]}
                                 />
@@ -1361,18 +2940,25 @@ ${finalContent}`;
                           ))}
                           {(files?.length ?? 0) === 0 && (
                             <tr>
-                              <td colSpan={7} className="px-4 py-8">
+                              <td colSpan={4} className="px-4 py-8">
                                 <button
-                                  className="mx-auto flex w-full max-w-md flex-col items-center rounded-xl border border-dashed border-token px-4 py-5 text-center transition-colors hover:border-[var(--primary)]"
+                                  className="mx-auto flex w-full max-w-md flex-col items-center rounded-[var(--radius-lg)] border border-dashed border-[var(--border)] bg-[var(--surface-2)] px-4 py-6 text-center transition hover:border-[var(--primary)] hover:bg-[var(--primary-soft)]"
                                   onClick={() => fileInputRef.current?.click()}
                                 >
-                                  <Upload className="h-7 w-7 text-[var(--primary)]" />
-                                  <div className="mt-2 text-sm font-semibold text-main">Upload your materials</div>
-                                  <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
-                                    {["PPTX", "PDF", "DOCS"].map((type) => (
+                                  <span className="flex h-11 w-11 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--primary-soft)] text-[var(--primary)]">
+                                    <Upload className="h-5 w-5" />
+                                  </span>
+                                  <div className="mt-3 text-[14px] font-semibold text-[var(--text-main)]">
+                                    Upload your materials
+                                  </div>
+                                  <div className="mt-1 text-[12px] text-[var(--text-muted)]">
+                                    Drop files here or click to browse.
+                                  </div>
+                                  <div className="mt-3 flex flex-wrap items-center justify-center gap-1.5">
+                                    {["PDF", "PPTX", "DOCX", "IMAGES"].map((type) => (
                                       <span
                                         key={type}
-                                        className="rounded-full border border-token surface-2 px-2.5 py-0.5 text-[10px] font-semibold tracking-[0.12em] text-muted"
+                                        className="rounded-full bg-[var(--surface)] px-2 py-0.5 text-[10px] font-semibold tracking-[0.1em] text-[var(--text-muted)]"
                                       >
                                         {type}
                                       </span>
@@ -1386,13 +2972,16 @@ ${finalContent}`;
                       </table>
                     </div>
                     {documentRows.length > DOCUMENTS_PAGE_SIZE && (
-                      <div className="flex justify-center border-t border-token px-4 py-3">
-                        <div className="flex items-center gap-6 text-sm font-semibold">
+                      <div className="flex items-center justify-between gap-3 border-t border-[var(--border)] px-4 py-2.5 text-[12px] text-[var(--text-muted)]">
+                        <span>
+                          Page {currentDocumentsPage + 1} of {documentsPageCount}
+                        </span>
+                        <div className="flex items-center gap-2">
                           <button
                             type="button"
                             disabled={currentDocumentsPage === 0}
                             onClick={() => setDocumentsPage((page) => Math.max(0, page - 1))}
-                            className="text-muted transition-all duration-200 hover:scale-105 hover:text-[var(--primary)] hover:underline hover:underline-offset-4 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:scale-100 disabled:hover:text-muted disabled:hover:no-underline"
+                            className="inline-flex h-8 items-center rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface)] px-3 text-[12.5px] font-semibold text-[var(--text-main)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-2)] disabled:cursor-not-allowed disabled:opacity-40"
                           >
                             Previous
                           </button>
@@ -1400,7 +2989,7 @@ ${finalContent}`;
                             type="button"
                             disabled={currentDocumentsPage >= documentsPageCount - 1}
                             onClick={() => setDocumentsPage((page) => Math.min(documentsPageCount - 1, page + 1))}
-                            className="text-muted transition-all duration-200 hover:scale-105 hover:text-[var(--primary)] hover:underline hover:underline-offset-4 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:scale-100 disabled:hover:text-muted disabled:hover:no-underline"
+                            className="inline-flex h-8 items-center rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface)] px-3 text-[12.5px] font-semibold text-[var(--text-main)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-2)] disabled:cursor-not-allowed disabled:opacity-40"
                           >
                             Next
                           </button>
@@ -1415,101 +3004,309 @@ ${finalContent}`;
 
 
               {activeTab === "flashcards" && (
-                <div className="rounded-2xl border border-token surface p-5 shadow-sm">
-                  <div className="flex items-center justify-between flex-wrap gap-3">
-                    <div>
-                      <div className="text-sm font-semibold">Flashcards</div>
-                      <div className="text-xs text-muted">
-                        Generate cards from your selected documents or open study mode.
+                <div className="flex min-w-0 flex-col gap-4">
+                  {/* Header / overview */}
+                  <div className="min-w-0 rounded-[var(--radius-xl)] border border-[var(--border)] bg-[var(--surface)] p-5 shadow-[var(--shadow-sm)] sm:p-6">
+                    <div className="flex min-w-0 flex-wrap items-start justify-between gap-4">
+                      <div className="flex min-w-0 items-start gap-3">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--primary-soft)] text-[var(--primary)]">
+                          <Sparkles className="h-[18px] w-[18px]" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted-soft)]">
+                            Flashcards
+                          </div>
+                          <div className="mt-1 text-lg font-semibold text-[var(--text-main)]">
+                            Generate and study
+                          </div>
+                          <div className="mt-1 text-[13px] text-[var(--text-muted)]">
+                            Turn selected documents into spaced-repetition cards.
+                          </div>
+                        </div>
+                      </div>
+                      <ClassHeaderButtons
+                        classId={String(selectedId)}
+                        onGenerate={onGenerateFlashcards}
+                        canGenerateFlashcards={canGenerateFlashcards && !busyFlow}
+                        generateDisabledReason={busyFlow ? "Generating flashcards..." : generateDisabledReason}
+                      />
+                    </div>
+
+                    {/* Source selection summary chips */}
+                    <div className="mt-4 flex flex-wrap items-center gap-2 text-[11.5px]">
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-2.5 py-1 font-semibold text-[var(--text-main)]">
+                        <Layers className="h-3.5 w-3.5 text-[var(--primary)]" />
+                        {flashcardSourceIds.length} source file(s) selected
+                      </span>
+                      {generateDisabledReason ? (
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-[color-mix(in_srgb,var(--warning)_30%,transparent)] bg-[var(--warning-soft)] px-2.5 py-1 font-semibold text-[var(--warning)]">
+                          <span className="h-1.5 w-1.5 rounded-full bg-[var(--warning)]" />
+                          {generateDisabledReason}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1.5 rounded-full border border-[color-mix(in_srgb,var(--success)_30%,transparent)] bg-[var(--success-soft)] px-2.5 py-1 font-semibold text-[var(--success)]">
+                          <Check className="h-3 w-3" />
+                          {selectedIndexedCount} indexed document(s) ready
+                        </span>
+                      )}
+                    </div>
+
+                    {flashcardGenerationSummary && (
+                      <div className="mt-3 inline-flex items-center gap-2 rounded-[var(--radius-md)] border border-[color-mix(in_srgb,var(--success)_30%,transparent)] bg-[var(--success-soft)] px-3 py-2 text-[13px] font-medium text-[var(--success)]">
+                        <Check className="h-4 w-4" />
+                        {flashcardGenerationSummary}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Source material */}
+                  <div className="min-w-0 rounded-[var(--radius-xl)] border border-[var(--border)] bg-[var(--surface)] p-5 shadow-[var(--shadow-sm)] sm:p-6">
+                    <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted-soft)]">
+                          Source material
+                        </div>
+                        <div className="mt-1 text-[15px] font-semibold text-[var(--text-main)]">
+                          Choose what to generate from
+                        </div>
+                        <div
+                          className="mt-0.5 min-w-0 truncate text-[12px] text-[var(--text-muted)]"
+                          title={
+                            selectedFlashcardFiles.length > 1
+                              ? `Generating from ${selectedFlashcardFiles.length} documents`
+                              : selectedFlashcardFiles[0]
+                                ? `Generating from ${selectedFlashcardFiles[0].filename}`
+                                : "No source selected"
+                          }
+                        >
+                          {selectedFlashcardFiles.length > 1
+                            ? `Generating from ${selectedFlashcardFiles.length} documents`
+                            : selectedFlashcardFiles[0]
+                              ? `Generating from ${selectedFlashcardFiles[0].filename}`
+                              : "Select one or more documents below"}
+                        </div>
                       </div>
                     </div>
-                    <ClassHeaderButtons
-                      classId={String(selectedId)}
-                      onGenerate={onGenerateFlashcards}
-                      canGenerateFlashcards={canGenerateFlashcards}
-                      generateDisabledReason={generateDisabledReason}
-                    />
-                  </div>
-                  <div className="mt-4 rounded-xl border border-token surface-2 p-4">
-                    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">Source material</div>
+
                     {(files?.length ?? 0) === 0 ? (
-                      <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-token bg-white px-3 py-3 text-sm text-muted">
-                        <span>Upload a document to generate flashcards.</span>
+                      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-lg)] border border-dashed border-[var(--border-strong)] bg-[var(--surface-2)] px-4 py-4 text-sm text-[var(--text-muted)]">
+                        <div className="flex items-start gap-2">
+                          <Upload className="mt-0.5 h-4 w-4 text-[var(--text-muted-soft)]" />
+                          <span>Upload or wait for a document to finish processing before generating flashcards.</span>
+                        </div>
                         <Button onClick={() => setActiveTab("documents")}>Go to Documents</Button>
                       </div>
                     ) : (
                       <>
-                        <div className="mt-3 text-sm text-main">
-                          Generating from:{" "}
-                          <span className="font-semibold">
-                            {selectedFlashcardFiles.length > 0
-                              ? selectedFlashcardFiles.map((f) => f.filename).join(", ")
-                              : "No source selected"}
-                          </span>
-                        </div>
-                        <div className="mt-3 grid gap-2">
+                        {selectedFlashcardFiles.length > 1 && (
+                          <div className="mt-3 flex flex-wrap gap-1.5">
+                            {selectedFlashcardFiles.map((f) => (
+                              <span
+                                key={f.id}
+                                title={f.filename}
+                                className="max-w-[220px] truncate rounded-full border border-[color-mix(in_srgb,var(--primary)_28%,var(--border))] bg-[var(--primary-soft)] px-2.5 py-1 text-[11px] font-semibold text-[var(--primary)]"
+                              >
+                                {f.filename}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        <div className="mt-4 grid min-w-0 gap-2">
                           {(files ?? []).map((f) => {
                             const checked = flashcardSourceIds.includes(f.id);
-                            const disabled = f.status !== "INDEXED";
+                            const { disabled, label } = flashcardSourceStatus(f);
+                            const ext = (f.filename.split(".").pop() || "FILE").toUpperCase();
                             return (
                               <label
                                 key={f.id}
-                                className={`flex items-center justify-between rounded-lg border px-3 py-2 text-xs ${
-                                  checked ? "border-strong surface" : "border-token bg-white"
-                                } ${disabled ? "opacity-70" : ""}`}
+                                className={`group flex min-w-0 items-center gap-3 rounded-[var(--radius-lg)] border px-3.5 py-3 text-[13px] transition ${
+                                  checked
+                                    ? "border-[color-mix(in_srgb,var(--primary)_38%,var(--border))] bg-[var(--primary-soft)]"
+                                    : "border-[var(--border)] bg-[var(--surface)]"
+                                } ${disabled ? "cursor-not-allowed opacity-70" : "cursor-pointer hover:border-[var(--border-strong)] hover:bg-[var(--surface-2)]"}`}
                               >
-                                <div className="flex items-center gap-2">
-                                  <input
-                                    type="checkbox"
-                                    checked={checked}
-                                    disabled={disabled}
-                                    onChange={(e) => {
-                                      setFlashcardSourceIds((prev) => {
-                                        if (e.target.checked) return [...prev, f.id];
-                                        return prev.filter((id) => id !== f.id);
-                                      });
-                                    }}
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  disabled={disabled}
+                                  onChange={(e) => {
+                                    setFlashcardSourceIds((prev) => {
+                                      if (e.target.checked) return [...prev, f.id];
+                                      return prev.filter((id) => id !== f.id);
+                                    });
+                                  }}
+                                  className="h-4 w-4 shrink-0 rounded border-[var(--border-strong)] text-[var(--primary)] focus:ring-2 focus:ring-[var(--ring)]"
+                                />
+                                <span className="inline-flex h-7 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--surface-2)] px-2 text-[10px] font-semibold tracking-wide text-[var(--text-muted)]">
+                                  {ext}
+                                </span>
+                                <span
+                                  title={f.filename}
+                                  className={`min-w-0 flex-1 truncate font-medium ${disabled ? "text-[var(--text-muted)]" : "text-[var(--text-main)]"}`}
+                                >
+                                  {f.filename}
+                                </span>
+                                <span
+                                  className={`shrink-0 ${
+                                    disabled
+                                      ? "pill pill-warning"
+                                      : label.toLowerCase().includes("ready")
+                                        ? "pill pill-success"
+                                        : "pill pill-neutral"
+                                  }`}
+                                >
+                                  <span
+                                    className="h-1.5 w-1.5 rounded-full"
+                                    style={{ background: "currentColor" }}
                                   />
-                                  <span className="font-medium text-main">{f.filename}</span>
-                                </div>
-                                <span className="text-[11px] text-muted">
-                                  {f.status === "INDEXED" ? "Ready" : "Processing"}
+                                  {label}
                                 </span>
                               </label>
                             );
                           })}
                         </div>
+                        {!canGenerateFlashcards && generateDisabledReason && (
+                          <div className="mt-3 rounded-[var(--radius-md)] border border-[color-mix(in_srgb,var(--warning)_30%,transparent)] bg-[var(--warning-soft)] px-3 py-2 text-[12px] font-medium text-[var(--warning)]">
+                            {generateDisabledReason}
+                          </div>
+                        )}
                       </>
                     )}
                   </div>
-                  <div className="mt-4 flex flex-wrap gap-2 text-xs text-muted">
-                    <span className="rounded-full border border-token surface-2 px-3 py-1">
-                      {flashcardSourceIds.length} source file(s) selected
-                    </span>
-                    {generateDisabledReason ? (
-                      <span className="rounded-full border border-token surface-2 px-3 py-1">
-                        {generateDisabledReason}
-                      </span>
+
+                  {/* What to study next */}
+                  <div className="min-w-0 rounded-[var(--radius-xl)] border border-[var(--border)] bg-[var(--surface)] p-5 shadow-[var(--shadow-sm)] sm:p-6">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="flex min-w-0 items-start gap-3">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[color-mix(in_srgb,var(--accent-pink)_14%,transparent)] text-[var(--accent-pink)]">
+                          <Lightbulb className="h-[17px] w-[17px]" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted-soft)]">
+                            What to study next
+                          </div>
+                          <div className="mt-1 text-[15px] font-semibold text-[var(--text-main)]">
+                            Recommended revision
+                          </div>
+                          <div className="mt-0.5 text-[12px] text-[var(--text-muted)]">
+                            Based on your recent progress and weak topics.
+                          </div>
+                        </div>
+                      </div>
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={() => selectedId && navigate(`/classes/${selectedId}/flashcards/study`)}
+                        className="gap-1.5"
+                      >
+                        <BookOpen className="h-3.5 w-3.5" />
+                        Start review
+                      </Button>
+                    </div>
+
+                    {recommendationsLoading ? (
+                      <div className="mt-4 text-[12.5px] text-[var(--text-muted)]">Loading recommendations...</div>
+                    ) : recommendations.length === 0 ? (
+                      <div className="mt-4 rounded-[var(--radius-lg)] border border-dashed border-[var(--border-strong)] bg-[var(--surface-2)] px-4 py-5 text-center text-[12.5px] text-[var(--text-muted)]">
+                        Review flashcards or complete a quiz to unlock adaptive recommendations.
+                      </div>
                     ) : (
-                      <span className="rounded-full border border-token surface-2 px-3 py-1">
-                        {selectedIndexedCount} indexed document(s) ready
-                      </span>
+                      <div className="mt-4 grid gap-2.5">
+                        {recommendations.slice(0, 3).map((rec) => (
+                          <div
+                            key={rec.topic}
+                            className="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface-2)] px-4 py-3.5 transition hover:border-[var(--border-strong)] hover:bg-[var(--surface)]"
+                          >
+                            <div className="flex flex-wrap items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="truncate text-[14px] font-semibold text-[var(--text-main)]">
+                                  {rec.topic}
+                                </div>
+                                <div className="mt-1 text-[12px] leading-5 text-[var(--text-muted)]">{rec.reason}</div>
+                              </div>
+                              <span
+                                className={`shrink-0 ${
+                                  rec.mastery_score >= 70
+                                    ? "pill pill-success"
+                                    : rec.mastery_score >= 40
+                                      ? "pill pill-info"
+                                      : "pill pill-warning"
+                                }`}
+                              >
+                                <Target className="h-3 w-3" />
+                                {rec.status} &middot; {rec.mastery_score}%
+                              </span>
+                            </div>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <Button
+                                size="sm"
+                                variant="primary"
+                                onClick={() =>
+                                  selectedId &&
+                                  navigate(`/classes/${selectedId}/flashcards/study?topic=${encodeURIComponent(rec.topic)}`)
+                                }
+                                className="gap-1"
+                              >
+                                Review flashcards
+                                <ArrowRight className="h-3 w-3" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                onClick={() =>
+                                  selectedId &&
+                                  navigate(`/quizzes?class_id=${selectedId}&topic=${encodeURIComponent(rec.topic)}`)
+                                }
+                              >
+                                Practice quiz
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => {
+                                  setStudyInput(`Help me revise ${rec.topic}. Focus on my weak points and give me a short practice plan.`);
+                                  setStudyAssistantOpen(true);
+                                }}
+                              >
+                                Ask Study Assistant
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </div>
-                  <div className="mt-4 rounded-xl border border-token surface-2 p-4">
-                    <div className="text-xs font-semibold text-muted">Needs attention</div>
+
+                  {/* Needs attention */}
+                  <div className="min-w-0 rounded-[var(--radius-xl)] border border-[var(--border)] bg-[var(--surface)] p-5 shadow-[var(--shadow-sm)] sm:p-6">
+                    <div className="flex items-center gap-2">
+                      <span className="inline-flex h-1.5 w-1.5 rounded-full bg-[var(--warning)]" />
+                      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted-soft)]">
+                        Needs attention
+                      </div>
+                    </div>
+                    <div className="mt-1 text-[14px] font-semibold text-[var(--text-main)]">
+                      Cards you're struggling with
+                    </div>
                     {weakCardsLoading ? (
-                      <div className="mt-2 text-xs text-muted">Loading weak cards...</div>
+                      <div className="mt-3 text-[12.5px] text-[var(--text-muted)]">Loading weak cards...</div>
                     ) : weakCards.length === 0 ? (
-                      <div className="mt-2 text-xs text-muted">No weak cards yet. Keep studying!</div>
+                      <div className="mt-3 rounded-[var(--radius-md)] border border-dashed border-[var(--border)] bg-[var(--surface-2)] px-4 py-3 text-[12.5px] text-[var(--text-muted)]">
+                        No weak cards yet. Keep studying!
+                      </div>
                     ) : (
                       <div className="mt-3 grid gap-2">
                         {weakCards.map((c) => (
-                          <div key={c.card_id} className="rounded-lg border border-token bg-white/60 px-3 py-2 text-xs">
-                            <div className="font-semibold text-main line-clamp-2">{c.question}</div>
-                            <div className="mt-1 text-[11px] text-muted">
-                              Struggle {Math.round(c.struggle_rate * 100)}% - Avg {Math.round(c.avg_response_time)}ms -
-                              Score {c.weakness_score.toFixed(2)}
+                          <div
+                            key={c.card_id}
+                            className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2.5"
+                          >
+                            <div className="line-clamp-2 text-[13px] font-semibold text-[var(--text-main)]">
+                              {c.question}
+                            </div>
+                            <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-[var(--text-muted)]">
+                              <span>Struggle <span className="font-semibold text-[var(--warning)]">{Math.round(c.struggle_rate * 100)}%</span></span>
+                              <span>Avg {Math.round(c.avg_response_time)}ms</span>
+                              <span>Score {c.weakness_score.toFixed(2)}</span>
                             </div>
                           </div>
                         ))}
@@ -1519,6 +3316,213 @@ ${finalContent}`;
                 </div>
               )}
               </div>
+
+              {detailsFile && (
+                <div
+                  role="dialog"
+                  aria-modal="true"
+                  className="fixed inset-0 z-50 flex items-end justify-center bg-overlay p-4 sm:items-center"
+                  onClick={() => setDetailsFile(null)}
+                >
+                  <div
+                    className="w-full max-w-sm rounded-2xl surface p-5 shadow-xl"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-semibold text-main">{detailsFile.filename}</div>
+                        <div className="mt-1">
+                          <StatusPill file={detailsFile} />
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="rounded-lg p-1 text-muted hover:bg-[var(--surface-2)]"
+                        onClick={() => setDetailsFile(null)}
+                        aria-label="Close details"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <dl className="mt-4 grid gap-3 text-sm">
+                      <div className="flex items-center justify-between gap-4">
+                        <dt className="text-muted">Type</dt>
+                        <dd className="font-medium text-main">{(detailsFile.filename.split(".").pop() || "File").toUpperCase()}</dd>
+                      </div>
+                      <div className="flex items-center justify-between gap-4">
+                        <dt className="text-muted">Size</dt>
+                        <dd className="font-medium text-main">{prettyBytes(detailsFile.size_bytes)}</dd>
+                      </div>
+                      <div className="flex items-center justify-between gap-4">
+                        <dt className="text-muted">Uploaded</dt>
+                        <dd className="text-right font-medium text-main">{timeLocal(detailsFile.uploaded_at)}</dd>
+                      </div>
+                      <div className="flex items-center justify-between gap-4">
+                        <dt className="text-muted">Status</dt>
+                        <dd className="font-medium text-main">{documentWorkflowLabel(detailsFile)}</dd>
+                      </div>
+                      {detailsFile.last_error && (
+                        <div>
+                          <dt className="text-muted">Processing note</dt>
+                          <dd className="mt-1 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                            {detailsFile.last_error}
+                          </dd>
+                        </div>
+                      )}
+                    </dl>
+                    <div className="mt-5 grid grid-cols-2 gap-2">
+                      <button className="rounded-lg border border-token px-3 py-2 text-sm font-semibold" onClick={() => openDocumentInWorkspace(detailsFile)}>
+                        Open
+                      </button>
+                      <button className="rounded-lg border border-token px-3 py-2 text-sm font-semibold" onClick={() => downloadDocument(detailsFile)}>
+                        Download
+                      </button>
+                      <button className="rounded-lg border border-token px-3 py-2 text-sm font-semibold" onClick={() => onRenameFile(detailsFile)}>
+                        Rename
+                      </button>
+                      {String(detailsFile.status || "").toUpperCase() === "FAILED" ? (
+                        <button className="rounded-lg border border-token px-3 py-2 text-sm font-semibold" onClick={() => onRetryProcessing(detailsFile)}>
+                          Retry
+                        </button>
+                      ) : (
+                        <button className="rounded-lg border border-token px-3 py-2 text-sm font-semibold" onClick={() => prepareFlashcardsFromFile(detailsFile)}>
+                          Flashcards
+                        </button>
+                      )}
+                      <button className="col-span-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700" onClick={() => onDeleteFile(detailsFile.id, detailsFile.filename)}>
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {ocrReviewOpen && (
+                <div
+                  role="dialog"
+                  aria-modal="true"
+                  className="fixed inset-0 z-50 flex items-end justify-center bg-overlay p-3 sm:items-center"
+                  onClick={() => !ocrBusy && setOcrReviewOpen(false)}
+                >
+                  <div
+                    className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl surface shadow-2xl"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3 border-b border-token px-4 py-3">
+                      <div className="min-w-0">
+                        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">OCR review</div>
+                        <div className="truncate text-base font-semibold text-main">{ocrReviewFile?.filename || "Handwritten notes"}</div>
+                        <div className="mt-1 text-xs text-muted">
+                          Review and correct extracted text before generating flashcards or quizzes.
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="rounded-lg p-1 text-muted hover:bg-[var(--surface-2)]"
+                        onClick={() => setOcrReviewOpen(false)}
+                        disabled={ocrBusy}
+                        aria-label="Close OCR review"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                    <div className="min-h-0 flex-1 overflow-auto p-4">
+                      {ocrBusy && !ocrReview ? (
+                        <div className="rounded-xl border border-token surface-2 px-4 py-8 text-center text-sm text-muted">
+                          Loading OCR review...
+                        </div>
+                      ) : !ocrReview?.pages?.length ? (
+                        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-800">
+                          OCR is still processing. Check back when the document status changes to Needs review.
+                        </div>
+                      ) : (
+                        <div className="grid gap-4">
+                          {ocrReview.pages.map((page) => {
+                            const low = page.confidence < 0.68 || page.warnings?.includes("low_confidence");
+                            const math = page.warnings?.includes("possible_math_detected");
+                            return (
+                              <section key={page.page_number} className="rounded-xl border border-token surface p-3">
+                                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                                  <div className="text-sm font-semibold text-main">Page {page.page_number}</div>
+                                  <div className="flex flex-wrap gap-2 text-[11px] font-semibold">
+                                    <span className={`rounded-full border px-2 py-0.5 ${low ? "border-amber-200 bg-amber-50 text-amber-800" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>
+                                      {Math.round((page.confidence || 0) * 100)}% confidence
+                                    </span>
+                                    {math && (
+                                      <span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-violet-700">
+                                        Math review needed
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="grid gap-3 lg:grid-cols-[0.9fr_1.1fr]">
+                                  <div className="min-h-[180px] overflow-hidden rounded-lg border border-token bg-[var(--surface-2)]">
+                                    {page.image_url ? (
+                                      <img
+                                        src={`${apiServerOrigin()}${page.image_url}`}
+                                        alt={`OCR source page ${page.page_number}`}
+                                        className="h-full max-h-[360px] w-full object-contain"
+                                      />
+                                    ) : (
+                                      <div className="flex h-full items-center justify-center px-4 py-10 text-center text-xs text-muted">
+                                        Original page preview unavailable.
+                                      </div>
+                                    )}
+                                  </div>
+                                  <textarea
+                                    value={ocrDraftPages[page.page_number] ?? ""}
+                                    onChange={(e) =>
+                                      setOcrDraftPages((prev) => ({ ...prev, [page.page_number]: e.target.value }))
+                                    }
+                                    className="min-h-[240px] w-full resize-y rounded-lg border border-token surface px-3 py-3 text-sm leading-6 text-main outline-none focus:border-[var(--primary)]"
+                                    spellCheck
+                                  />
+                                </div>
+                              </section>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-token px-4 py-3">
+                      <button
+                        type="button"
+                        className="rounded-lg border border-token px-3 py-2 text-sm font-semibold text-main"
+                        onClick={rerunOcr}
+                        disabled={ocrBusy}
+                      >
+                        Re-run OCR
+                      </button>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          className="rounded-lg border border-token px-3 py-2 text-sm font-semibold text-main"
+                          onClick={saveOcrReview}
+                          disabled={ocrBusy || !ocrReview?.pages?.length}
+                        >
+                          Save cleaned text
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded-lg border border-token px-3 py-2 text-sm font-semibold text-main"
+                          onClick={generateOcrFlashcards}
+                          disabled={ocrBusy || !ocrReviewFile || !isReadyStatus(ocrReviewFile.status)}
+                        >
+                          Generate flashcards
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded-lg bg-[var(--primary)] px-3 py-2 text-sm font-semibold text-white"
+                          onClick={generateOcrQuiz}
+                          disabled={ocrBusy || !ocrReviewFile || !isReadyStatus(ocrReviewFile.status)}
+                        >
+                          Generate quiz
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {preview && (
                 <div
@@ -1579,52 +3583,35 @@ ${finalContent}`;
       {/* Selection context menu from PDF */}
       {selectionMenu && (
         <div
-          className="fixed z-50 pointer-events-auto"
+          className="pointer-events-auto fixed z-50"
           style={{ left: selectionMenu.x, top: selectionMenu.y, transform: "translateX(-50%)" }}
           onMouseDown={(e) => e.stopPropagation()}
         >
-          <div className="flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface)] px-2 py-1 text-xs shadow-lg">
-            <button
-              className="rounded-full px-3 py-1.5 font-medium text-[var(--text-main)] hover:bg-violet-50 hover:text-violet-700 transition-colors"
-              onClick={() => {
-                setStudySelectedQuote({ text: selectionMenu.text, fileId: selectionMenu.fileId, pageNumber: selectionMenu.page });
-                setStudyAssistantOpen(true);
-                setStudyInput("Explain this part.");
-                setSelectionMenu(null);
-              }}
-            >
-              Ask
-            </button>
-            <button
-              className="rounded-full px-3 py-1.5 font-medium text-[var(--text-main)] hover:bg-violet-50 hover:text-violet-700 transition-colors"
-              onClick={() => {
-                setStudySelectedQuote({ text: selectionMenu.text, fileId: selectionMenu.fileId, pageNumber: selectionMenu.page });
-                setStudyAssistantOpen(true);
-                setStudyInput("Explain this clearly.");
-                setSelectionMenu(null);
-              }}
-            >
-              Explain
-            </button>
-            <button
-              className="rounded-full px-3 py-1.5 font-medium text-[var(--text-main)] hover:bg-violet-50 hover:text-violet-700 transition-colors"
-              onClick={() => {
-                setStudySelectedQuote({ text: selectionMenu.text, fileId: selectionMenu.fileId, pageNumber: selectionMenu.page });
-                setStudyAssistantOpen(true);
-                setStudyInput("Summarize this section.");
-                setSelectionMenu(null);
-              }}
-            >
-              Summarize
-            </button>
+          <div className="flex items-center gap-0.5 rounded-full border border-[var(--border)] bg-[var(--surface)] p-1 shadow-[var(--shadow-elevated)]">
+            {[
+              { label: "Ask", prompt: "Explain this part." },
+              { label: "Explain", prompt: "Explain this clearly." },
+              { label: "Summarize", prompt: "Summarize this section." },
+            ].map((action) => (
+              <button
+                key={action.label}
+                type="button"
+                className="rounded-full px-3 py-1.5 text-xs font-medium text-[var(--text-main)] transition hover:bg-[var(--primary-soft)] hover:text-[var(--primary)]"
+                onClick={() => {
+                  setStudySelectedQuote({
+                    text: selectionMenu.text,
+                    fileId: selectionMenu.fileId,
+                    pageNumber: selectionMenu.page,
+                  });
+                  setStudyAssistantOpen(true);
+                  setStudyInput(action.prompt);
+                  setSelectionMenu(null);
+                }}
+              >
+                {action.label}
+              </button>
+            ))}
           </div>
-        </div>
-      )}
-
-
-      {toast && (
-        <div className="fixed bottom-6 right-6 z-50 rounded-xl bg-inverse px-4 py-2 text-sm text-inverse shadow-lg">
-          {toast}
         </div>
       )}
 

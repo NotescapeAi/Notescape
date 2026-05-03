@@ -10,14 +10,18 @@ import {
   type FileRow,
   type QuizListItem,
 } from "../../lib/api";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { ClipboardList, Trash2, History } from "lucide-react";
 
 export default function QuizzesPage() {
+  const [searchParams] = useSearchParams();
+  const topicFocus = (searchParams.get("topic") || "").trim();
   const [classes, setClasses] = useState<ClassRow[]>([]);
   // Initialize from localStorage to prevent layout jump on mount
   const [classId, setClassId] = useState<number | null>(() => {
     try {
+      const fromQuery = Number(new URLSearchParams(window.location.search).get("class_id"));
+      if (Number.isFinite(fromQuery) && fromQuery > 0) return fromQuery;
       const stored = localStorage.getItem("last_class_id");
       return stored ? Number(stored) : null;
     } catch {
@@ -232,7 +236,7 @@ export default function QuizzesPage() {
                     Loading class files...
                   </div>
                 ) : (
-                  <QuizPanel classId={classId} files={files} onQuizCreated={loadQuizzes} />
+                <QuizPanel classId={classId} files={files} topicFocus={topicFocus} onQuizCreated={loadQuizzes} />
                 )}
               </div>
 

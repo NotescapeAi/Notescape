@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import BrandLogo from "./BrandLogo";
 import "./footer.css";
 
 const Footer: React.FC = () => {
@@ -7,12 +8,7 @@ const Footer: React.FC = () => {
       <div className="container footer-content">
         <div className="footer-grid">
           <div className="footer-brand-col">
-            <Link to="/" className="footer-logo">
-              <div className="logo-icon">
-                <img src="/logo1.png" alt="Notescape" />
-              </div>
-              <span className="logo-text">Notescape</span>
-            </Link>
+            <BrandLogo variant="footer" forceTheme="dark" className="footer-logo" />
             <p className="footer-tagline">
               The AI-powered workspace that transforms how students learn, retain, and master new concepts.
             </p>

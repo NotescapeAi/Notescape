@@ -8,6 +8,8 @@ interface ChatInputProps {
   isLoading: boolean;
   isListening: boolean;
   onToggleListening: () => void;
+  disabled?: boolean;
+  disabledMessage?: string;
 }
 
 export default function ChatInput({
@@ -17,6 +19,8 @@ export default function ChatInput({
   isLoading,
   isListening,
   onToggleListening,
+  disabled = false,
+  disabledMessage,
 }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -32,12 +36,18 @@ export default function ChatInput({
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
+      if (disabled) return;
       onSend();
     }
   }
 
   return (
-    <div className="relative flex items-center gap-2 rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 shadow-sm focus-within:border-[var(--primary)] focus-within:ring-1 focus-within:ring-[var(--primary)]/20 transition-all">
+    <div
+      className={`relative flex items-center gap-2 rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 shadow-sm transition-all focus-within:border-[var(--primary)] focus-within:ring-1 focus-within:ring-[var(--primary)]/20 ${
+        disabled ? "opacity-75" : ""
+      }`}
+      title={disabled ? disabledMessage : undefined}
+    >
       <style>{`
         .no-scrollbar::-webkit-scrollbar {
           width: 0px;
@@ -62,9 +72,12 @@ export default function ChatInput({
       <div className="flex items-center">
         <button
           onClick={onToggleListening}
+          disabled={disabled}
           className={`flex-shrink-0 h-9 w-9 rounded-xl flex items-center justify-center transition-all duration-200 ${
             isListening
               ? "bg-red-500 text-white animate-pulse shadow-md"
+              : disabled
+              ? "text-[var(--text-secondary)] cursor-not-allowed opacity-50"
               : "text-[var(--text-secondary)] hover:bg-[var(--surface-2)] hover:text-[var(--text-main)]"
           }`}
           title={isListening ? "Stop listening" : "Voice input"}
@@ -79,7 +92,8 @@ export default function ChatInput({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder={isListening ? "Listening..." : "Ask a question..."}
+          disabled={disabled}
+          placeholder={disabled ? (disabledMessage || "Select a class to start chatting.") : isListening ? "Listening..." : "Ask a question..."}
           rows={1}
           className="w-full resize-none bg-transparent text-sm leading-6 text-[var(--text-main)] placeholder:text-[var(--text-secondary)] focus:outline-none max-h-[200px] custom-scrollbar"
           style={{ minHeight: "24px" }}
@@ -90,15 +104,15 @@ export default function ChatInput({
       <div className="flex items-center">
         <button
           onClick={onSend}
-          disabled={!value.trim() || isLoading}
+          disabled={disabled || !value.trim() || isLoading}
           className={`flex-shrink-0 h-9 w-9 rounded-xl flex items-center justify-center transition-all duration-200 ${
-            value.trim() && !isLoading
+            value.trim() && !isLoading && !disabled
               ? "bg-[var(--primary)] text-white shadow-sm hover:brightness-110 active:scale-95"
               : "bg-[var(--surface-2)] text-[var(--text-secondary)] cursor-not-allowed opacity-50"
           }`}
           title="Send message"
         >
-          <Send size={18} className={value.trim() && !isLoading ? "ml-0.5" : ""} />
+          <Send size={18} className={value.trim() && !isLoading && !disabled ? "ml-0.5" : ""} />
         </button>
       </div>
     </div>

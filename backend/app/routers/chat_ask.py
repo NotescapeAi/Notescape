@@ -31,7 +31,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 import logging
 
-from app.core.smart_router import smart_ask
+from app.core.smart_router import smart_ask, _general_answer
 from app.dependencies import get_request_user_uid
 from app.core.db import db_conn
 
@@ -42,7 +42,7 @@ log = logging.getLogger("uvicorn.error")
 # ── Request / Response models ─────────────────────────────────────────────────
 
 class AskRequest(BaseModel):
-    class_id:  int
+    class_id:  Optional[int] = None
     question:  str
     top_k:     int                        = Field(default=6,    ge=1, le=20)
     file_ids:  Optional[List[str]]        = None
@@ -82,6 +82,23 @@ async def _verify_class_owner(class_id: int, user_id: str) -> None:
             raise HTTPException(status_code=404, detail="Class not found")
 
 
+async def _verify_files_in_class(file_ids: List[str] | None, class_id: int) -> None:
+    if not file_ids:
+        return
+    async with db_conn() as (conn, cur):
+        await cur.execute(
+            """
+            SELECT COUNT(*)::int
+            FROM files
+            WHERE class_id=%s AND id = ANY(%s::uuid[])
+            """,
+            (class_id, file_ids),
+        )
+        row = await cur.fetchone()
+    if not row or int(row[0] or 0) != len(set(file_ids)):
+        raise HTTPException(status_code=404, detail="File not found in class")
+
+
 # ── Route ─────────────────────────────────────────────────────────────────────
 
 @router.post("/ask", response_model=AskResponse)
@@ -101,12 +118,26 @@ async def ask(
             detail=f"Invalid mode '{mode}'. Must be one of: {allowed_modes}",
         )
 
+    if payload.class_id is None:
+        if payload.file_ids:
+            raise HTTPException(status_code=400, detail="File-scoped chat requires a class")
+        result = await _general_answer(payload.question)
+        return AskResponse(
+            answer=result["answer"],
+            mode=result["mode"],
+            citations=[],
+            web_sources=[WebSourceOut(**s) for s in result.get("web_sources", [])],
+            top_similarity=0.0,
+        )
+
     await _verify_class_owner(payload.class_id, user_id)
+    await _verify_files_in_class(payload.file_ids, payload.class_id)
 
     log.info(
-        "[chat_ask] user=%s class=%s mode=%s q=%r",
+        "[CHAT_API] retrieval user=%s class_id=%s file_ids=%s mode=%s q=%r",
         user_id,
         payload.class_id,
+        payload.file_ids or [],
         mode,
         payload.question[:100],
     )

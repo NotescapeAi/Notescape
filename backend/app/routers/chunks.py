@@ -2,8 +2,7 @@
 from fastapi import APIRouter, Request
 from pydantic import BaseModel
 from typing import List, Literal, Optional, Tuple, Dict, Any
-from pathlib import Path, PurePosixPath
-from urllib.parse import urlparse
+from pathlib import Path
 import regex as re
 from uuid import UUID
 import logging
@@ -14,6 +13,7 @@ from pypdf import PdfReader
 from app.core.db import db_conn
 from app.core.settings import settings
 from app.core.storage import get_object_bytes
+from app.lib.stored_document_paths import resolve_local_original_file
 
 router = APIRouter(prefix="/api", tags=["chunks"])
 log = logging.getLogger("uvicorn.error")
@@ -128,24 +128,6 @@ def _read_pdf_pages_from_bytes(data: bytes) -> List[str]:
     reader = PdfReader(BytesIO(data))
     return _read_pdf_pages_from_reader(reader)
 
-def _rel_from_storage_url(storage_url: str) -> PurePosixPath:
-    """
-    Accepts '/uploads/...', 'uploads/...', or a full URL. Returns a path relative to 'uploads'.
-    """
-    try:
-        parsed = urlparse(storage_url)
-        path_part = parsed.path if parsed.scheme else storage_url
-    except Exception:
-        path_part = storage_url
-
-    p = PurePosixPath(path_part)
-    for head in ("/uploads", "uploads"):
-        try:
-            return p.relative_to(head)
-        except Exception:
-            pass
-    return p  # already relative like 'class_37/file.pdf'
-
 # ---------- Routes ----------
 
 @router.get("/files/{file_id}/chunks")
@@ -196,7 +178,7 @@ async def create_chunks(payload: ChunkRequest, request: Request) -> List[ChunkPr
         # Fetch storage_url + storage_key
         async with db_conn() as (conn, cur):
             await cur.execute(
-                "SELECT storage_url, storage_key, storage_backend, mime_type FROM files WHERE id=%s",
+                "SELECT storage_url, storage_key, storage_backend, mime_type, class_id FROM files WHERE id=%s",
                 (fid,),
             )
             row = await cur.fetchone()
@@ -209,14 +191,38 @@ async def create_chunks(payload: ChunkRequest, request: Request) -> List[ChunkPr
         storage_key: str | None = row[1]
         storage_backend: str | None = row[2]
         mime_type: str | None = row[3]
+        file_class_id: int = int(row[4])
 
         if mime_type and "pdf" not in mime_type.lower():
-            results.append(ChunkPreview(
-                file_id=fid_str,
-                total_chunks=0,
-                previews=[],
-                note="This file type is not supported for text extraction yet."
-            ))
+            async with db_conn() as (conn, cur):
+                await cur.execute(
+                    """
+                    SELECT idx, page_start, page_end, char_len, content
+                    FROM file_chunks
+                    WHERE file_id=%s
+                    ORDER BY idx
+                    """,
+                    (fid,),
+                )
+                existing = await cur.fetchall()
+            previews = [
+                {
+                    "idx": row[0],
+                    "page_start": row[1],
+                    "page_end": row[2],
+                    "char_len": row[3],
+                    "sample": row[4],
+                }
+                for row in existing[: payload.preview_limit_per_file]
+            ]
+            results.append(
+                ChunkPreview(
+                    file_id=fid_str,
+                    total_chunks=len(existing),
+                    previews=previews,
+                    note=None if existing else "This document is still processing or has no extracted text yet.",
+                )
+            )
             continue
 
         pages: List[str] = []
@@ -232,22 +238,25 @@ async def create_chunks(payload: ChunkRequest, request: Request) -> List[ChunkPr
                 ))
                 continue
         else:
-            rel = _rel_from_storage_url(storage_url)
-
-            # Candidate paths (first one should usually exist)
-            candidates = [
-                (uploads_root / Path(rel.as_posix())).resolve(),
-                (uploads_root / rel.name).resolve(),  # just the filename as a fallback
-            ]
-
-            abs_path = next((p for p in candidates if p.exists()), None)
+            abs_path, _rel = resolve_local_original_file(
+                uploads_root,
+                file_class_id,
+                fid_str,
+                storage_key,
+                storage_url,
+                hint_display_filename=None,
+                context="chunks",
+            )
             if not abs_path:
-                tried = " | ".join(str(c) for c in candidates)
-                log.warning(f"[chunks] no file on disk for {fid_str}. Tried: {tried}")
-                results.append(ChunkPreview(
-                    file_id=fid_str, total_chunks=0, previews=[],
-                    note=f"File not found on disk. Tried: {tried}"
-                ))
+                log.warning("[chunks] no file on disk for %s class_id=%s", fid_str, file_class_id)
+                results.append(
+                    ChunkPreview(
+                        file_id=fid_str,
+                        total_chunks=0,
+                        previews=[],
+                        note="File not found on disk for this document.",
+                    )
+                )
                 continue
 
             # Extract page texts

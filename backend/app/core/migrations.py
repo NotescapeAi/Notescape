@@ -11,6 +11,9 @@ _DOCKER_DB_INIT = Path("/workspace/db/init")
 _DEFAULT_SQL_PATH = _REPO_ROOT / "db" / "init" / "10_quizzes.sql"
 _DEFAULT_LEARNING_ANALYTICS_SQL_PATH = _REPO_ROOT / "db" / "init" / "11_learning_analytics_tags.sql"
 _DEFAULT_OCR_PIPELINE_SQL_PATH = _REPO_ROOT / "db" / "init" / "20_ocr_pipeline.sql"
+_DEFAULT_STUDY_PLAN_VOICE_SQL_PATH = _REPO_ROOT / "db" / "init" / "21_study_plan_voice.sql"
+_DEFAULT_DOCUMENT_STORAGE_SQL_PATH = _REPO_ROOT / "db" / "init" / "22_document_storage_filenames.sql"
+_DEFAULT_DOCUMENT_PREVIEW_PIPELINE_SQL_PATH = _REPO_ROOT / "db" / "init" / "23_document_preview_pipeline.sql"
 
 
 def _migration_candidates(env_var: str, filename: str, default_path: Path) -> list[Path]:
@@ -96,5 +99,77 @@ async def ensure_ocr_pipeline_schema() -> None:
 
     async with db_conn() as (conn, cur):
         log.info("Ensuring OCR pipeline schema exists using %s", sql_path.name)
+        await cur.execute(sql)
+        await conn.commit()
+
+
+async def ensure_document_preview_pipeline_schema() -> None:
+    candidates = _migration_candidates(
+        "DOCUMENT_PREVIEW_PIPELINE_MIGRATION_FILE",
+        "23_document_preview_pipeline.sql",
+        _DEFAULT_DOCUMENT_PREVIEW_PIPELINE_SQL_PATH,
+    )
+    sql_path = next((candidate for candidate in candidates if candidate.exists()), None)
+    if not sql_path:
+        log.warning(
+            "Document preview pipeline migration file not found, tried %s",
+            ", ".join(str(p) for p in candidates),
+        )
+        return
+
+    sql = sql_path.read_text()
+    if not sql.strip():
+        return
+
+    async with db_conn() as (conn, cur):
+        log.info("Ensuring document preview pipeline columns exist using %s", sql_path.name)
+        await cur.execute(sql)
+        await conn.commit()
+
+
+async def ensure_document_storage_schema() -> None:
+    candidates = _migration_candidates(
+        "DOCUMENT_STORAGE_MIGRATION_FILE",
+        "22_document_storage_filenames.sql",
+        _DEFAULT_DOCUMENT_STORAGE_SQL_PATH,
+    )
+    sql_path = next((candidate for candidate in candidates if candidate.exists()), None)
+    if not sql_path:
+        log.warning(
+            "Document storage migration file not found, tried %s",
+            ", ".join(str(p) for p in candidates),
+        )
+        return
+
+    sql = sql_path.read_text()
+    if not sql.strip():
+        return
+
+    async with db_conn() as (conn, cur):
+        log.info("Ensuring document storage columns exist using %s", sql_path.name)
+        await cur.execute(sql)
+        await conn.commit()
+
+
+async def ensure_study_plan_voice_schema() -> None:
+    candidates = _migration_candidates(
+        "STUDY_PLAN_VOICE_MIGRATION_FILE",
+        "21_study_plan_voice.sql",
+        _DEFAULT_STUDY_PLAN_VOICE_SQL_PATH,
+    )
+    sql_path = next((candidate for candidate in candidates if candidate.exists()), None)
+    if not sql_path:
+        log.warning(
+            "Study plan + voice revision migration file not found, tried %s",
+            ", ".join(str(p) for p in candidates),
+        )
+        return
+
+    sql = sql_path.read_text()
+    if not sql.strip():
+        return
+
+    async with db_conn() as (conn, cur):
+        log.info("Ensuring study plan + voice revision schema exists using %s", sql_path.name)
         await cur.execute(sql)
         await conn.commit()

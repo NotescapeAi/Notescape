@@ -4,8 +4,11 @@ from fastapi import APIRouter, Query
 from app.core.db import db_conn
 from app.core.llm import get_embedder
 from app.core.embedding_cache import embed_texts_cached
+import time
+import logging
 
 router = APIRouter(prefix="/api/embeddings", tags=["embeddings"])
+log = logging.getLogger("uvicorn.error")
 
 def _vec_literal(vec: List[float]) -> str:
     return "[" + ",".join(str(x) for x in vec) + "]"
@@ -34,6 +37,7 @@ async def build_embeddings(
     class_id: Optional[int] = Query(default=None, description="Only build for this class"),
     limit: Optional[int] = Query(default=1000),
 ):
+    started = time.perf_counter()
     rows = await _fetch_missing_chunks(class_id, limit)
     if not rows:
         return {"inserted": 0, "message": "No missing embeddings.", "class_id": class_id}
@@ -48,13 +52,26 @@ async def build_embeddings(
         for i in range(0, len(txts), B):
             sub_ids  = ids[i:i+B]
             sub_txts = txts[i:i+B]
+            batch_started = time.perf_counter()
             vecs = await embed_texts_cached(embedder, sub_txts, ttl_seconds=86400)
-            for chunk_id, vec in zip(sub_ids, vecs):
-                await cur.execute(
-                    "UPDATE file_chunks SET chunk_vector=%s::vector WHERE id=%s",
-                    (_vec_literal(vec), chunk_id),
-                )
+            await cur.executemany(
+                "UPDATE file_chunks SET chunk_vector=%s::vector WHERE id=%s",
+                [(_vec_literal(vec), chunk_id) for chunk_id, vec in zip(sub_ids, vecs)],
+            )
             inserted += len(sub_ids)
+            log.info(
+                "[embeddings] stage=batch class_id=%s batch=%d rows=%d elapsed_ms=%d",
+                class_id,
+                i // B,
+                len(sub_ids),
+                int((time.perf_counter() - batch_started) * 1000),
+            )
         await conn.commit()
 
+    log.info(
+        "[embeddings] completed class_id=%s inserted=%d total_elapsed_ms=%d",
+        class_id,
+        inserted,
+        int((time.perf_counter() - started) * 1000),
+    )
     return {"inserted": inserted, "class_id": class_id}

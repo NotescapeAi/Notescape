@@ -18,15 +18,26 @@ from app.routers.flashcards import router as flashcards_router
 from app.routers import sr
 from app.routers.chat_health import router as chat_health_router
 from app.routers.chat import router as chat_router
+from app.routers.chat_sessions import alias_router as chat_sessions_alias_router
 from app.routers.chat_sessions import router as chat_sessions_router
 from app.routers.profile import router as profile_router
 from app.routers.chat_ocr import router as chat_ocr_router
 from app.routers import subscribe
 from app.routers.analytics import router as analytics_router
 from app.routers.study_sessions import router as study_sessions_router
+from app.routers.study_plans import router as study_plans_router, classes_router as study_plan_classes_router
 from app.routers.quizzes import router as quizzes_router
-from app.core.migrations import ensure_quiz_jobs_schema, ensure_learning_analytics_schema, ensure_ocr_pipeline_schema
+from app.routers.voice_revision import router as voice_revision_router
+from app.core.migrations import (
+    ensure_quiz_jobs_schema,
+    ensure_learning_analytics_schema,
+    ensure_ocr_pipeline_schema,
+    ensure_study_plan_voice_schema,
+    ensure_document_storage_schema,
+    ensure_document_preview_pipeline_schema,
+)
 from app.routers.chat_ask import router as chat_ask_router
+from app.services.pptx_preview import log_pptx_preview_status
 
 
 app = FastAPI(title=settings.api_title)
@@ -68,18 +79,26 @@ app.include_router(subscribe.router)
 app.include_router(chat_health_router)
 app.include_router(chat_router)
 app.include_router(chat_sessions_router)
+app.include_router(chat_sessions_alias_router)
 app.include_router(profile_router)
 app.include_router(chat_ocr_router)
 app.include_router(analytics_router)
 app.include_router(study_sessions_router)
+app.include_router(study_plans_router)
+app.include_router(study_plan_classes_router)
 app.include_router(quizzes_router)
 app.include_router(chat_ask_router)
+app.include_router(voice_revision_router)
 @app.on_event("startup")
 async def startup_hooks():
     await ensure_quiz_jobs_schema()
     await ensure_learning_analytics_schema()
     await ensure_ocr_pipeline_schema()
+    await ensure_study_plan_voice_schema()
+    await ensure_document_storage_schema()
+    await ensure_document_preview_pipeline_schema()
     log = logging.getLogger("uvicorn.error")
+    log_pptx_preview_status()
     for r in app.routes:
         if isinstance(r, APIRoute):
             log.info(f"ROUTE: {','.join(sorted(r.methods))} {r.path}")

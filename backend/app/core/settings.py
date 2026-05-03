@@ -36,6 +36,14 @@ class Settings(BaseSettings):
     voice_quiz_persist_audio: bool = Field(default=False, alias="VOICE_QUIZ_PERSIST_AUDIO")
     safe_mode: bool = Field(default=False, alias="SAFE_MODE")
     require_email_verified: bool = Field(default=False, alias="REQUIRE_EMAIL_VERIFIED")
+    ocr_provider: str = Field(default="local", alias="OCR_PROVIDER")
+    ocr_handwritten_enabled: bool = Field(default=True, alias="OCR_HANDWRITTEN_ENABLED")
+    ocr_max_upload_mb: int = Field(default=40, alias="OCR_MAX_UPLOAD_MB")
+    google_application_credentials: str | None = Field(default=None, alias="GOOGLE_APPLICATION_CREDENTIALS")
+    azure_document_intelligence_endpoint: str | None = Field(default=None, alias="AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT")
+    azure_document_intelligence_key: str | None = Field(default=None, alias="AZURE_DOCUMENT_INTELLIGENCE_KEY")
+    mathpix_app_id: str | None = Field(default=None, alias="MATHPIX_APP_ID")
+    mathpix_app_key: str | None = Field(default=None, alias="MATHPIX_APP_KEY")
 
 
 settings = Settings()

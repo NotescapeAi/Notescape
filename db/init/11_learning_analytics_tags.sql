@@ -51,6 +51,51 @@ CREATE TABLE IF NOT EXISTS quiz_question_attempts (
 CREATE INDEX IF NOT EXISTS quiz_question_attempts_attempt_idx ON quiz_question_attempts (attempt_id, graded_at DESC);
 CREATE INDEX IF NOT EXISTS quiz_question_attempts_question_idx ON quiz_question_attempts (question_id, graded_at DESC);
 
+CREATE TABLE IF NOT EXISTS mistake_notebook (
+  id BIGSERIAL PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  class_id INT NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+  document_id UUID REFERENCES files(id) ON DELETE SET NULL,
+  quiz_id UUID REFERENCES quizzes(id) ON DELETE CASCADE,
+  question_id BIGINT REFERENCES quiz_questions(id) ON DELETE SET NULL,
+  topic TEXT NOT NULL DEFAULT 'General',
+  question TEXT NOT NULL,
+  student_answer TEXT,
+  correct_answer TEXT,
+  explanation TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  resolved BOOLEAN NOT NULL DEFAULT false,
+  reviewed_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS mistake_notebook_user_class_idx ON mistake_notebook (user_id, class_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS mistake_notebook_topic_idx ON mistake_notebook (user_id, topic, created_at DESC);
+
+ALTER TABLE flashcards ADD COLUMN IF NOT EXISTS topic TEXT;
+ALTER TABLE quiz_questions ADD COLUMN IF NOT EXISTS topic TEXT;
+
+UPDATE flashcards
+SET topic = COALESCE(NULLIF(topic, ''), NULLIF(tags[1], ''), 'General')
+WHERE topic IS NULL OR topic = '';
+
+UPDATE quiz_questions qq
+SET topic = COALESCE(
+  NULLIF(qq.topic, ''),
+  (
+    SELECT t.name
+    FROM quiz_question_tags qqt
+    JOIN tags t ON t.id = qqt.tag_id
+    WHERE qqt.question_id = qq.id
+    ORDER BY t.name
+    LIMIT 1
+  ),
+  NULLIF(qq.qtype, ''),
+  'General'
+)
+WHERE qq.topic IS NULL OR qq.topic = '';
+
+CREATE INDEX IF NOT EXISTS flashcards_class_topic_idx ON flashcards (class_id, topic);
+CREATE INDEX IF NOT EXISTS quiz_questions_topic_idx ON quiz_questions (topic);
+
 -- Backfill tag dictionary from existing flashcard tags
 INSERT INTO tags (name)
 SELECT DISTINCT lower(trim(tag_name))

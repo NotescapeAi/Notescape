@@ -1,0 +1,70 @@
+Browserslist: browsers data (caniuse-lite) is 8 months old. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+[2m10:57:12 am[22m [31m[1m[vite][22m[39m [31mInternal server error: C:\Users\Rabbiya\Desktop\Notescape\frontend\src\pages\Classes.tsx: Unexpected token, expected "}" (1696:133)
+
+[0m [90m 1694 |[31m                                   [33m<[31m[33mdiv[31m className[33m=[31m[32m"flex h-full min-h-[40vh] flex-col items-center justify-center gap-3 px-6 text-center text-sm text-muted"[31m[33m>[31m
+ [90m 1695 |[31m                                     [33m<[31m[33mdiv[31m[33m>[31m{studyViewerBlobError}[33m<[31m[33m/[31m[33mdiv[31m[33m>[31m
+[31m[1m>[22m[31m[90m 1696 |[31m                                     [33m<[31m[33mButton[31m type[33m=[31m[32m"button"[31m variant[33m=[31m[32m"secondary"[31m onClick[33m=[31m{() [33m=>[31m setActiveFile((p) [33m=>[31m (p [33m?[31m { [33m...[31mp } [33m:[31m p)))}[33m>[31m
+ [90m      |[31m                                                                                                                                      [31m[1m^[22m[31m
+ [90m 1697 |[31m                                       [33mRetry[31m
+ [90m 1698 |[31m                                     [33m<[31m[33m/[31m[33mButton[31m[33m>[31m
+ [90m 1699 |[31m                                   [33m<[31m[33m/[31m[33mdiv[31m[33m>[31m[0m[39m
+  Plugin: [35mvite:react-babel[39m
+  File: [36mC:/Users/Rabbiya/Desktop/Notescape/frontend/src/pages/Classes.tsx[39m:1696:133
+[33m  1694 |                                    <div className="flex h-full min-h-[40vh] flex-col items-center justify-center gap-3...
+  1695 |                                      <div>{studyViewerBlobError}</div>
+  1696 |  ...ary" onClick={() => setActiveFile((p) => (p ? { ...p } : p)))}>
+       |                                                                 ^
+  1697 |                                        Retry
+  1698 |                                      </Button>[39m
+      at constructor (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:367:19)
+      at TypeScriptParserMixin.raise (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:6630:19)
+      at TypeScriptParserMixin.unexpected (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:6650:16)
+      at TypeScriptParserMixin.expect (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:6930:12)
+      at TypeScriptParserMixin.jsxParseExpressionContainer (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:4670:10)
+      at TypeScriptParserMixin.jsxParseAttributeValue (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:4637:21)
+      at TypeScriptParserMixin.jsxParseAttribute (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:4686:38)
+      at TypeScriptParserMixin.jsxParseOpeningElementAfterName (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:4700:28)
+      at TypeScriptParserMixin.jsxParseOpeningElementAfterName (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:10067:18)
+      at TypeScriptParserMixin.jsxParseOpeningElementAt (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:4695:17)
+      at TypeScriptParserMixin.jsxParseElementAt (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:4719:33)
+      at TypeScriptParserMixin.jsxParseElementAt (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:4731:32)
+      at TypeScriptParserMixin.jsxParseElement (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:4782:17)
+      at TypeScriptParserMixin.parseExprAtom (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:4792:19)
+      at TypeScriptParserMixin.parseExprSubscripts (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:11081:23)
+      at TypeScriptParserMixin.parseUpdate (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:11066:21)
+      at TypeScriptParserMixin.parseMaybeUnary (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:11046:23)
+      at TypeScriptParserMixin.parseMaybeUnary (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:9857:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:10899:61)
+      at TypeScriptParserMixin.parseExprOps (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:10904:23)
+      at TypeScriptParserMixin.parseMaybeConditional (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:10831:21)
+      at C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:9795:39
+      at TypeScriptParserMixin.tryParse (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:6938:20)
+      at TypeScriptParserMixin.parseMaybeAssign (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:9795:18)
+      at C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:10800:39
+      at TypeScriptParserMixin.allowInAnd (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:12432:12)
+      at TypeScriptParserMixin.parseMaybeAssignAllowIn (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:10800:17)
+      at TypeScriptParserMixin.parseMaybeAssignAllowInOrVoidPattern (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:12499:17)
+      at TypeScriptParserMixin.parseParenAndDistinguishExpression (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:11679:28)
+      at TypeScriptParserMixin.parseExprAtom (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:11331:23)
+      at TypeScriptParserMixin.parseExprAtom (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:4797:20)
+      at TypeScriptParserMixin.parseExprSubscripts (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:11081:23)
+      at TypeScriptParserMixin.parseUpdate (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:11066:21)
+      at TypeScriptParserMixin.parseMaybeUnary (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:11046:23)
+      at TypeScriptParserMixin.parseMaybeUnary (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:9857:18)
+      at TypeScriptParserMixin.parseMaybeUnaryOrPrivate (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:10899:61)
+      at TypeScriptParserMixin.parseExprOps (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:10904:23)
+      at TypeScriptParserMixin.parseMaybeConditional (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:10881:23)
+      at TypeScriptParserMixin.parseMaybeAssign (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:10831:21)
+      at TypeScriptParserMixin.parseMaybeAssign (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:9806:20)
+      at C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:10800:39
+      at TypeScriptParserMixin.allowInAnd (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:12432:12)
+      at TypeScriptParserMixin.parseMaybeAssignAllowIn (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:10800:17)
+      at TypeScriptParserMixin.parseConditional (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:10891:30)
+      at TypeScriptParserMixin.parseConditional (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:9631:18)
+      at TypeScriptParserMixin.parseMaybeConditional (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:10885:17)
+      at TypeScriptParserMixin.parseMaybeAssign (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:10831:21)
+      at TypeScriptParserMixin.parseMaybeAssign (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:9806:20)
+      at TypeScriptParserMixin.parseConditional (C:\Users\Rabbiya\Desktop\Notescape\frontend\node_modules\@babel\parser\lib\index.js:10893:29)

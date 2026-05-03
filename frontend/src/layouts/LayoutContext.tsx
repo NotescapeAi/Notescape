@@ -5,6 +5,8 @@ export type SidebarState = "expanded" | "collapsed";
 export type LayoutState = {
   sidebar: SidebarState;
   setSidebar: (next: SidebarState) => void;
+  mobileNavOpen: boolean;
+  setMobileNavOpen: (open: boolean) => void;
 };
 
 export const LayoutContext = createContext<LayoutState | null>(null);

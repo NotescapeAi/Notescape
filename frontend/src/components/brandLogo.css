@@ -1,0 +1,38 @@
+.brand-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  text-decoration: none;
+}
+
+.brand-logo img {
+  display: block;
+  max-width: none;
+}
+
+.brand-logo-text {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.brand-logo-footer .brand-logo-text {
+  font-size: 22px;
+}
+
+.brand-logo-icon-only {
+  gap: 0;
+}
+
+@media (max-width: 640px) {
+  .brand-logo-text {
+    font-size: 19px;
+  }
+
+  .brand-logo-footer .brand-logo-text {
+    font-size: 20px;
+  }
+}

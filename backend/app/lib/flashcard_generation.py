@@ -50,14 +50,19 @@ async def insert_flashcards(
                 continue
             hint = c.get("hint")
             diff = c.get("difficulty") or "medium"
-            tags = normalize_tag_names(c.get("tags") or [])
+            topic = str(c.get("topic") or "").strip()
+            raw_tags = c.get("tags") or []
+            if topic:
+                raw_tags = [topic, *raw_tags]
+            tags = normalize_tag_names(raw_tags)
+            topic_value = topic or (tags[0] if tags else "General")
             await cur.execute(
                 """
-                INSERT INTO flashcards (class_id, file_id, source_chunk_id, question, answer, hint, difficulty, tags, created_by, updated_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, now())
+                INSERT INTO flashcards (class_id, file_id, source_chunk_id, question, answer, hint, difficulty, tags, topic, created_by, updated_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now())
                 RETURNING id::text
                 """,
-                (class_id, file_id, source_chunk_id, q, a, hint, diff, tags, created_by),
+                (class_id, file_id, source_chunk_id, q, a, hint, diff, tags, topic_value, created_by),
             )
             row = await cur.fetchone()
             card_id = row[0]

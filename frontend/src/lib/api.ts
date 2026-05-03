@@ -4,9 +4,14 @@ import emailjs from "@emailjs/browser";
 import { auth } from "../firebase/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 
-/** Base URL: prefer Vite env, else relative /api */
+/**
+ * API base URL.
+ * In Vite dev, default to same-origin `/api` so requests use the dev-server proxy (see vite.config.ts).
+ * Otherwise default to direct backend URL. Override with VITE_API_BASE_URL when needed.
+ */
 const API_BASE =
-  (import.meta as any)?.env?.VITE_API_BASE_URL?.toString() ?? "http://localhost:8000/api";
+  (import.meta as any)?.env?.VITE_API_BASE_URL?.toString()?.trim() ||
+  (import.meta.env.DEV ? "/api" : "http://localhost:8000/api");
 
 
 const http = axios.create({
@@ -22,13 +27,20 @@ function detailMessageFromApi(detail: unknown): string | null {
     if (typeof msg === "string" && msg.trim()) return msg.trim();
   }
   if (detail && typeof detail === "object") {
-    const msg = (detail as Record<string, unknown>).message;
+    const rec = detail as Record<string, unknown>;
+    const msg = rec.message;
     if (typeof msg === "string" && msg.trim()) return msg.trim();
+    const inner = rec.detail;
+    if (typeof inner === "string" && inner.trim()) return inner.trim();
+    if (inner && typeof inner === "object") {
+      const innerMsg = (inner as Record<string, unknown>).message;
+      if (typeof innerMsg === "string" && innerMsg.trim()) return innerMsg.trim();
+    }
   }
   return null;
 }
 
-function apiErrorMessage(err: unknown, fallback: string): string {
+export function apiErrorMessage(err: unknown, fallback: string): string {
   if (axios.isAxiosError(err)) {
     const detail = (err.response?.data as any)?.detail;
     const detailMessage = detailMessageFromApi(detail);
@@ -45,9 +57,88 @@ async function getAuthToken(): Promise<string> {
   return user.getIdToken();
 }
 
+/** Same headers axios uses; needed for fetch() (PDF viewer, images) which cannot attach interceptors. */
+export async function getAuthHeaders(): Promise<Record<string, string>> {
+  return userHeader();
+}
+
+/** Backend origin for paths returned by the API that start with `/api/` (e.g. document download URLs). */
+export function apiServerOrigin(): string {
+  const raw = (
+    (import.meta as any)?.env?.VITE_API_BASE_URL?.toString()?.trim() ||
+    (import.meta.env.DEV ? "/api" : "http://localhost:8000/api")
+  ).trim();
+  const normalized = raw.replace(/\/+$/, "");
+  const withoutApi = normalized.replace(/\/api\/?$/, "");
+  if (withoutApi.startsWith("http://") || withoutApi.startsWith("https://")) {
+    return withoutApi;
+  }
+  if (typeof window !== "undefined") {
+    return window.location.origin;
+  }
+  return "http://localhost:8000";
+}
+
+export type AuthenticatedBlobResult = { url: string; revoke?: () => void };
+
+/**
+ * Resolve a document URL for use in <img>, react-pdf, etc.
+ * Same-origin `/api/...` paths are fetched with auth and turned into a blob URL.
+ * Cross-origin URLs (e.g. S3 presigned) are returned as-is for the viewer to load directly.
+ */
+export async function fetchAuthenticatedBlobUrl(href: string): Promise<AuthenticatedBlobResult> {
+  const trimmed = href.trim();
+  if (!trimmed) {
+    throw new Error("Missing document URL");
+  }
+
+  const isAbsolute = /^https?:\/\//i.test(trimmed);
+  if (isAbsolute) {
+    let sameApiHost = false;
+    try {
+      const doc = new URL(trimmed);
+      const api = new URL(apiServerOrigin());
+      sameApiHost = doc.origin === api.origin;
+    } catch {
+      // fall through to anonymous fetch
+    }
+    if (!sameApiHost) {
+      return { url: trimmed };
+    }
+  }
+
+  const fetchUrl = trimmed.startsWith("/api/") || trimmed.startsWith("/uploads/")
+    ? `${apiServerOrigin()}${trimmed}`
+    : `${API_BASE.replace(/\/$/, "")}${trimmed.startsWith("/") ? trimmed : `/${trimmed}`}`;
+
+  const headers = await getAuthHeaders();
+  const res = await fetch(fetchUrl, { headers: { ...headers }, redirect: "follow" });
+  if (!res.ok) {
+    let detail: string | null = null;
+    try {
+      const ct = res.headers.get("content-type") || "";
+      if (ct.includes("application/json")) {
+        const body = (await res.json()) as { detail?: unknown };
+        detail = detailMessageFromApi(body?.detail);
+      } else {
+        const text = (await res.text()).trim();
+        if (text) detail = text.slice(0, 200);
+      }
+    } catch {
+      detail = null;
+    }
+    throw new Error(detail?.trim() || `Request failed (${res.status})`);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  return { url, revoke: () => URL.revokeObjectURL(url) };
+}
 
 // Get auth headers for Firebase user
 async function userHeader(): Promise<Record<string, string>> {
+  if (import.meta.env.DEV && import.meta.env.VITE_DEV_AUTH_BYPASS === "true") {
+    return { "X-User-Id": "dev-user" };
+  }
   let user = auth.currentUser;
   if (!user) {
     user = await new Promise((resolve) => {
@@ -88,6 +179,43 @@ export type FileRow = {
   indexed_at?: string | null;
   last_error?: string | null;
   chunk_count?: number | null;
+  processing_progress?: number | null;
+  source_type?: string | null;
+  ocr_provider?: string | null;
+  ocr_confidence?: number | null;
+  ocr_reviewed_at?: string | null;
+  document_type?: string | null;
+  preview_type?: string | null;
+  preview_error?: string | null;
+  viewer_file_url?: string | null;
+  viewer_file_path?: string | null;
+  viewer_file_type?: string | null;
+  viewer_status?: string | null;
+  conversion_error?: string | null;
+  original_file_url?: string | null;
+  original_file_path?: string | null;
+};
+
+export type OCRPageReview = {
+  page_number: number;
+  raw_text: string;
+  cleaned_text: string;
+  confidence: number;
+  lines: Array<{ text: string; confidence?: number; bbox?: number[] | null; needs_review?: boolean }>;
+  warnings: string[];
+  provider: string;
+  image_url?: string | null;
+  reviewed: boolean;
+};
+
+export type OCRReviewResult = {
+  document_id: string;
+  class_id: number;
+  filename: string;
+  source_type?: string | null;
+  provider: string;
+  status: "needs_review" | "ready" | "not_handwritten";
+  pages: OCRPageReview[];
 };
 
 export type ChunkPreview = {
@@ -102,11 +230,36 @@ export type ChunkPreview = {
   }>;
 };
 
+export type DocumentPreview = {
+  type?: "pdf" | "text";
+  kind: "docx" | "pptx" | "text";
+  document_id?: string;
+  file_type?: string;
+  status?: string;
+  filename: string;
+  content_type?: string | null;
+  pages: string[];
+  text_preview?: string | null;
+  conversion_error?: string | null;
+  pdf_url?: string | null;
+  viewer_file_url?: string | null;
+  viewer_file_type?: string | null;
+  viewer_status?: "ready" | "processing" | "failed" | "missing" | string | null;
+  preview?: {
+    type: "pdf" | "text";
+    status: "ready" | "failed" | "generating";
+    url?: string | null;
+    error?: string | null;
+  } | null;
+  fallback_text_available?: boolean;
+};
+
 export type Flashcard = {
   id: string;
   question: string;
   answer: string;
   hint?: string | null;
+  topic?: string | null;
   tags?: string[] | null;
   class_id?: number;
   file_id?: string | null;
@@ -126,6 +279,11 @@ export type FlashcardJob = {
   progress: number;
   error_message?: string | null;
   created_at?: string | null;
+  generatedCount?: number | null;
+  requestedCount?: number | null;
+  cardCountMode?: "auto" | "fixed" | "custom" | null;
+  warning?: string | null;
+  sourceDocumentIds?: string[];
 };
 
 export type AnalyticsOverview = {
@@ -195,6 +353,115 @@ export type QuizBreakdown = {
   by_tag: QuizTagBreakdown[];
 };
 
+export type TopicMastery = {
+  class_id: number;
+  topic: string;
+  mastery_score: number;
+  status: "Weak" | "Improving" | "Strong" | "Exam-ready";
+  total_attempts: number;
+  correct_attempts: number;
+  weak_count: number;
+  quiz_attempts: number;
+  quiz_correct: number;
+  quiz_accuracy_pct: number;
+  flashcard_attempts: number;
+  flashcard_struggles: number;
+  last_practiced_at?: string | null;
+};
+
+export type RevisionRecommendation = {
+  class_id: number;
+  topic: string;
+  status: "Weak" | "Improving" | "Strong" | "Exam-ready";
+  mastery_score: number;
+  reason: string;
+  actions: Array<{ type: "flashcards" | "quiz" | "assistant" | "voice_revision"; label: string }>;
+};
+
+export type ExamReadiness = {
+  score: number;
+  components: {
+    mastery: number;
+    quiz_accuracy: number;
+    flash_confidence: number;
+    voice_strength: number;
+    coverage: number;
+    recent_practice: number;
+  };
+  practiced_topics: number;
+  total_topics: number;
+};
+
+export type StudyPlanItem = {
+  id: string;
+  date: string;
+  topic: string;
+  task_type: "flashcards" | "quiz" | "voice_revision" | "chatbot_review" | "reading" | "mock_test";
+  title: string;
+  description?: string | null;
+  estimated_minutes?: number | null;
+  status: "pending" | "completed" | "skipped" | "overdue";
+  priority: "low" | "medium" | "high";
+  reason?: string | null;
+};
+
+export type StudyPlan = {
+  id: string;
+  class_id: number;
+  title: string;
+  goal: string;
+  exam_date?: string | null;
+  daily_time_minutes?: number | null;
+  preferred_mode?: string | null;
+  status: string;
+  items?: StudyPlanItem[];
+};
+
+export type ClassAnalytics = {
+  class_id: number;
+  exam_readiness: ExamReadiness;
+  weak_topics: Array<{
+    topic: string;
+    mastery_score: number;
+    status: string;
+    quiz_accuracy_pct: number;
+    flash_confidence_pct: number;
+    voice_score_pct: number;
+    last_practiced_at?: string | null;
+  }>;
+  strong_topics: Array<{
+    topic: string;
+    mastery_score: number;
+    status: string;
+  }>;
+  revision_due: number;
+};
+
+export type VoiceRevisionSession = {
+  id: string;
+  class_id: number;
+  topic?: string | null;
+  mode: string;
+  duration_minutes?: number | null;
+  status: string;
+  started_at?: string | null;
+  ended_at?: string | null;
+  overall_score?: number | null;
+  turns?: VoiceRevisionTurn[];
+};
+
+export type VoiceRevisionTurn = {
+  id: string;
+  topic?: string | null;
+  question: string;
+  student_transcript: string;
+  expected_answer: string;
+  evaluation: any;
+  score: number;
+  feedback?: string | null;
+  created_at?: string | null;
+};
+
 export type MasteryCard = {
   id: string;
   question: string;
@@ -232,6 +499,13 @@ export type VoiceAttemptResult = {
     next_review_at?: string | null;
     [key: string]: unknown;
   };
+};
+
+export type VoiceEvaluationResult = {
+  score: number;
+  feedback: string;
+  missingPoints: string[];
+  isCorrectEnough: boolean;
 };
 
 export type StudySession = {
@@ -326,11 +600,56 @@ export async function getDocumentViewUrl(classId: number, documentId: string): P
   return data;
 }
 
+export async function getDocumentPreview(classId: number, documentId: string): Promise<DocumentPreview> {
+  const headers = await userHeader();
+  const { data } = await http.get<DocumentPreview>(
+    `/classes/${classId}/documents/${documentId}/preview`,
+    { headers }
+  );
+  return data;
+}
+
+export async function processDocumentPreview(
+  classId: number,
+  documentId: string
+): Promise<{
+  document_id: string;
+  preview_ready: boolean;
+  preview_error?: string | null;
+  conversion_error?: string | null;
+  viewer_status?: string | null;
+  viewer_file_url?: string | null;
+  pdf_url?: string | null;
+}> {
+  const headers = await userHeader();
+  const { data } = await http.post<{
+    document_id: string;
+    preview_ready: boolean;
+    preview_error?: string | null;
+    conversion_error?: string | null;
+    viewer_status?: string | null;
+    viewer_file_url?: string | null;
+    pdf_url?: string | null;
+  }>(`/classes/${classId}/documents/${documentId}/retry-preview`, {}, { headers });
+  return data;
+}
+
 export async function uploadFile(classId: number, file: File): Promise<FileRow> {
   const fd = new FormData();
   fd.append("file", file);
+  const headers = await userHeader();
   const { data } = await http.post<FileRow>(`/files/${classId}`, fd, {
-    headers: { "Content-Type": "multipart/form-data" },
+    headers: { ...headers, "Content-Type": "multipart/form-data" },
+  });
+  return data;
+}
+
+export async function uploadHandwrittenFile(classId: number, file: File): Promise<FileRow> {
+  const fd = new FormData();
+  fd.append("file", file);
+  const headers = await userHeader();
+  const { data } = await http.post<FileRow>(`/files/${classId}/handwritten`, fd, {
+    headers: { ...headers, "Content-Type": "multipart/form-data" },
   });
   return data;
 }
@@ -342,6 +661,54 @@ export async function deleteFile(fileId: string): Promise<void> {
 export async function updateFile(fileId: string, payload: { filename: string }): Promise<{ ok: boolean; id: string; filename: string }> {
   const headers = await userHeader();
   const { data } = await http.put<{ ok: boolean; id: string; filename: string }>(`/files/${fileId}`, payload, { headers });
+  return data;
+}
+
+export async function retryFileProcessing(fileId: string): Promise<{ job_id: string; file_id: string; status: string }> {
+  const headers = await userHeader();
+  const { data } = await http.post<{ job_id: string; file_id: string; status: string }>(
+    `/files/${fileId}/ocr`,
+    {},
+    { headers }
+  );
+  return data;
+}
+
+export async function getOCRReview(fileId: string): Promise<OCRReviewResult> {
+  const headers = await userHeader();
+  const { data } = await http.get<OCRReviewResult>(`/files/${fileId}/ocr`, { headers });
+  return data;
+}
+
+export async function saveOCRCleanedText(fileId: string, pages: Array<{ page_number: number; cleaned_text: string }>): Promise<{ ok: boolean; status: string; chunks: number }> {
+  const headers = await userHeader();
+  const { data } = await http.patch<{ ok: boolean; status: string; chunks: number }>(
+    `/files/${fileId}/ocr/cleaned-text`,
+    { pages },
+    { headers }
+  );
+  return data;
+}
+
+export async function retryHandwrittenOCR(fileId: string): Promise<{ job_id: string; file_id: string; status: string }> {
+  const headers = await userHeader();
+  const { data } = await http.post<{ job_id: string; file_id: string; status: string }>(
+    `/files/${fileId}/ocr/retry`,
+    {},
+    { headers }
+  );
+  return data;
+}
+
+export async function generateFlashcardsFromOCR(fileId: string, payload: { n_cards?: number; style?: string; difficulty?: string } = {}): Promise<FlashcardJob> {
+  const headers = await userHeader();
+  const { data } = await http.post<FlashcardJob>(`/files/${fileId}/generate-flashcards-from-ocr`, payload, { headers });
+  return data;
+}
+
+export async function generateQuizFromOCR(fileId: string, payload: { n_questions?: number; mcq_count?: number; types?: string[]; difficulty?: string } = {}): Promise<QuizJobResponse> {
+  const headers = await userHeader();
+  const { data } = await http.post<QuizJobResponse>(`/files/${fileId}/generate-quiz-from-ocr`, payload, { headers });
   return data;
 }
 
@@ -367,6 +734,8 @@ export async function generateFlashcards(payload: {
   file_ids: string[];
   top_k?: number;
   n_cards?: number;
+  cardCountMode?: "auto" | "fixed" | "custom";
+  requestedCount?: number;
   style?: "mixed" | "definitions" | "conceptual" | "qa";
   page_start?: number;
   page_end?: number;
@@ -382,6 +751,8 @@ export async function generateFlashcardsAsync(payload: {
   file_ids: string[];
   top_k?: number;
   n_cards?: number;
+  cardCountMode?: "auto" | "fixed" | "custom";
+  requestedCount?: number;
   style?: "mixed" | "definitions" | "conceptual" | "qa";
   page_start?: number;
   page_end?: number;
@@ -449,7 +820,7 @@ export type ChatAskRes = {
 
 export type ChatSession = {
   id: string;
-  class_id: number;
+  class_id?: number | null;
   document_id?: string | null;
   title: string;
   created_at?: string | null;
@@ -478,7 +849,7 @@ export type ChatMessage = {
 };
 
 export async function createChatSession(payload: {
-  class_id: number;
+  class_id?: number | null;
   document_id?: string | null;
   title?: string;
 }): Promise<ChatSession> {
@@ -487,10 +858,13 @@ export async function createChatSession(payload: {
   return data;
 }
 
-export async function listChatSessions(classId: number, documentId?: string | null): Promise<ChatSession[]> {
+export async function listChatSessions(classId?: number | null, documentId?: string | null): Promise<ChatSession[]> {
   const headers = await userHeader();
-  const doc = documentId ? `&document_id=${documentId}` : "";
-  const { data } = await http.get<ChatSession[]>(`/chat/sessions?class_id=${classId}${doc}`, { headers });
+  const params = new URLSearchParams();
+  if (classId != null) params.set("class_id", String(classId));
+  if (documentId) params.set("document_id", documentId);
+  const qs = params.toString();
+  const { data } = await http.get<ChatSession[]>(`/chat/sessions${qs ? `?${qs}` : ""}`, { headers });
   return Array.isArray(data) ? data : [];
 }
 
@@ -506,16 +880,19 @@ export async function getChatSession(sessionId: string): Promise<{ session: Chat
   return data;
 }
 
-export async function listChatSessionMessages(sessionId: string): Promise<ChatMessage[]> {
+export async function listChatSessionMessages(sessionId: string, classId?: number): Promise<ChatMessage[]> {
   const headers = await userHeader();
-  const { data } = await http.get(`/chat/sessions/${sessionId}/messages`, { headers });
+  const params = classId != null ? `?classId=${classId}` : "";
+  const { data } = await http.get(`/chat/sessions/${sessionId}/messages${params}`, { headers });
   return Array.isArray(data) ? data : [];
 }
 
 export async function addChatMessages(payload: {
   session_id: string;
+  class_id?: number;
+  document_id?: string | null;
   user_content: string;
-  assistant_content: string;
+  assistant_content?: string | null;
   citations?: any;
   selected_text?: string | null;
   page_number?: number | null;
@@ -533,6 +910,8 @@ export async function addChatMessages(payload: {
 }): Promise<{ ok: boolean; messages?: ChatMessage[] }> {
   const headers = await userHeader();
   const { data } = await http.post(`/chat/sessions/${payload.session_id}/messages`, {
+    class_id: payload.class_id ?? null,
+    document_id: payload.document_id ?? null,
     user_content: payload.user_content,
     assistant_content: payload.assistant_content,
     citations: payload.citations ?? null,
@@ -719,6 +1098,7 @@ export async function clearEmbeddings(): Promise<{ ok: boolean }> {
 export async function startMasterySession(payload: {
   class_id: number;
   file_ids?: string[];
+  topic?: string;
 }): Promise<MasterySession> {
   const headers = await userHeader();
   const { data } = await http.post<MasterySession>("/flashcards/mastery/session/start", payload, { headers });
@@ -797,6 +1177,11 @@ export async function saveVoiceFlashcardAttempt(payload: {
   user_rating: 1 | 2 | 3 | 4 | 5;
   response_time_seconds?: number;
   audio_url?: string | null;
+  score?: number;
+  feedback?: string;
+  missing_points?: string[];
+  session_id?: string | null;
+  attempt_number?: number;
 }): Promise<VoiceAttemptResult> {
   try {
     const headers = await userHeader();
@@ -805,6 +1190,17 @@ export async function saveVoiceFlashcardAttempt(payload: {
   } catch (err) {
     throw new Error(apiErrorMessage(err, "Failed to save voice attempt."));
   }
+}
+
+export async function evaluateVoiceFlashcardAnswer(payload: {
+  flashcard_id: string;
+  question: string;
+  expected_answer: string;
+  user_answer_transcript: string;
+}): Promise<VoiceEvaluationResult> {
+  const headers = await userHeader();
+  const { data } = await http.post<VoiceEvaluationResult>("/flashcards/voice/evaluate", payload, { headers });
+  return data;
 }
 
 export async function heartbeatStudySession(payload: {
@@ -826,6 +1222,66 @@ export async function endStudySession(payload: {
 }): Promise<StudySession> {
   const headers = await userHeader();
   const { data } = await http.post<StudySession>(`/study-sessions/${payload.session_id}/end`, payload, { headers });
+  return data;
+}
+
+/* =========================
+   Voice Revision Sessions
+========================= */
+
+export async function startVoiceRevisionSession(payload: {
+  class_id: number;
+  topic?: string;
+  mode?: string;
+  duration_minutes?: number;
+  plan_item_id?: string;
+}): Promise<{ id: string; started_at?: string | null; status: string }> {
+  const headers = await userHeader();
+  const { data } = await http.post(`/voice-revision/sessions`, payload, { headers });
+  return data;
+}
+
+export async function nextVoiceRevisionQuestion(sessionId: string): Promise<{
+  flashcard_id?: string;
+  question: string;
+  expected_answer: string;
+  topic: string;
+}> {
+  const headers = await userHeader();
+  const { data } = await http.post(`/voice-revision/sessions/${sessionId}/next-question`, {}, { headers });
+  return data;
+}
+
+export async function evaluateVoiceRevisionAnswer(payload: {
+  session_id: string;
+  question: string;
+  expected_answer: string;
+  transcript: string;
+  topic?: string;
+}): Promise<{ turn_id: string; created_at?: string; evaluation: any }> {
+  const headers = await userHeader();
+  const { data } = await http.post(
+    `/voice-revision/sessions/${payload.session_id}/evaluate`,
+    {
+      question: payload.question,
+      expected_answer: payload.expected_answer,
+      transcript: payload.transcript,
+      topic: payload.topic,
+    },
+    { headers }
+  );
+  return data;
+}
+
+export async function endVoiceRevisionSession(sessionId: string): Promise<{ ok: boolean; session_id: string }> {
+  const headers = await userHeader();
+  const { data } = await http.patch(`/voice-revision/sessions/${sessionId}/end`, {}, { headers });
+  return data;
+}
+
+export async function getVoiceRevisionSession(sessionId: string): Promise<VoiceRevisionSession> {
+  const headers = await userHeader();
+  const { data } = await http.get<VoiceRevisionSession>(`/voice-revision/sessions/${sessionId}`, { headers });
   return data;
 }
 
@@ -1062,6 +1518,122 @@ export async function getQuizBreakdown(attemptId: string): Promise<QuizBreakdown
   return data;
 }
 
+export async function getClassMastery(classId: number): Promise<TopicMastery[]> {
+  const headers = await userHeader();
+  const { data } = await http.get<{ class_id: number; topics: TopicMastery[] }>(
+    `/analytics/classes/${classId}/mastery`,
+    { headers }
+  );
+  return Array.isArray(data?.topics) ? data.topics : [];
+}
+
+export async function getClassRecommendations(classId: number): Promise<RevisionRecommendation[]> {
+  const headers = await userHeader();
+  const { data } = await http.get<{ class_id: number; recommendations: RevisionRecommendation[] }>(
+    `/analytics/classes/${classId}/recommendations`,
+    { headers }
+  );
+  return Array.isArray(data?.recommendations) ? data.recommendations : [];
+}
+
+export async function getAnalyticsDashboard(): Promise<{
+  overall_exam_readiness: number;
+  classes: Array<{
+    class_id: number;
+    class_name: string;
+    exam_readiness: ExamReadiness;
+    weak_topics: Array<{ topic: string; mastery_score: number }>;
+    recommended_next_action: string;
+  }>;
+}> {
+  const headers = await userHeader();
+  const { data } = await http.get("/analytics/dashboard", { headers });
+  return data;
+}
+
+export async function getClassAnalytics(classId: number): Promise<ClassAnalytics> {
+  const headers = await userHeader();
+  const { data } = await http.get<ClassAnalytics>(`/analytics/classes/${classId}/analytics`, { headers });
+  return data;
+}
+
+export async function getClassTopicsMasteryDetailed(classId: number): Promise<ClassAnalytics["weak_topics"]> {
+  const headers = await userHeader();
+  const { data } = await http.get<{ topics: ClassAnalytics["weak_topics"] }>(
+    `/analytics/classes/${classId}/topics/mastery`,
+    { headers }
+  );
+  return Array.isArray((data as any)?.topics) ? (data as any).topics : [];
+}
+
+export async function getClassExamReadiness(classId: number): Promise<ExamReadiness> {
+  const headers = await userHeader();
+  const { data } = await http.get<ExamReadiness>(`/analytics/classes/${classId}/exam-readiness`, { headers });
+  return data;
+}
+
+/* =========================
+   Study Plans
+========================= */
+
+export async function createStudyPlan(payload: {
+  class_id: number;
+  exam_date?: string;
+  daily_time_minutes?: number;
+  goal?: string;
+  preferred_mode?: string;
+  documents?: string[];
+  title?: string;
+  study_days?: number;
+}): Promise<{ id: string; title: string; items: number; exam_date?: string | null }> {
+  const headers = await userHeader();
+  const { data } = await http.post(`/study-plans`, payload, { headers });
+  return data;
+}
+
+export async function listStudyPlans(): Promise<StudyPlan[]> {
+  const headers = await userHeader();
+  const { data } = await http.get<StudyPlan[]>(`/study-plans`, { headers });
+  return Array.isArray(data) ? data : [];
+}
+
+export async function getStudyPlan(planId: string): Promise<StudyPlan> {
+  const headers = await userHeader();
+  const { data } = await http.get<StudyPlan>(`/study-plans/${planId}`, { headers });
+  return data;
+}
+
+export async function updateStudyPlanItem(
+  planId: string,
+  itemId: string,
+  payload: { status?: "pending" | "completed" | "skipped" | "overdue"; date?: string }
+): Promise<{ ok: boolean; item_id: string }> {
+  const headers = await userHeader();
+  const { data } = await http.patch<{ ok: boolean; item_id: string }>(
+    `/study-plans/${planId}/items/${itemId}`,
+    payload,
+    { headers }
+  );
+  return data;
+}
+
+export async function rebalanceStudyPlan(planId: string): Promise<{ ok: boolean; items: number }> {
+  const headers = await userHeader();
+  const { data } = await http.post<{ ok: boolean; items: number }>(`/study-plans/${planId}/rebalance`, {}, { headers });
+  return data;
+}
+
+export async function getStudyPlanSuggestions(classId: number): Promise<{
+  default_goal: string;
+  recommended_daily_minutes: number;
+  weak_topics: Array<{ topic: string; mastery_score: number }>;
+  exam_readiness: ExamReadiness;
+}> {
+  const headers = await userHeader();
+  const { data } = await http.get(`/classes/${classId}/study-plan-suggestions`, { headers });
+  return data;
+}
+
 
 
 
@@ -1081,6 +1653,7 @@ export type QuizQuestion = {
   options?: string[];
   explanation?: string;
   difficulty?: string;
+  topic?: string | null;
   page_start?: number;
   page_end?: number;
 };
@@ -1139,6 +1712,7 @@ export type SubmitAttemptResponse = {
     qtype: string;
     is_correct: boolean | null;
     score: number;
+    topic?: string;
     feedback?: string;
     missing_points?: string[];
     correct_index?: number;
@@ -1154,6 +1728,7 @@ export async function createQuizJob(payload: {
   mcq_count?: number;  // NEW: Optional specific MCQ count
   types: Array<"mcq" | "conceptual" | "definition" | "scenario" | "short_qa">;
   difficulty: "easy" | "medium" | "hard";
+  topic?: string;
 }): Promise<QuizJobResponse> {
   const headers = await userHeader();
   const { data } = await http.post<QuizJobResponse>("/quizzes/jobs", payload, { headers });
@@ -1342,7 +1917,7 @@ export interface WebSource {
 }
 
 export interface ChatAskRequest {
-  class_id:  number;
+  class_id?:  number | null;
   question:  string;
   top_k?:    number;
   file_ids?: string[];
@@ -1360,24 +1935,10 @@ export interface ChatAskResponse {
 // ── Updated chatAsk ────────────────────────────────────────────────────────
 
 export async function chatAsk(req: ChatAskRequest): Promise<ChatAskResponse> {
-  const token = await getAuthToken();           // your existing auth helper
-  const res = await fetch("/api/chat/ask", {
-    method:  "POST",
-    headers: {
-      "Content-Type":  "application/json",
-      "Authorization": `Bearer ${token}`,
-    },
-    body: JSON.stringify({
+  const headers = await userHeader();
+  const { data } = await http.post<ChatAskResponse>("/chat/ask", {
       class_id: req.class_id,
       question: req.question,
       top_k:    req.top_k    ?? 6,
       file_ids: req.file_ids ?? undefined,
-      mode:     req.mode     ?? "auto",
-    }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err?.detail ?? `chatAsk failed: ${res.status}`);
-  }
-  return res.json();
-}
+      mode:     req.mode     ?? "aut

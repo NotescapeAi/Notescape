@@ -1,14 +1,25 @@
 import React, { useEffect, useState } from 'react';
 import { Trophy, ArrowRight, Star, Frown, CheckCircle2 } from "lucide-react";
+import type { QuizBreakdown } from "../../../lib/api";
 import Confetti from 'react-confetti';
 
 type Props = {
   score: number;
   total: number;
+  breakdown?: QuizBreakdown | null;
+  onReviewFlashcards?: (topic?: string) => void;
+  onPracticeQuiz?: (topic?: string) => void;
   onGoBack: () => void;
 };
 
-export default function QuizCompletionScreen({ score, total, onGoBack }: Props) {
+export default function QuizCompletionScreen({
+  score,
+  total,
+  breakdown,
+  onReviewFlashcards,
+  onPracticeQuiz,
+  onGoBack,
+}: Props) {
   const percentage = Math.round((score / (total || 1)) * 100);
   const isSuccess = percentage >= 70;
   
@@ -48,15 +59,15 @@ export default function QuizCompletionScreen({ score, total, onGoBack }: Props) 
           {isSuccess ? (
              <>
                 <div className="absolute inset-0 animate-ping rounded-full bg-yellow-200 opacity-50 dark:bg-yellow-900/30"></div>
-                <div className="relative rounded-full bg-gradient-to-br from-yellow-100 to-orange-100 p-8 shadow-lg dark:from-yellow-900/20 dark:to-orange-900/20 ring-4 ring-white dark:ring-[#1a1b1e]">
+                <div className="relative rounded-full bg-gradient-to-br from-yellow-100 to-orange-100 p-8 shadow-lg ring-4 ring-[var(--surface)] dark:from-yellow-900/25 dark:to-orange-900/20 dark:ring-[var(--surface-elevated)]">
                     <Trophy className="h-20 w-20 text-yellow-600 dark:text-yellow-400 drop-shadow-sm" />
                 </div>
-                <div className="absolute -top-2 -right-2 rotate-12 bg-white dark:bg-[#1a1b1e] rounded-full p-2 shadow-md">
+                <div className="absolute -top-2 -right-2 rotate-12 rounded-full bg-[var(--surface)] p-2 shadow-md dark:bg-[var(--surface-elevated)]">
                     <Star className="h-8 w-8 text-yellow-500 fill-yellow-500" />
                 </div>
              </>
           ) : (
-             <div className="relative rounded-full bg-gray-100 p-8 dark:bg-gray-800 ring-4 ring-white dark:ring-[#1a1b1e]">
+             <div className="relative rounded-full bg-[var(--surface-2)] p-8 ring-4 ring-[var(--surface)] dark:ring-[var(--surface-elevated)]">
                 {percentage >= 50 ? (
                     <CheckCircle2 className="h-20 w-20 text-blue-500 dark:text-blue-400" />
                 ) : (
@@ -101,6 +112,51 @@ export default function QuizCompletionScreen({ score, total, onGoBack }: Props) 
           </div>
         </div>
       </div>
+
+      {breakdown?.by_tag?.length ? (
+        <div className="mb-10 rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-5 text-left shadow-sm">
+          <div className="text-xs font-bold uppercase tracking-[0.22em] text-[var(--text-muted)]">
+            Weak topics
+          </div>
+          <div className="mt-2 text-lg font-bold text-[var(--text-main)]">Recommended revision</div>
+          <div className="mt-4 space-y-3">
+            {breakdown.by_tag
+              .filter((topic) => topic.accuracy < 0.7 || topic.struggled_questions > 0)
+              .slice(0, 4)
+              .map((topic) => (
+                <div key={`${topic.tag_id}-${topic.tag}`} className="rounded-2xl border border-[var(--border)] bg-[var(--surface-2)] p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <div className="font-semibold text-[var(--text-main)]">{topic.tag}</div>
+                      <div className="mt-1 text-xs text-[var(--text-muted)]">
+                        {topic.struggled_questions} question{topic.struggled_questions === 1 ? "" : "s"} need review · {Math.round(topic.accuracy_pct)}% accuracy
+                      </div>
+                    </div>
+                    <span className="rounded-full border border-[var(--border)] px-3 py-1 text-xs font-semibold text-[var(--text-main)]">
+                      {topic.accuracy_pct < 45 ? "Weak" : "Improving"}
+                    </span>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onReviewFlashcards?.(topic.tag)}
+                      className="rounded-full border border-[var(--border)] px-3 py-1.5 text-xs font-bold text-[var(--text-main)] hover:border-[var(--primary)]"
+                    >
+                      Review flashcards
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onPracticeQuiz?.(topic.tag)}
+                      className="rounded-full border border-[var(--border)] px-3 py-1.5 text-xs font-bold text-[var(--text-main)] hover:border-[var(--primary)]"
+                    >
+                      Generate more practice
+                    </button>
+                  </div>
+                </div>
+              ))}
+          </div>
+        </div>
+      ) : null}
 
       <div className="flex justify-center gap-4">
         <button

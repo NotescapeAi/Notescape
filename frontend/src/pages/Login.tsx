@@ -3,6 +3,7 @@ import React, { useState, FormEvent, MouseEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { login, signInWithGoogle, signInWithGithub } from "../firebase/firebaseAuth";
 import { auth } from "../firebase/firebase";
+import BrandLogo from "../components/BrandLogo";
 import "./NotescapeStartPage.css"
 
 export default function Login() {
@@ -84,8 +85,7 @@ export default function Login() {
     <div className="auth-root">
       <main className="page">
         <header className="logo">
-          <img src="/logo1.png" alt="Notescape logo" width={70} height={50} />
-          <h1>Notescape</h1>
+          <BrandLogo variant="header" className="auth-brand-logo" />
       </header>
 
       <div className="auth-page">

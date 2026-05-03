@@ -1,0 +1,7 @@
+2026/04/30-09:56:32.317 65f4 Reusing MANIFEST C:\Users\Rabbiya\Desktop\Notescape\verification\chrome-profile-current-2\Default\IndexedDB\http_127.0.0.1_5174.indexeddb.leveldb/MANIFEST-000001
+2026/04/30-09:56:32.318 65f4 Recovering log #107
+2026/04/30-09:56:32.320 65f4 Reusing old log C:\Users\Rabbiya\Desktop\Notescape\verification\chrome-profile-current-2\Default\IndexedDB\http_127.0.0.1_5174.indexeddb.leveldb/000107.log 
+2026/04/30-09:56:32.446 4148 Level-0 table #113: started
+2026/04/30-09:56:32.475 4148 Level-0 table #113: 792 bytes OK
+2026/04/30-09:56:32.478 4148 Delete type=0 #107
+2026/04/30-09:56:32.479 4364 Manual compaction at level-0 from '\x00*\x00\x00\x00' @ 72057594037927935 : 1 .. '\x00+\x00\x00\x00' @ 0 : 0; will stop at (end)

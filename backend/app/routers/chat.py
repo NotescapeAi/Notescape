@@ -1,9 +1,9 @@
 from typing import List, Dict, Any, Optional
 import hashlib
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from app.core.smart_router import smart_ask
+from app.core.smart_router import smart_ask, _general_answer
 from app.core.cache import cache_get_json, cache_set_json
 from app.core.settings import settings
 from app.dependencies import get_request_user_uid
@@ -12,14 +12,14 @@ router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 
 class ChatAskReq(BaseModel):
-    class_id: int
+    class_id: Optional[int] = None
     question: str
     top_k: int = Field(default=8, ge=1, le=30)
     file_ids: Optional[List[str]] = None
     mode: Optional[str] = "auto"  # "auto", "rag", "general"
 
 
-def _chat_cache_key(user_id: str, class_id: int, question: str, top_k: int, file_ids: Optional[List[str]], mode: str) -> str:
+def _chat_cache_key(user_id: str, class_id: Optional[int], question: str, top_k: int, file_ids: Optional[List[str]], mode: str) -> str:
     scope = ",".join(sorted(file_ids or []))
     h = hashlib.sha256(question.encode("utf-8")).hexdigest()
     return f"chat:{user_id}:{class_id}:{top_k}:{settings.chat_model}:{scope}:{mode}:{h}"
@@ -37,6 +37,14 @@ async def ask(req: ChatAskReq, user_id: str = Depends(get_request_user_uid)):
 
     # Map "auto" -> None for smart_ask
     force_mode = mode_val if mode_val in ["rag", "general"] else None
+
+    if req.class_id is None:
+        if req.file_ids:
+            raise HTTPException(status_code=400, detail="File-scoped chat requires a class")
+        result = await _general_answer(req.question)
+        result["top_similarity"] = 0.0
+        cache_set_json(cache_key, result, ttl_seconds=600)
+        return result
 
     # Use Smart Router (RAG vs General Knowledge)
     result = await smart_ask(

@@ -5,10 +5,13 @@ import io
 import json
 import logging
 import mimetypes
+import re
 from pathlib import Path
 import tempfile
 import time
 from typing import Callable
+import zipfile
+import xml.etree.ElementTree as ET
 
 from pypdf import PdfReader
 
@@ -50,16 +53,133 @@ def default_artifact_writer(name: str, data: bytes, content_type: str) -> str:
 
 def detect_file_type(filename: str, mime_type: str | None) -> str:
     lower = filename.lower()
+    normalized_mime = (mime_type or "").lower()
     if (mime_type or "").lower() == "application/pdf" or lower.endswith(".pdf"):
         return "pdf"
-    if (mime_type or "").lower().startswith("image/") or lower.endswith((".png", ".jpg", ".jpeg", ".tif", ".tiff", ".webp")):
+    if normalized_mime == "application/vnd.openxmlformats-officedocument.wordprocessingml.document" or lower.endswith(".docx"):
+        return "docx"
+    if normalized_mime == "application/vnd.openxmlformats-officedocument.presentationml.presentation" or lower.endswith(".pptx"):
+        return "pptx"
+    if normalized_mime.startswith("image/") or lower.endswith((".png", ".jpg", ".jpeg", ".tif", ".tiff", ".webp")):
         return "image"
     guessed, _ = mimetypes.guess_type(filename)
     if guessed == "application/pdf":
         return "pdf"
+    if guessed == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+        return "docx"
+    if guessed == "application/vnd.openxmlformats-officedocument.presentationml.presentation":
+        return "pptx"
     if guessed and guessed.startswith("image/"):
         return "image"
     return "unknown"
+
+
+def _xml_text(xml_bytes: bytes) -> str:
+    try:
+        root = ET.fromstring(xml_bytes)
+    except ET.ParseError:
+        return ""
+    texts: list[str] = []
+    for node in root.iter():
+        if node.tag.endswith("}t") and node.text:
+            texts.append(node.text)
+        elif node.tag.endswith("}tab"):
+            texts.append("\t")
+        elif node.tag.endswith("}br") or node.tag.endswith("}p"):
+            texts.append("\n")
+    return normalize_whitespace(" ".join(texts))
+
+
+def _xml_text_lines(xml_bytes: bytes) -> list[str]:
+    try:
+        root = ET.fromstring(xml_bytes)
+    except ET.ParseError:
+        return []
+    lines: list[str] = []
+    current: list[str] = []
+    for node in root.iter():
+        tag = node.tag.rsplit("}", 1)[-1]
+        if tag == "t" and node.text:
+            current.append(node.text)
+        elif tag in {"br", "p"}:
+            text = normalize_whitespace(" ".join(current))
+            if text:
+                lines.append(text)
+            current = []
+    text = normalize_whitespace(" ".join(current))
+    if text:
+        lines.append(text)
+    return lines
+
+
+def _docx_text_pages(data: bytes) -> list[str]:
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        parts = ["word/document.xml"]
+        parts.extend(sorted(name for name in zf.namelist() if re.fullmatch(r"word/header\d+\.xml", name)))
+        parts.extend(sorted(name for name in zf.namelist() if re.fullmatch(r"word/footer\d+\.xml", name)))
+        text = "\n\n".join(_xml_text(zf.read(part)) for part in parts if part in zf.namelist())
+    text = normalize_whitespace(text)
+    return [text] if text else []
+
+
+def _pptx_slide_pages(data: bytes) -> list[dict[str, object]]:
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        slide_names = sorted(
+            (name for name in zf.namelist() if re.fullmatch(r"ppt/slides/slide\d+\.xml", name)),
+            key=lambda name: int(re.search(r"slide(\d+)\.xml", name).group(1)),
+        )
+        slides: list[dict[str, object]] = []
+        for slide_name in slide_names:
+            slide_number = int(re.search(r"slide(\d+)\.xml", slide_name).group(1))
+            slide_xml = zf.read(slide_name)
+            lines = _xml_text_lines(slide_xml)
+            title = lines[0] if lines else ""
+            body_lines = lines[1:] if len(lines) > 1 else lines
+            notes_name = f"ppt/notesSlides/notesSlide{slide_number}.xml"
+            notes = normalize_whitespace("\n".join(_xml_text_lines(zf.read(notes_name)))) if notes_name in zf.namelist() else ""
+
+            alt_texts: list[str] = []
+            try:
+                root = ET.fromstring(slide_xml)
+                for node in root.iter():
+                    tag = node.tag.rsplit("}", 1)[-1]
+                    if tag == "cNvPr":
+                        descr = normalize_whitespace(node.attrib.get("descr", ""))
+                        title_attr = normalize_whitespace(node.attrib.get("title", ""))
+                        if descr:
+                            alt_texts.append(descr)
+                        if title_attr and title_attr not in alt_texts:
+                            alt_texts.append(title_attr)
+            except ET.ParseError:
+                pass
+
+            parts = [f"Slide {slide_number}"]
+            if title:
+                parts.append(f"Title: {title}")
+            if body_lines:
+                parts.append("Text:\n" + "\n".join(f"- {line}" for line in body_lines))
+            if notes:
+                parts.append("Speaker notes:\n" + notes)
+            if alt_texts:
+                parts.append("Image alt text:\n" + "\n".join(f"- {text}" for text in alt_texts))
+            text = normalize_whitespace("\n\n".join(parts))
+            slides.append(
+                {
+                    "slide_number": slide_number,
+                    "title": title,
+                    "text": "\n".join(body_lines).strip(),
+                    "notes": notes,
+                    "image_alt_text": alt_texts,
+                    "source_type": "pptx",
+                    "page_or_slide": slide_number,
+                    "content": text,
+                }
+            )
+        return slides
+
+
+def _pptx_text_pages(data: bytes) -> list[str]:
+    return [str(slide["content"]) for slide in _pptx_slide_pages(data) if str(slide.get("content") or "").strip()]
 
 
 def _native_pdf_pages(pdf_bytes: bytes) -> list[str]:
@@ -91,6 +211,15 @@ def _native_pdf_reliable(pages: list[str], config: OCRConfig) -> bool:
     )
 
 
+def _native_pdf_page_reliable(text: str, config: OCRConfig) -> bool:
+    clean = normalize_whitespace(text or "")
+    return (
+        len(clean) >= config.native_pdf_min_chars_per_page
+        and printable_ratio(clean) >= config.native_pdf_min_printable_ratio
+        and len(set(clean)) >= min(config.native_pdf_min_unique_chars, 12)
+    )
+
+
 def _page_from_native(file_id: str, page_number: int, text: str, config: OCRConfig) -> OCRPage:
     block = OCRBlock(
         type="text",
@@ -113,8 +242,31 @@ def _page_from_native(file_id: str, page_number: int, text: str, config: OCRConf
     return page
 
 
-def _rasterize_pdf(pdf_path: Path, out_dir: Path, dpi: int) -> list[Path]:
+def _native_text_result(
+    payload: ExtractionInput,
+    pages_text: list[str],
+    method: ExtractionMethod,
+    cfg: OCRConfig,
+    raw: dict[str, object],
+    warnings: list[str],
+) -> DocumentOCRResult:
+    pages = [_page_from_native(payload.file_id, idx, text, cfg) for idx, text in enumerate(pages_text, 1)]
+    md = document_markdown(pages, cfg)
+    return DocumentOCRResult(
+        file_id=payload.file_id,
+        method=method,
+        pages=pages,
+        markdown=md,
+        raw={**raw, "native_text_pages": pages_text},
+        metrics=aggregate_metrics(pages),
+        correction_log=[],
+        warnings=warnings,
+    )
+
+
+def _rasterize_pdf(pdf_path: Path, out_dir: Path, dpi: int, page_numbers: list[int] | None = None) -> list[Path]:
     out_dir.mkdir(parents=True, exist_ok=True)
+    wanted = set(page_numbers or [])
     try:
         import fitz
 
@@ -123,6 +275,8 @@ def _rasterize_pdf(pdf_path: Path, out_dir: Path, dpi: int) -> list[Path]:
         matrix = fitz.Matrix(zoom, zoom)
         with fitz.open(pdf_path) as doc:
             for idx, page in enumerate(doc, 1):
+                if wanted and idx not in wanted:
+                    continue
                 pix = page.get_pixmap(matrix=matrix, alpha=False)
                 path = out_dir / f"page-{idx:04d}.png"
                 pix.save(path)
@@ -135,7 +289,10 @@ def _rasterize_pdf(pdf_path: Path, out_dir: Path, dpi: int) -> list[Path]:
 
     prefix = out_dir / "page"
     subprocess.check_call(["pdftoppm", "-r", str(dpi), "-png", str(pdf_path), str(prefix)])
-    return sorted(out_dir.glob("page-*.png"))
+    paths = sorted(out_dir.glob("page-*.png"))
+    if wanted:
+        paths = [path for path in paths if int(re.search(r"(\d+)", path.stem).group(1)) in wanted]
+    return paths
 
 
 def _image_dimensions(image_path: Path) -> tuple[int | None, int | None]:
@@ -304,18 +461,38 @@ def extract_document(
             native_pages = []
             warnings.append(f"Native PDF extraction failed: {exc}")
         if _native_pdf_reliable(native_pages, cfg):
-            pages = [_page_from_native(payload.file_id, idx, text, cfg) for idx, text in enumerate(native_pages, 1)]
-            md = document_markdown(pages, cfg)
-            return DocumentOCRResult(
-                file_id=payload.file_id,
-                method=ExtractionMethod.NATIVE_PDF,
-                pages=pages,
-                markdown=md,
-                raw={**raw, "native_text_pages": native_pages},
-                metrics=aggregate_metrics(pages),
-                correction_log=[],
-                warnings=warnings,
+            return _native_text_result(payload, native_pages, ExtractionMethod.NATIVE_PDF, cfg, raw, warnings)
+        if native_pages and any(text.strip() for text in native_pages):
+            raw["native_pdf_pages"] = len(native_pages)
+            raw["native_pdf_reliable_pages"] = [
+                idx
+                for idx, text in enumerate(native_pages, 1)
+                if _native_pdf_page_reliable(text, cfg)
+            ]
+    elif file_type == "docx":
+        try:
+            docx_pages = _docx_text_pages(payload.data)
+        except Exception as exc:
+            docx_pages = []
+            warnings.append(f"DOCX extraction failed: {exc}")
+        if docx_pages:
+            return _native_text_result(payload, docx_pages, ExtractionMethod.NATIVE_TEXT, cfg, raw, warnings)
+    elif file_type == "pptx":
+        try:
+            pptx_pages = _pptx_text_pages(payload.data)
+        except Exception as exc:
+            pptx_pages = []
+            warnings.append(f"PPTX extraction failed: {exc}")
+        if pptx_pages:
+            raw["slide_count"] = len(pptx_pages)
+            raw["extracted_text_length"] = sum(len(p) for p in pptx_pages)
+            log.info(
+                "[ingestion] pptx_native_text file_id=%s slides=%d chars=%d",
+                payload.file_id,
+                len(pptx_pages),
+                int(raw["extracted_text_length"]),
             )
+            return _native_text_result(payload, pptx_pages, ExtractionMethod.NATIVE_TEXT, cfg, raw, warnings)
 
     pages: list[OCRPage] = []
     with tempfile.TemporaryDirectory() as tmp:
@@ -323,7 +500,19 @@ def extract_document(
         if file_type == "pdf":
             source = tmpdir / "input.pdf"
             source.write_bytes(payload.data)
-            image_paths = _rasterize_pdf(source, tmpdir / "rasterized", cfg.raster_dpi)
+            native_by_page = {
+                idx: text
+                for idx, text in enumerate(native_pages, 1)
+                if _native_pdf_page_reliable(text, cfg)
+            } if "native_pages" in locals() else {}
+            ocr_page_numbers = [
+                idx
+                for idx in range(1, (len(native_pages) if "native_pages" in locals() and native_pages else 0) + 1)
+                if idx not in native_by_page
+            ] or None
+            for idx, text in native_by_page.items():
+                pages.append(_page_from_native(payload.file_id, idx, text, cfg))
+            image_paths = _rasterize_pdf(source, tmpdir / "rasterized", cfg.raster_dpi, ocr_page_numbers)
         elif file_type == "image":
             suffix = Path(payload.filename).suffix or ".png"
             source = tmpdir / f"input-image{suffix}"
@@ -335,8 +524,9 @@ def extract_document(
 
         all_attempts: list[dict[str, object]] = []
         for idx, image_path in enumerate(image_paths, 1):
+            page_number = int(re.search(r"(\d+)", image_path.stem).group(1)) if file_type == "pdf" and re.search(r"(\d+)", image_path.stem) else idx
             page, attempts = _ocr_page(
-                idx,
+                page_number,
                 image_path,
                 payload.filename,
                 cfg,
@@ -344,8 +534,9 @@ def extract_document(
                 payload.output_prefix,
             )
             pages.append(page)
-            all_attempts.extend({"page": idx, **attempt} for attempt in attempts)
+            all_attempts.extend({"page": page_number, **attempt} for attempt in attempts)
         raw["engine_attempts"] = all_attempts
+    pages.sort(key=lambda page: page.page_number)
 
     correction_log: list[dict[str, object]] = []
     for page in pages:

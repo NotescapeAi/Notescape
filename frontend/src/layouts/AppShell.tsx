@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
 import AppSidebar from "../components/AppSidebar";
 import TopBar from "../components/TopBar";
 import { LayoutContext, type SidebarState } from "./LayoutContext";
@@ -12,6 +13,7 @@ type Props = {
   backTo?: string;
   backState?: Record<string, unknown>;
   headerMaxWidthClassName?: string;
+  headerActions?: React.ReactNode;
   contentGapClassName?: string;
   contentOverflowClassName?: string;
   contentHeightClassName?: string;
@@ -28,18 +30,25 @@ export default function AppShell({
   backTo,
   backState,
   headerMaxWidthClassName = "max-w-none",
+  headerActions,
   contentGapClassName = "gap-8",
   contentOverflowClassName = "overflow-y-auto",
   contentHeightClassName = "min-h-full",
   mainClassName = "",
   children,
 }: Props) {
+  const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   useEffect(() => {
     const stored = window.localStorage.getItem("notescape.sidebar.collapsed");
     if (stored === "1") setCollapsed(true);
   }, []);
+
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [location.pathname]);
 
   function handleToggle() {
     setCollapsed((prev) => {
@@ -57,17 +66,31 @@ export default function AppShell({
         setCollapsed(shouldCollapse);
         window.localStorage.setItem("notescape.sidebar.collapsed", shouldCollapse ? "1" : "0");
       },
+      mobileNavOpen,
+      setMobileNavOpen,
     }),
-    [collapsed]
+    [collapsed, mobileNavOpen]
   );
 
   return (
     <LayoutContext.Provider value={layout}>
       <div className="flex h-screen overflow-hidden bg-[var(--bg-page)] text-[var(--text)]">
-        <AppSidebar collapsed={collapsed} onToggle={handleToggle} />
+        {mobileNavOpen ? (
+          <button
+            type="button"
+            className="fixed inset-0 z-30 bg-[var(--overlay)] backdrop-blur-[2px] transition-opacity lg:hidden"
+            aria-label="Close navigation menu"
+            onClick={() => setMobileNavOpen(false)}
+          />
+        ) : null}
+        <AppSidebar
+          collapsed={collapsed}
+          onToggle={handleToggle}
+          mobileOpen={mobileNavOpen}
+          onNavigate={() => setMobileNavOpen(false)}
+        />
         <div
-          className={`min-w-0 flex-1 overflow-x-hidden px-4 py-6 transition-[margin-left] duration-200 ease-in-out lg:px-6 ${contentOverflowClassName}`}
-          style={{ marginLeft: collapsed ? "76px" : "260px" }}
+          className={`min-w-0 flex-1 overflow-x-hidden px-4 py-5 transition-[margin-left] duration-200 ease-in-out sm:px-5 lg:px-7 lg:py-6 ${collapsed ? "lg:ml-[80px]" : "lg:ml-[244px]"} ml-0 ${contentOverflowClassName}`}
         >
           <div className={`flex min-w-0 flex-col ${contentHeightClassName} ${contentGapClassName}`}>
             <div className={`mx-auto w-full ${headerMaxWidthClassName}`}>
@@ -79,6 +102,8 @@ export default function AppShell({
                 backLabel={backLabel}
                 backTo={backTo}
                 backState={backState}
+                headerActions={headerActions}
+                onOpenMobileNav={() => setMobileNavOpen(true)}
               />
             </div>
             <main className={`flex-1 min-w-0 ${mainClassName}`}>{children}</main>

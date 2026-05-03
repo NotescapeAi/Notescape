@@ -1,9 +1,8 @@
 import { useMemo, useState } from "react";
-import { ChevronLeft } from "lucide-react";
+import { ChevronsLeft, ChevronsRight, Folder, Plus, Search } from "lucide-react";
 import type { ClassRow } from "../lib/api";
 import Button from "./Button";
 import KebabMenu from "./KebabMenu";
-
 
 type Props = {
   items: ClassRow[];
@@ -27,12 +26,6 @@ export default function ClassSidebar({
   onToggleCollapse,
 }: Props) {
   const [q, setQ] = useState("");
-  const chips = [
-    "from-[var(--primary)] to-[var(--accent-pink)]",
-    "from-[var(--primary)] to-[var(--accent-mint)]",
-    "from-[var(--accent-pink)] to-[var(--accent-lime)]",
-    "from-[var(--accent-mint)] to-[var(--primary)]",
-  ];
 
   const filtered = useMemo(() => {
     const t = q.trim().toLowerCase();
@@ -42,117 +35,139 @@ export default function ClassSidebar({
 
   return (
     <aside
-      className={`flex h-full min-h-0 shrink-0 flex-col overflow-hidden rounded-[28px] surface shadow-token transition-[width] duration-200 ${
-        collapsed ? "w-[84px]" : "w-[300px]"
+      className={`flex h-full min-h-0 shrink-0 flex-col overflow-hidden rounded-[var(--radius-xl)] border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow-sm)] transition-[width] duration-200 ${
+        collapsed ? "w-[72px]" : "w-[280px]"
       }`}
     >
-      <div className="flex-shrink-0 border-b border-token px-4 py-4">
-        <div className="flex items-center justify-between gap-2">
-          <div className={`${collapsed ? "text-center w-full" : ""}`}>
-            {!collapsed && (
-              <div className="text-xs text-muted">{items.length} active</div>
-            )}
-          </div>
+      <div className="flex-shrink-0 border-b border-[var(--border)] px-3 py-3">
+        <div className={`flex items-center ${collapsed ? "justify-center" : "justify-between"} gap-2`}>
+          {!collapsed && (
+            <div className="min-w-0">
+              <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--text-muted-soft)]">
+                My Classes
+              </div>
+              <div className="mt-0.5 text-xs text-[var(--text-muted)]">{items.length} active</div>
+            </div>
+          )}
           <button
             onClick={onToggleCollapse}
-            aria-label="Collapse My Classes panel"
-            className="h-8 w-8 rounded-full text-[var(--primary)] hover:bg-[rgba(123,95,239,0.12)]"
+            aria-label={collapsed ? "Expand classes panel" : "Collapse classes panel"}
+            title={collapsed ? "Expand panel" : "Collapse panel"}
+            className="flex h-8 w-8 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface)] hover:text-[var(--text-main)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
             type="button"
           >
-            <ChevronLeft
-              className="mx-auto h-4 w-4"
-              style={{
-                transition: "transform 0.25s ease",
-                transform: collapsed ? "rotate(180deg)" : "rotate(0deg)",
-              }}
-            />
+            {collapsed ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}
           </button>
         </div>
-        {!collapsed && (
+
+        {!collapsed ? (
           <>
-            <div className="mt-3 flex items-center gap-2">
+            <div className="mt-3 flex h-9 items-center gap-2 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-2)] px-3 transition focus-within:border-[color-mix(in_srgb,var(--primary)_55%,var(--border))] focus-within:ring-2 focus-within:ring-[var(--ring)]">
+              <Search className="h-4 w-4 flex-shrink-0 text-[var(--text-muted-soft)]" />
               <input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 placeholder="Search classes"
-                className="h-10 w-full rounded-2xl border border-token surface px-3 text-sm"
+                className="h-full w-full min-w-0 border-0 bg-transparent p-0 text-[13.5px] text-[var(--text-main)] placeholder:text-[var(--text-muted-soft)] focus:outline-none focus:ring-0"
               />
             </div>
-            <Button variant="primary" className="mt-3 w-full rounded-2xl" onClick={onNew}>
+            <Button
+              variant="primary"
+              size="sm"
+              className="mt-2.5 w-full"
+              onClick={onNew}
+            >
+              <Plus className="h-4 w-4" />
               New class
             </Button>
           </>
-        )}
-        {collapsed && (
+        ) : (
           <button
             onClick={onNew}
-            className="mt-3 flex h-10 w-full items-center justify-center rounded-2xl border border-token text-base text-[var(--primary)]"
+            className="mt-2.5 flex h-9 w-full items-center justify-center rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:text-[var(--primary)]"
             title="New class"
+            aria-label="New class"
             type="button"
           >
-            +
+            <Plus className="h-4 w-4" />
           </button>
         )}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6 pt-4">
+      <div className="ns-scroll min-h-0 flex-1 overflow-y-auto px-2 py-3">
         {filtered.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-token surface-2 p-4 text-sm text-muted">
-            {q ? "No classes match your search." : "No classes yet."}
+          <div className="mx-2 rounded-[var(--radius-md)] border border-dashed border-[var(--border)] bg-[var(--surface-2)] px-3 py-4 text-center text-[13px] text-[var(--text-muted)]">
+            {q ? "No classes match." : "No classes yet."}
           </div>
         ) : (
-          <div className={`space-y-3 ${collapsed ? "flex flex-col items-center" : ""}`}>
-            {filtered.map((c, idx) => {
+          <ul className={`space-y-0.5 ${collapsed ? "flex flex-col items-center" : ""}`}>
+            {filtered.map((c) => {
               const isActive = c.id === selectedId;
-              const chip = chips[idx % chips.length];
               return (
-                <div
-                  key={c.id}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => onSelect(c.id)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      onSelect(c.id);
-                    }
-                  }}
-                  title={collapsed ? c.name : undefined}
-                  className={`w-full rounded-2xl border px-4 py-3 text-left text-sm transition ${
-                    isActive
-                      ? "border-strong surface shadow-token"
-                      : "border-token surface-80 hover:border-token"
-                  } ${collapsed ? "flex w-12 flex-col items-center px-2 py-2 text-center" : ""}`}
-                >
-                  <div className="flex items-center gap-3">
-                    <span
-                      className={`flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br ${chip} text-[11px] font-semibold text-inverse`}
-                    >
-                    {c.name.slice(0, 2).toUpperCase()}
-                  </span>
-                  {!collapsed && (
-                      <div className="flex-1 min-w-0">
-                        <div className="font-semibold text-main truncate">{c.name}</div>
-                      </div>
-                  )}
-                  {!collapsed && (onRename || onDelete) && (
-                    <div
-                      onClick={(e) => e.stopPropagation()}
-                      onMouseDown={(e) => e.stopPropagation()}
-                    >
-                      <KebabMenu
-                        items={[
-                          ...(onRename ? [{ label: "Rename class", onClick: () => onRename(c.id) }] : []),
-                          ...(onDelete ? [{ label: "Delete class", onClick: () => onDelete(c.id) }] : []),
-                        ]}
+                <li key={c.id} className={collapsed ? "w-full" : ""}>
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => onSelect(c.id)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        onSelect(c.id);
+                      }
+                    }}
+                    title={collapsed ? c.name : undefined}
+                    aria-label={c.name}
+                    aria-current={isActive ? "true" : undefined}
+                    className={`group relative flex w-full cursor-pointer items-center gap-3 rounded-[var(--radius-md)] px-2.5 py-2 text-left transition focus:outline-none ${
+                      isActive
+                        ? "bg-[var(--primary-soft)] text-[var(--primary)]"
+                        : "text-[var(--text-muted)] hover:bg-[var(--surface-2)] hover:text-[var(--text-main)]"
+                    } ${collapsed ? "justify-center" : ""}`}
+                  >
+                    {isActive && !collapsed ? (
+                      <span
+                        aria-hidden
+                        className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-[var(--primary)]"
                       />
-                    </div>
-                  )}
-                </div>
-              </div>
+                    ) : null}
+                    <span
+                      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] ${
+                        isActive
+                          ? "bg-[var(--surface)] text-[var(--primary)]"
+                          : "bg-[var(--surface-2)] text-[var(--text-muted)] group-hover:bg-[var(--surface)]"
+                      }`}
+                    >
+                      <Folder className="h-4 w-4" />
+                    </span>
+                    {!collapsed && (
+                      <div className="min-w-0 flex-1">
+                        <div className={`truncate text-[13.5px] font-semibold ${isActive ? "text-[var(--primary)]" : "text-[var(--text-main)]"}`}>
+                          {c.name}
+                        </div>
+                        <div className="mt-0.5 truncate text-[11.5px] text-[var(--text-muted-soft)]">
+                          {c.subject || "Class workspace"}
+                        </div>
+                      </div>
+                    )}
+                    {!collapsed && (onRename || onDelete) && (
+                      <div
+                        className="flex-shrink-0"
+                        onClick={(e) => e.stopPropagation()}
+                        onMouseDown={(e) => e.stopPropagation()}
+                      >
+                        <KebabMenu
+                          items={[
+                            ...(onRename ? [{ label: "Rename class", onClick: () => onRename(c.id) }] : []),
+                            ...(onDelete ? [{ label: "Delete class", onClick: () => onDelete(c.id) }] : []),
+                          ]}
+                        />
+                      </div>
+                    )}
+                  </div>
+                </li>
               );
             })}
-          </div>
+          </ul>
         )}
       </div>
     </aside>

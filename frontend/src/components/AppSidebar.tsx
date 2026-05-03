@@ -1,266 +1,334 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
   FolderOpen,
   MessageCircle,
   Sparkles,
-  ClipboardList, // ✅ ADDED
+  ClipboardList,
+  Mic,
+  ChevronsLeft,
+  ChevronsRight,
+  X,
+  UserRound,
   Settings,
-  User,
   LogOut,
-  ChevronLeft,
 } from "lucide-react";
-import { listClasses } from "../lib/api";
+import BrandLogo from "./BrandLogo";
+import { useUser } from "../hooks/useUser";
 
 type Props = {
   collapsed: boolean;
   onToggle: () => void;
+  mobileOpen?: boolean;
+  onNavigate?: () => void;
 };
 
-const item =
-  "group relative flex items-center gap-3 rounded-[18px] px-3 py-3 text-[15px] font-semibold transition-colors duration-200";
-const active =
-  "border-l-4 border-[var(--primary)] bg-[var(--surface)] shadow-[var(--shadow-soft)] text-[var(--text)]";
+type NavItem = {
+  to: string;
+  label: string;
+  icon: ReactNode;
+  /** Custom active matcher (Flashcards needs this because of nested/class routes). */
+  isActive?: (pathname: string, state: unknown) => boolean;
+};
 
-export default function AppSidebar({ collapsed, onToggle }: Props) {
+export default function AppSidebar({ collapsed, onToggle, mobileOpen = false, onNavigate }: Props) {
   const location = useLocation();
   const navigate = useNavigate();
-  const isFlashcardsActive =
-    location.pathname.includes("/flashcards") ||
-    (location.pathname.startsWith("/classes") && (location.state as any)?.tab === "flashcards");
-  const [resolvedClassId, setResolvedClassId] = useState<number | null>(null);
+  const { profile } = useUser();
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const accountMenuRef = useRef<HTMLDivElement | null>(null);
+  const displayName = profile?.display_name || profile?.full_name || profile?.email || "Account";
 
   useEffect(() => {
-    const lastClassIdRaw =
-      localStorage.getItem("last_class_id") ||
-      localStorage.getItem("chat_last_class_id") ||
-      "";
-    const lastClassId = Number(lastClassIdRaw);
-    if (Number.isFinite(lastClassId) && lastClassId > 0) {
-      setResolvedClassId(lastClassId);
-      return;
-    }
-    let ignore = false;
-    (async () => {
-      try {
-        const classes = await listClasses();
-        const firstId = classes[0]?.id;
-        if (!ignore && Number.isFinite(firstId)) {
-          setResolvedClassId(firstId);
-          localStorage.setItem("last_class_id", String(firstId));
-        }
-      } catch {
-        if (!ignore) setResolvedClassId(null);
-      }
-    })();
-    return () => {
-      ignore = true;
+    if (!accountMenuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (!accountMenuRef.current?.contains(e.target as Node)) setAccountMenuOpen(false);
     };
-  }, []);
-  const shellClass =
-    "bg-[var(--bg-surface)] text-[var(--text)] border border-[var(--border-subtle)] shadow-[var(--shadow-soft)] rounded-[32px] overflow-hidden";
-  const textNeutral = "text-[var(--text-muted)]";
-  const iconNeutral = "text-[var(--text-muted)]";
-  const hoverText = "hover:text-[var(--text-main)]";
+    window.addEventListener("mousedown", onDown);
+    return () => window.removeEventListener("mousedown", onDown);
+  }, [accountMenuOpen]);
+
+  useEffect(() => {
+    if (!accountMenuOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setAccountMenuOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [accountMenuOpen]);
+
+  const tabFromState =
+    location.state && typeof location.state === "object" && "tab" in location.state
+      ? (location.state as { tab?: string }).tab
+      : undefined;
+
+  const navItems: NavItem[] = [
+    { to: "/dashboard", label: "Dashboard", icon: <LayoutDashboard className="h-[18px] w-[18px]" /> },
+    { to: "/classes", label: "Classes", icon: <FolderOpen className="h-[18px] w-[18px]" /> },
+    {
+      to: "/flashcards",
+      label: "Flashcards",
+      icon: <Sparkles className="h-[18px] w-[18px]" />,
+      isActive: (p) =>
+        p.includes("/flashcards") || (p.startsWith("/classes") && tabFromState === "flashcards"),
+    },
+    { to: "/quizzes", label: "Quizzes", icon: <ClipboardList className="h-[18px] w-[18px]" /> },
+    { to: "/chatbot", label: "Study Assistant", icon: <MessageCircle className="h-[18px] w-[18px]" /> },
+    { to: "/voice-revision", label: "Voice Revision", icon: <Mic className="h-[18px] w-[18px]" /> },
+  ];
+
+  function navActivate() {
+    onNavigate?.();
+  }
 
   return (
     <aside
-      className={`fixed left-0 top-0 z-40 h-screen ${collapsed ? "p-2" : "p-4"}`}
-      style={{ width: collapsed ? "92px" : "276px" }}
+      className={`fixed left-0 top-0 z-[50] h-screen p-3 transition-transform duration-200 ease-out ${
+        mobileOpen ? "translate-x-0" : "max-lg:-translate-x-[calc(100%+16px)] max-lg:pointer-events-none"
+      } lg:translate-x-0 lg:pointer-events-auto`}
+      style={{ width: collapsed ? "80px" : "244px" }}
+      aria-label="Primary navigation"
     >
-      <div className={`h-full ${collapsed ? "p-3" : "p-4"} ${shellClass}`}>
+      <div
+        className="flex h-full flex-col overflow-hidden rounded-[var(--radius-xl)] border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow-sm)]"
+      >
+        {/* Header: logo + mobile close */}
         <header
-          className={`flex h-[62px] items-center ${collapsed ? "justify-center" : "justify-between"} px-2`}
+          className={`relative flex h-[60px] shrink-0 items-center gap-2 px-3 ${
+            collapsed ? "justify-center" : "justify-between"
+          }`}
         >
           {collapsed ? (
-            <div className="flex h-9 w-9 items-center justify-center rounded-full border border-token surface text-sm font-semibold text-[var(--primary)]">
-              N
-            </div>
+            <BrandLogo variant="icon-only" to="" showText={false} />
           ) : (
-            <div className="px-1">
-              <div className="text-[1.02rem] font-semibold tracking-tight text-[var(--text-main)]">
-                Notescape
-              </div>
-            </div>
+            <BrandLogo variant="sidebar" to="" className="min-w-0" />
           )}
-          <button
-            type="button"
-            onClick={onToggle}
-            className={`flex h-9 w-9 items-center justify-center rounded-full text-[var(--primary)] hover:bg-[rgba(123,95,239,0.10)] ${
-              collapsed ? "mt-1" : ""
-            }`}
-            aria-label="Toggle sidebar"
-            style={{ border: "none" }}
-          >
-            <ChevronLeft
-              className="h-4 w-4"
-              style={{
-                transition: "transform 0.35s cubic-bezier(0.4, 0, 0.2, 1)",
-                transform: collapsed ? "rotate(180deg)" : "rotate(0deg)",
-              }}
-            />
-          </button>
+          {onNavigate ? (
+            <button
+              type="button"
+              onClick={onNavigate}
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-[var(--text-muted)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text-main)] lg:hidden"
+              aria-label="Close navigation menu"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          ) : null}
         </header>
-        <div className="border-b border-token/80" />
-        <nav className="mt-5 space-y-2">
-          <NavLink
-            to="/dashboard"
-            className={({ isActive }) =>
-              `${item} ${isActive ? active : ""} ${collapsed ? "justify-center" : ""} ${
-                isActive ? "text-[var(--text-main)]" : `${textNeutral} ${hoverText}`
-              }`
-            }
-            title={collapsed ? "Dashboard" : undefined}
-          >
-            {({ isActive }) => (
-              <>
-                <LayoutDashboard
-                  className={`h-5 w-5 ${isActive ? "text-[var(--primary)]" : `${iconNeutral}`}`}
-                />
-                {!collapsed && <span>Dashboard</span>}
-              </>
-            )}
-          </NavLink>
 
-          <NavLink
-            to="/classes"
-            className={({ isActive }) =>
-              `${item} ${isActive ? active : ""} ${collapsed ? "justify-center" : ""} ${
-                isActive ? "text-[var(--text-main)]" : `${textNeutral} ${hoverText}`
-              }`
-            }
-            title={collapsed ? "Classes" : undefined}
-          >
-            {({ isActive }) => (
-              <>
-                <FolderOpen
-                  className={`h-5 w-5 ${isActive ? "text-[var(--primary)]" : `${iconNeutral}`}`}
-                />
-                {!collapsed && <span>Classes</span>}
-              </>
-            )}
-          </NavLink>
-
-          <button
-            type="button"
-            onClick={() => navigate("/flashcards")}
-            className={`${item} ${isFlashcardsActive ? active : ""} ${collapsed ? "justify-center" : ""} ${
-              isFlashcardsActive ? "text-[var(--text-main)]" : `${textNeutral} ${hoverText}`
-            }`}
-            title={collapsed ? "Flashcards" : undefined}
-          >
-            <Sparkles
-              className={`h-5 w-5 ${isFlashcardsActive ? "text-[var(--primary)]" : `${iconNeutral}`}`}
-            />
-            {!collapsed && <span>Flashcards</span>}
-          </button>
-
-          {/* ✅ ADDED: QUIZZES */}
-          <NavLink
-            to="/quizzes"
-            className={({ isActive }) =>
-              `${item} ${isActive ? active : ""} ${collapsed ? "justify-center" : ""} ${
-                isActive ? "text-[var(--text-main)]" : `${textNeutral} ${hoverText}`
-              }`
-            }
-            title={collapsed ? "Quizzes" : undefined}
-          >
-            {({ isActive }) => (
-              <>
-                <ClipboardList
-                  className={`h-5 w-5 ${isActive ? "text-[var(--primary)]" : iconNeutral}`}
-                />
-                {!collapsed && <span>Quizzes</span>}
-              </>
-            )}
-          </NavLink>
-
-          <NavLink
-            to="/chatbot"
-            className={({ isActive }) =>
-              `${item} ${isActive ? active : ""} ${collapsed ? "justify-center" : ""} ${
-                isActive ? "text-[var(--text-main)]" : `${textNeutral} ${hoverText}`
-              }`
-            }
-            title={collapsed ? "Study Assistant" : undefined}
-          >
-            {({ isActive }) => (
-              <>
-                <MessageCircle
-                  className={`h-5 w-5 ${isActive ? "text-[var(--primary)]" : iconNeutral}`}
-                />
-                {!collapsed && <span>Study Assistant</span>}
-              </>
-            )}
-          </NavLink>
-        </nav>
-
+        {/* Section label */}
         {!collapsed && (
-          <div className="mt-6 border-t border-token pt-4 text-xs uppercase tracking-[0.2em] text-[var(--text-muted)]">
-            Account
+          <div className="mt-1 px-4 text-[10.5px] font-semibold uppercase tracking-[0.2em] text-[var(--text-muted-soft)]">
+            Workspace
           </div>
         )}
 
-        <div className="mt-4 space-y-2">
-          <NavLink
-            to="/settings"
-            className={({ isActive }) =>
-              `${item} ${isActive ? active : ""} ${collapsed ? "justify-center" : ""} ${
-                isActive ? "text-[var(--text-main)]" : `${textNeutral} ${hoverText}`
-              }`
-            }
-            title={collapsed ? "Settings" : undefined}
-          >
-            {({ isActive }) => (
-              <>
-                <Settings
-                  className={`h-5 w-5 ${isActive ? "text-[var(--primary)]" : iconNeutral}`}
+        {/* Nav items */}
+        <nav
+          className="ns-scroll mt-2 min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-3"
+          aria-label="Main"
+        >
+          <ul className="space-y-1">
+            {navItems.map((item) => (
+              <li key={item.to}>
+                <SidebarLink
+                  to={item.to}
+                  label={item.label}
+                  icon={item.icon}
+                  collapsed={collapsed}
+                  onNavigate={navActivate}
+                  isActive={item.isActive}
                 />
-                {!collapsed && <span>Settings</span>}
-              </>
-            )}
-          </NavLink>
+              </li>
+            ))}
+          </ul>
+        </nav>
 
-          <NavLink
-            to="/profile"
-            className={({ isActive }) =>
-              `${item} ${isActive ? active : ""} ${collapsed ? "justify-center" : ""} ${
-                isActive ? "text-[var(--text-main)]" : `${textNeutral} ${hoverText}`
-              }`
-            }
-            title={collapsed ? "Profile" : undefined}
+        {/* Footer: collapse toggle + account */}
+        <div className="mt-auto flex shrink-0 flex-col gap-2 border-t border-[var(--border)] px-2 py-2">
+          {/* Collapse / expand toggle — clearly visible */}
+          <button
+            type="button"
+            onClick={onToggle}
+            className={`hidden lg:flex h-9 items-center gap-2 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-2)] text-[13px] font-semibold text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface)] hover:text-[var(--text-main)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
+              collapsed ? "justify-center px-0 w-full" : "justify-start px-3"
+            }`}
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-expanded={!collapsed}
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
-            {({ isActive }) => (
+            {collapsed ? (
+              <ChevronsRight className="h-4 w-4" />
+            ) : (
               <>
-                <User
-                  className={`h-5 w-5 ${isActive ? "text-[var(--primary)]" : iconNeutral}`}
-                />
-                {!collapsed && <span>Profile</span>}
+                <ChevronsLeft className="h-4 w-4" />
+                <span>Collapse</span>
               </>
             )}
-          </NavLink>
+          </button>
 
-          <NavLink
-            to="/logout"
-            className={({ isActive }) =>
-              `${item} ${isActive ? active : ""} ${collapsed ? "justify-center" : ""} ${
-                isActive ? "text-[var(--text-main)]" : `${textNeutral} ${hoverText}`
-              }`
-            }
-            title={collapsed ? "Logout" : undefined}
-          >
-            {({ isActive }) => (
-              <>
-                <LogOut
-                  className={`h-5 w-5 ${isActive ? "text-[var(--primary)]" : iconNeutral}`}
-                />
-                {!collapsed && <span>Logout</span>}
-              </>
-            )}
-          </NavLink>
+          {/* Account entry point (compact icon) */}
+          <div className="relative" ref={accountMenuRef}>
+            <button
+              type="button"
+              onClick={() => setAccountMenuOpen((v) => !v)}
+              className={`flex h-11 w-full items-center gap-2.5 rounded-[var(--radius-md)] border border-transparent text-left text-[13px] font-medium text-[var(--text-muted)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text-main)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] ${
+                collapsed ? "justify-center px-0" : "px-2"
+              } ${accountMenuOpen ? "bg-[var(--surface-2)] text-[var(--text-main)]" : ""}`}
+              aria-label="Account menu"
+              aria-expanded={accountMenuOpen}
+              aria-haspopup="menu"
+              title={collapsed ? displayName : undefined}
+            >
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full bg-[var(--surface-2)] text-[var(--text-muted)]">
+                {profile?.avatar_url ? (
+                  <img src={profile.avatar_url} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <UserRound className="h-4 w-4" strokeWidth={2} />
+                )}
+              </span>
+              {!collapsed && (
+                <span className="min-w-0 flex-1 truncate">{displayName}</span>
+              )}
+            </button>
+
+            {accountMenuOpen ? (
+              <div
+                className={`absolute z-[60] w-56 rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface)] p-1.5 shadow-[var(--shadow-elevated)] ${
+                  collapsed ? "bottom-0 left-full ml-2" : "bottom-full left-0 right-0 mb-2"
+                }`}
+                role="menu"
+              >
+                <div className="truncate px-2.5 py-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted-soft)]">
+                  {displayName}
+                </div>
+                <MenuButton
+                  icon={<UserRound className="h-4 w-4" />}
+                  onClick={() => {
+                    setAccountMenuOpen(false);
+                    onNavigate?.();
+                    navigate("/profile");
+                  }}
+                >
+                  Profile
+                </MenuButton>
+                <MenuButton
+                  icon={<Settings className="h-4 w-4" />}
+                  onClick={() => {
+                    setAccountMenuOpen(false);
+                    onNavigate?.();
+                    navigate("/settings");
+                  }}
+                >
+                  Settings
+                </MenuButton>
+                <div className="my-1 h-px bg-[var(--border)]" />
+                <MenuButton
+                  icon={<LogOut className="h-4 w-4" />}
+                  tone="danger"
+                  onClick={() => {
+                    setAccountMenuOpen(false);
+                    onNavigate?.();
+                    navigate("/logout");
+                  }}
+                >
+                  Logout
+                </MenuButton>
+              </div>
+            ) : null}
+          </div>
         </div>
       </div>
     </aside>
+  );
+}
+
+function SidebarLink({
+  to,
+  label,
+  icon,
+  collapsed,
+  onNavigate,
+  isActive,
+}: {
+  to: string;
+  label: string;
+  icon: ReactNode;
+  collapsed: boolean;
+  onNavigate: () => void;
+  isActive?: (pathname: string, state: unknown) => boolean;
+}) {
+  const location = useLocation();
+  const matchActive = isActive ? isActive(location.pathname, location.state) : undefined;
+
+  return (
+    <NavLink
+      to={to}
+      end={to === "/dashboard"}
+      onClick={onNavigate}
+      title={collapsed ? label : undefined}
+      aria-label={label}
+      className={({ isActive: navActive }) => {
+        const active = matchActive ?? navActive;
+        return [
+          "group relative flex min-h-[42px] items-center gap-3 rounded-[var(--radius-md)] text-[13.5px] font-medium transition-colors duration-150",
+          collapsed ? "justify-center px-0" : "px-3",
+          active
+            ? "bg-[var(--primary-soft)] text-[var(--primary)] font-semibold"
+            : "text-[var(--text-muted)] hover:bg-[var(--surface-2)] hover:text-[var(--text-main)]",
+        ].join(" ");
+      }}
+    >
+      {({ isActive: navActive }) => {
+        const active = matchActive ?? navActive;
+        return (
+          <>
+            {/* Left accent bar when active (expanded only) */}
+            {active && !collapsed ? (
+              <span
+                aria-hidden
+                className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-[var(--primary)]"
+              />
+            ) : null}
+            <span
+              className={`flex h-7 w-7 shrink-0 items-center justify-center transition-transform duration-150 ${
+                active ? "text-[var(--primary)]" : "text-[var(--text-muted)] group-hover:text-[var(--text-main)]"
+              }`}
+            >
+              {icon}
+            </span>
+            {!collapsed && <span className="truncate tracking-[-0.005em]">{label}</span>}
+          </>
+        );
+      }}
+    </NavLink>
+  );
+}
+
+function MenuButton({
+  icon,
+  children,
+  onClick,
+  tone = "default",
+}: {
+  icon: ReactNode;
+  children: ReactNode;
+  onClick: () => void;
+  tone?: "default" | "danger";
+}) {
+  const toneClass =
+    tone === "danger"
+      ? "text-[var(--danger)] hover:bg-[var(--danger-soft)]"
+      : "text-[var(--text-main)] hover:bg-[var(--surface-2)]";
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex w-full items-center gap-2.5 rounded-[var(--radius-sm)] px-2.5 py-2 text-left text-[13px] font-medium transition ${toneClass}`}
+      role="menuitem"
+    >
+      <span className="flex h-5 w-5 items-center justify-center opacity-80">{icon}</span>
+      <span>{children}</span>
+    </button>
   );
 }

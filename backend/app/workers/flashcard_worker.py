@@ -82,15 +82,19 @@ async def _fail_job(job_id: str, error_message: str, correlation_id: str | None 
     )
 
 
-async def _complete_job(job_id: str, correlation_id: str | None = None):
+async def _complete_job(job_id: str, result: Dict[str, Any] | None = None, correlation_id: str | None = None):
+    result = result or {}
     async with db_conn() as (conn, cur):
         await cur.execute(
             """
             UPDATE flashcard_jobs
-            SET status='completed', progress=100, finished_at=now()
+            SET status='completed',
+                progress=100,
+                finished_at=now(),
+                payload=COALESCE(payload, '{}'::jsonb) || %s::jsonb
             WHERE id::text=%s
             """,
-            (job_id,),
+            (json.dumps(result), job_id),
         )
         await conn.commit()
     log.info(
@@ -100,7 +104,7 @@ async def _complete_job(job_id: str, correlation_id: str | None = None):
     )
 
 
-async def _generate_cards_from_payload(payload: Dict[str, Any], user_id: str, correlation_id: str | None) -> List[str]:
+async def _generate_cards_from_payload(payload: Dict[str, Any], user_id: str, correlation_id: str | None) -> Dict[str, Any]:
     embedder = get_embedder()
     generator = get_card_generator()
 
@@ -110,6 +114,8 @@ async def _generate_cards_from_payload(payload: Dict[str, Any], user_id: str, co
     style = payload.get("style") or "mixed"
     top_k = int(payload.get("top_k") or 12)
     n_cards = int(payload.get("n_cards") or 24)
+    card_count_mode = payload.get("cardCountMode") or "fixed"
+    requested_count = payload.get("requestedCount")
     difficulty = payload.get("difficulty")
     page_start = payload.get("page_start")
     page_end = payload.get("page_end")
@@ -150,9 +156,6 @@ async def _generate_cards_from_payload(payload: Dict[str, Any], user_id: str, co
 
     if not collected:
         raise RuntimeError("Card generation returned no usable cards.")
-    if len(collected) < target:
-        raise RuntimeError(f"Card generation returned {len(collected)} cards (target {target}).")
-
     if len(collected) > target:
         collected = collected[:target]
 
@@ -160,13 +163,28 @@ async def _generate_cards_from_payload(payload: Dict[str, Any], user_id: str, co
     source_file_id = hits[0][2] if hits else (file_ids[0] if file_ids else None)
     inserted = await insert_flashcards(class_id, source_file_id, collected, source_chunk_id, created_by=user_id)
     log.info(
-        "[flashcards] inserted cards job_class=%s user_id=%s correlation_id=%s inserted=%d",
+        "[flashcards] inserted cards job_class=%s user_id=%s correlation_id=%s mode=%s requested=%s target=%d inserted=%d",
         class_id,
         user_id,
         correlation_id,
+        card_count_mode,
+        requested_count,
+        target,
         len(inserted),
     )
-    return inserted
+    warning = payload.get("warning")
+    if len(inserted) < target:
+        if requested_count:
+            warning = f"Generated {len(inserted)} high-quality cards. The selected content did not support {requested_count} useful cards."
+        else:
+            warning = f"Auto selected {target} cards, but only {len(inserted)} high-quality cards were generated from the available content."
+    return {
+        "generatedCount": len(inserted),
+        "requestedCount": requested_count,
+        "cardCountMode": card_count_mode,
+        "warning": warning,
+        "sourceDocumentIds": payload.get("sourceDocumentIds") or file_ids,
+    }
 
 
 async def run():
@@ -193,8 +211,8 @@ async def run():
                 raise RuntimeError("Job payload missing file_ids")
 
             await _update_progress(job_id, 20, correlation_id)
-            await _generate_cards_from_payload(payload, job["user_id"], correlation_id)
-            await _complete_job(job_id, correlation_id)
+            result = await _generate_cards_from_payload(payload, job["user_id"], correlation_id)
+            await _complete_job(job_id, result, correlation_id)
         except Exception as exc:
             await _fail_job(job_id, str(exc), correlation_id)
 

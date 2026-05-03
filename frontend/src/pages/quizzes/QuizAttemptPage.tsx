@@ -39,6 +39,7 @@ export default function QuizAttemptPage() {
   // Result
   const [attemptResult, setAttemptResult] = useState<SubmitAttemptResponse | null>(null);
   const [finalScore, setFinalScore] = useState(0);
+  const [breakdown, setBreakdown] = useState<QuizBreakdown | null>(null);
 
   // Timer
   const [startTime, setStartTime] = useState<number>(Date.now());
@@ -80,6 +81,21 @@ export default function QuizAttemptPage() {
       }
     })();
   }, [quizId]);
+
+  useEffect(() => {
+    if (currentSection !== "completed" || !attemptId) return;
+    let cancelled = false;
+    getQuizBreakdown(attemptId)
+      .then((data) => {
+        if (!cancelled) setBreakdown(data);
+      })
+      .catch(() => {
+        if (!cancelled) setBreakdown(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentSection, attemptId]);
 
   // Timer Effect
   useEffect(() => {
@@ -267,6 +283,21 @@ export default function QuizAttemptPage() {
             <QuizCompletionScreen 
                 score={attemptResult ? attemptResult.score : finalScore}
                 total={attemptResult ? attemptResult.total : (mcqQuestions.length + (theoryQuestions.length * 2))}
+                breakdown={breakdown}
+                onReviewFlashcards={(topic) =>
+                  navigate(
+                    quizData.quiz.class_id
+                      ? `/classes/${quizData.quiz.class_id}/flashcards/study${topic ? `?topic=${encodeURIComponent(topic)}` : ""}`
+                      : "/flashcards"
+                  )
+                }
+                onPracticeQuiz={(topic) =>
+                  navigate(
+                    quizData.quiz.class_id
+                      ? `/quizzes?class_id=${quizData.quiz.class_id}${topic ? `&topic=${encodeURIComponent(topic)}` : ""}`
+                      : "/quizzes"
+                  )
+                }
                 onGoBack={() => navigate("/quizzes/history")}
             />
         )}

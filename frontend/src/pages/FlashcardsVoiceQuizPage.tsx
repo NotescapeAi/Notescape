@@ -16,13 +16,13 @@ export default function FlashcardsVoiceQuizPage() {
 
   return (
     <AppShell
-      title="Voice Quiz Mode"
-      breadcrumbs={["Flashcards", "Voice Quiz"]}
-      subtitle="Hear, answer, rate, repeat."
+      title="Voice Quiz"
       backLabel="Back to Flashcards"
       backTo={classId ? `/classes/${classId}/flashcards` : "/classes"}
+      headerMaxWidthClassName="max-w-[1040px]"
+      contentGapClassName="gap-5"
     >
-      <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6">
+      <div className="mx-auto flex w-full max-w-[1040px] flex-col">
         <VoiceQuizMode
           classId={classNum}
           initialCards={Array.isArray(state.cards) ? state.cards : undefined}

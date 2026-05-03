@@ -1,0 +1,253 @@
+import { createHotContext as __vite__createHotContext } from "/@vite/client";import.meta.hot = __vite__createHotContext("/src/components/Footer.tsx");import __vite__cjsImport0_react_jsxDevRuntime from "/node_modules/.vite/deps/react_jsx-dev-runtime.js?v=299a1942"; const jsxDEV = __vite__cjsImport0_react_jsxDevRuntime["jsxDEV"];
+import * as RefreshRuntime from "/@react-refresh";
+const inWebWorker = typeof WorkerGlobalScope !== "undefined" && self instanceof WorkerGlobalScope;
+let prevRefreshReg;
+let prevRefreshSig;
+if (import.meta.hot && !inWebWorker) {
+  if (!window.$RefreshReg$) {
+    throw new Error(
+      "@vitejs/plugin-react can't detect preamble. Something is wrong."
+    );
+  }
+  prevRefreshReg = window.$RefreshReg$;
+  prevRefreshSig = window.$RefreshSig$;
+  window.$RefreshReg$ = RefreshRuntime.getRefreshReg("C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/Footer.tsx");
+  window.$RefreshSig$ = RefreshRuntime.createSignatureFunctionForTransform;
+}
+import { Link } from "/node_modules/.vite/deps/react-router-dom.js?v=299a1942";
+import BrandLogo from "/src/components/BrandLogo.tsx?t=1777423209163";
+import "/src/components/footer.css?t=1777440689627";
+const Footer = () => {
+  return /* @__PURE__ */ jsxDEV("footer", { className: "ns-premium-footer", children: /* @__PURE__ */ jsxDEV("div", { className: "container footer-content", children: [
+    /* @__PURE__ */ jsxDEV("div", { className: "footer-grid", children: [
+      /* @__PURE__ */ jsxDEV("div", { className: "footer-brand-col", children: [
+        /* @__PURE__ */ jsxDEV(BrandLogo, { variant: "footer", forceTheme: "dark", className: "footer-logo" }, void 0, false, {
+          fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/Footer.tsx",
+          lineNumber: 30,
+          columnNumber: 13
+        }, this),
+        /* @__PURE__ */ jsxDEV("p", { className: "footer-tagline", children: "The AI-powered workspace that transforms how students learn, retain, and master new concepts." }, void 0, false, {
+          fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/Footer.tsx",
+          lineNumber: 31,
+          columnNumber: 13
+        }, this)
+      ] }, void 0, true, {
+        fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/Footer.tsx",
+        lineNumber: 29,
+        columnNumber: 11
+      }, this),
+      /* @__PURE__ */ jsxDEV("div", { className: "footer-links-group", children: [
+        /* @__PURE__ */ jsxDEV("div", { className: "footer-col", children: [
+          /* @__PURE__ */ jsxDEV("h4", { children: "Product" }, void 0, false, {
+            fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/Footer.tsx",
+            lineNumber: 38,
+            columnNumber: 15
+          }, this),
+          /* @__PURE__ */ jsxDEV("ul", { children: [
+            /* @__PURE__ */ jsxDEV("li", { children: /* @__PURE__ */ jsxDEV(Link, { to: "/#features", children: "Features" }, void 0, false, {
+              fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/Footer.tsx",
+              lineNumber: 40,
+              columnNumber: 21
+            }, this) }, void 0, false, {
+              fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/Footer.tsx",
+              lineNumber: 40,
+              columnNumber: 17
+            }, this),
+            /* @__PURE__ */ jsxDEV("li", { children: /* @__PURE__ */ jsxDEV(Link, { to: "/#how", children: "How it Works" }, void 0, false, {
+              fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/Footer.tsx",
+              lineNumber: 41,
+              columnNumber: 21
+            }, this) }, void 0, false, {
+              fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/Footer.tsx",
+              lineNumber: 41,
+              columnNumber: 17
+            }, this),
+            /* @__PURE__ */ jsxDEV("li", { children: /* @__PURE__ */ jsxDEV(Link, { to: "/pricing", children: "Pricing" }, void 0, false, {
+              fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/Footer.tsx",
+              lineNumber: 42,
+              columnNumber: 21
+            }, this) }, void 0, false, {
+              fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/Footer.tsx",
+              lineNumber: 42,
+              columnNumber: 17
+            }, this),
+            /* @__PURE__ */ jsxDEV("li", { children: /* @__PURE__ */ jsxDEV(Link, { to: "/login", children: "Log In" }, void 0, false, {
+              fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/Footer.tsx",
+              lineNumber: 43,
+              columnNumber: 21
+            }, this) }, void 0, false, {
+              fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/Footer.tsx",
+              lineNumber: 43,
+              columnNumber: 17
+            }, this)
+          ] }, void 0, true, {
+            fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/Footer.tsx",
+            lineNumber: 39,
+            columnNumber: 15
+          }, this)
+        ] }, void 0, true, {
+          fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/Footer.tsx",
+          lineNumber: 37,
+          columnNumber: 13
+        }, this),
+        /* @__PURE__ */ jsxDEV("div", { className: "footer-col", children: [
+          /* @__PURE__ */ jsxDEV("h4", { children: "Company" }, void 0, false, {
+            fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/Footer.tsx",
+            lineNumber: 48,
+            columnNumber: 15
+          }, this),
+          /* @__PURE__ */ jsxDEV("ul", { children: [
+            /* @__PURE__ */ jsxDEV("li", { children: /* @__PURE__ */ jsxDEV(Link, { to: "/about", children: "About Us" }, void 0, false, {
+              fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/Footer.tsx",
+              lineNumber: 50,
+              columnNumber: 21
+            }, this) }, void 0, false, {
+              fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/Footer.tsx",
+              lineNumber: 50,
+              columnNumber: 17
+            }, this),
+            /* @__PURE__ */ jsxDEV("li", { children: /* @__PURE__ */ jsxDEV(Link, { to: "/blog", children: "Blog" }, void 0, false, {
+              fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/Footer.tsx",
+              lineNumber: 51,
+              columnNumber: 21
+            }, this) }, void 0, false, {
+              fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/Footer.tsx",
+              lineNumber: 51,
+              columnNumber: 17
+            }, this),
+            /* @__PURE__ */ jsxDEV("li", { children: /* @__PURE__ */ jsxDEV(Link, { to: "/careers", children: "Careers" }, void 0, false, {
+              fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/Footer.tsx",
+              lineNumber: 52,
+              columnNumber: 21
+            }, this) }, void 0, false, {
+              fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/Footer.tsx",
+              lineNumber: 52,
+              columnNumber: 17
+            }, this),
+            /* @__PURE__ */ jsxDEV("li", { children: /* @__PURE__ */ jsxDEV(Link, { to: "/contact", children: "Contact" }, void 0, false, {
+              fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/Footer.tsx",
+              lineNumber: 53,
+              columnNumber: 21
+            }, this) }, void 0, false, {
+              fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/Footer.tsx",
+              lineNumber: 53,
+              columnNumber: 17
+            }, this)
+          ] }, void 0, true, {
+            fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/Footer.tsx",
+            lineNumber: 49,
+            columnNumber: 15
+          }, this)
+        ] }, void 0, true, {
+          fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/Footer.tsx",
+          lineNumber: 47,
+          columnNumber: 13
+        }, this),
+        /* @__PURE__ */ jsxDEV("div", { className: "footer-col", children: [
+          /* @__PURE__ */ jsxDEV("h4", { children: "Legal" }, void 0, false, {
+            fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/Footer.tsx",
+            lineNumber: 58,
+            columnNumber: 15
+          }, this),
+          /* @__PURE__ */ jsxDEV("ul", { children: [
+            /* @__PURE__ */ jsxDEV("li", { children: /* @__PURE__ */ jsxDEV(Link, { to: "/privacy", children: "Privacy Policy" }, void 0, false, {
+              fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/Footer.tsx",
+              lineNumber: 60,
+              columnNumber: 21
+            }, this) }, void 0, false, {
+              fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/Footer.tsx",
+              lineNumber: 60,
+              columnNumber: 17
+            }, this),
+            /* @__PURE__ */ jsxDEV("li", { children: /* @__PURE__ */ jsxDEV(Link, { to: "/terms", children: "Terms of Service" }, void 0, false, {
+              fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/Footer.tsx",
+              lineNumber: 61,
+              columnNumber: 21
+            }, this) }, void 0, false, {
+              fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/Footer.tsx",
+              lineNumber: 61,
+              columnNumber: 17
+            }, this),
+            /* @__PURE__ */ jsxDEV("li", { children: /* @__PURE__ */ jsxDEV(Link, { to: "/cookies", children: "Cookie Policy" }, void 0, false, {
+              fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/Footer.tsx",
+              lineNumber: 62,
+              columnNumber: 21
+            }, this) }, void 0, false, {
+              fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/Footer.tsx",
+              lineNumber: 62,
+              columnNumber: 17
+            }, this)
+          ] }, void 0, true, {
+            fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/Footer.tsx",
+            lineNumber: 59,
+            columnNumber: 15
+          }, this)
+        ] }, void 0, true, {
+          fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/Footer.tsx",
+          lineNumber: 57,
+          columnNumber: 13
+        }, this)
+      ] }, void 0, true, {
+        fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/Footer.tsx",
+        lineNumber: 36,
+        columnNumber: 11
+      }, this)
+    ] }, void 0, true, {
+      fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/Footer.tsx",
+      lineNumber: 28,
+      columnNumber: 9
+    }, this),
+    /* @__PURE__ */ jsxDEV("div", { className: "footer-bottom", children: [
+      /* @__PURE__ */ jsxDEV("p", { children: [
+        "© ",
+        (/* @__PURE__ */ new Date()).getFullYear(),
+        " Notescape Inc. All rights reserved."
+      ] }, void 0, true, {
+        fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/Footer.tsx",
+        lineNumber: 69,
+        columnNumber: 11
+      }, this),
+      /* @__PURE__ */ jsxDEV("div", { className: "footer-badges", children: /* @__PURE__ */ jsxDEV("span", { children: "Built for focused learning" }, void 0, false, {
+        fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/Footer.tsx",
+        lineNumber: 71,
+        columnNumber: 13
+      }, this) }, void 0, false, {
+        fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/Footer.tsx",
+        lineNumber: 70,
+        columnNumber: 11
+      }, this)
+    ] }, void 0, true, {
+      fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/Footer.tsx",
+      lineNumber: 68,
+      columnNumber: 9
+    }, this)
+  ] }, void 0, true, {
+    fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/Footer.tsx",
+    lineNumber: 27,
+    columnNumber: 7
+  }, this) }, void 0, false, {
+    fileName: "C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/Footer.tsx",
+    lineNumber: 26,
+    columnNumber: 5
+  }, this);
+};
+_c = Footer;
+export default Footer;
+var _c;
+$RefreshReg$(_c, "Footer");
+if (import.meta.hot && !inWebWorker) {
+  window.$RefreshReg$ = prevRefreshReg;
+  window.$RefreshSig$ = prevRefreshSig;
+}
+if (import.meta.hot && !inWebWorker) {
+  RefreshRuntime.__hmr_import(import.meta.url).then((currentExports) => {
+    RefreshRuntime.registerExportsForReactRefresh("C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/Footer.tsx", currentExports);
+    import.meta.hot.accept((nextExports) => {
+      if (!nextExports) return;
+      const invalidateMessage = RefreshRuntime.validateRefreshBoundaryAndEnqueueUpdate("C:/Users/Rabbiya/Desktop/Notescape/frontend/src/components/Footer.tsx", currentExports, nextExports);
+      if (invalidateMessage) import.meta.hot.invalidate(invalidateMessage);
+    });
+  });
+}
+
+//# sourceMappingURL=data:application/json;base64,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QkFBa0MsS0FBdEM7QUFBQTtBQUFBO0FBQUE7QUFBQSxtQkFBNkM7QUFBQSxZQUM3Qyx1QkFBQyxRQUFHLGlDQUFDLFFBQUssSUFBRyxVQUFTLGdDQUFsQjtBQUFBO0FBQUE7QUFBQTtBQUFBLG1CQUFrQyxLQUF0QztBQUFBO0FBQUE7QUFBQTtBQUFBLG1CQUE2QztBQUFBLFlBQzdDLHVCQUFDLFFBQUcsaUNBQUMsUUFBSyxJQUFHLFlBQVcsNkJBQXBCO0FBQUE7QUFBQTtBQUFBO0FBQUEsbUJBQWlDLEtBQXJDO0FBQUE7QUFBQTtBQUFBO0FBQUEsbUJBQTRDO0FBQUEsZUFIOUM7QUFBQTtBQUFBO0FBQUE7QUFBQSxpQkFJQTtBQUFBLGFBTkY7QUFBQTtBQUFBO0FBQUE7QUFBQSxlQU9BO0FBQUEsV0E1QkY7QUFBQTtBQUFBO0FBQUE7QUFBQSxhQTZCQTtBQUFBLFNBckNGO0FBQUE7QUFBQTtBQUFBO0FBQUEsV0FzQ0E7QUFBQSxJQUVBLHVCQUFDLFNBQUksV0FBVSxpQkFDYjtBQUFBLDZCQUFDLE9BQUU7QUFBQTtBQUFBLFNBQVEsb0JBQUlDLEtBQUssR0FBRUMsWUFBWTtBQUFBLFFBQUU7QUFBQSxXQUFwQztBQUFBO0FBQUE7QUFBQTtBQUFBLGFBQXdFO0FBQUEsTUFDeEUsdUJBQUMsU0FBSSxXQUFVLGlCQUNiLGlDQUFDLFVBQUssMENBQU47QUFBQTtBQUFBO0FBQUE7QUFBQSxhQUFnQyxLQURsQztBQUFBO0FBQUE7QUFBQTtBQUFBLGFBRUE7QUFBQSxTQUpGO0FBQUE7QUFBQTtBQUFBO0FBQUEsV0FLQTtBQUFBLE9BOUNGO0FBQUE7QUFBQTtBQUFBO0FBQUEsU0ErQ0EsS0FoREY7QUFBQTtBQUFBO0FBQUE7QUFBQSxTQWlEQTtBQUVKO0FBQUVDLEtBckRJSDtBQXVETixlQUFlQTtBQUFPLElBQUFHO0FBQUFDLGFBQUFELElBQUEiLCJuYW1lcyI6WyJMaW5rIiwiQnJhbmRMb2dvIiwiRm9vdGVyIiwiRGF0ZSIsImdldEZ1bGxZZWFyIiwiX2MiLCIkUmVmcmVzaFJlZyQiXSwiaWdub3JlTGlzdCI6W10sInNvdXJjZXMiOlsiRm9vdGVyLnRzeCJdLCJzb3VyY2VzQ29udGVudCI6WyJpbXBvcnQgeyBMaW5rIH0gZnJvbSBcInJlYWN0LXJvdXRlci1kb21cIjtcbmltcG9ydCBCcmFuZExvZ28gZnJvbSBcIi4vQnJhbmRMb2dvXCI7XG5pbXBvcnQgXCIuL2Zvb3Rlci5jc3NcIjtcblxuY29uc3QgRm9vdGVyOiBSZWFjdC5GQyA9ICgpID0+IHtcbiAgcmV0dXJuIChcbiAgICA8Zm9vdGVyIGNsYXNzTmFtZT1cIm5zLXByZW1pdW0tZm9vdGVyXCI+XG4gICAgICA8ZGl2IGNsYXNzTmFtZT1cImNvbnRhaW5lciBmb290ZXItY29udGVudFwiPlxuICAgICAgICA8ZGl2IGNsYXNzTmFtZT1cImZvb3Rlci1ncmlkXCI+XG4gICAgICAgICAgPGRpdiBjbGFzc05hbWU9XCJmb290ZXItYnJhbmQtY29sXCI+XG4gICAgICAgICAgICA8QnJhbmRMb2dvIHZhcmlhbnQ9XCJmb290ZXJcIiBmb3JjZVRoZW1lPVwiZGFya1wiIGNsYXNzTmFtZT1cImZvb3Rlci1sb2dvXCIgLz5cbiAgICAgICAgICAgIDxwIGNsYXNzTmFtZT1cImZvb3Rlci10YWdsaW5lXCI+XG4gICAgICAgICAgICAgIFRoZSBBSS1wb3dlcmVkIHdvcmtzcGFjZSB0aGF0IHRyYW5zZm9ybXMgaG93IHN0dWRlbnRzIGxlYXJuLCByZXRhaW4sIGFuZCBtYXN0ZXIgbmV3IGNvbmNlcHRzLlxuICAgICAgICAgICAgPC9wPlxuICAgICAgICAgIDwvZGl2PlxuXG4gICAgICAgICAgPGRpdiBjbGFzc05hbWU9XCJmb290ZXItbGlua3MtZ3JvdXBcIj5cbiAgICAgICAgICAgIDxkaXYgY2xhc3NOYW1lPVwiZm9vdGVyLWNvbFwiPlxuICAgICAgICAgICAgICA8aDQ+UHJvZHVjdDwvaDQ+XG4gICAgICAgICAgICAgIDx1bD5cbiAgICAgICAgICAgICAgICA8bGk+PExpbmsgdG89XCIvI2ZlYXR1cmVzXCI+RmVhdHVyZXM8L0xpbms+PC9saT5cbiAgICAgICAgICAgICAgICA8bGk+PExpbmsgdG89XCIvI2hvd1wiPkhvdyBpdCBXb3JrczwvTGluaz48L2xpPlxuICAgICAgICAgICAgICAgIDxsaT48TGluayB0bz1cIi9wcmljaW5nXCI+UHJpY2luZzwvTGluaz48L2xpPlxuICAgICAgICAgICAgICAgIDxsaT48TGluayB0bz1cIi9sb2dpblwiPkxvZyBJbjwvTGluaz48L2xpPlxuICAgICAgICAgICAgICA8L3VsPlxuICAgICAgICAgICAgPC9kaXY+XG5cbiAgICAgICAgICAgIDxkaXYgY2xhc3NOYW1lPVwiZm9vdGVyLWNvbFwiPlxuICAgICAgICAgICAgICA8aDQ+Q29tcGFueTwvaDQ+XG4gICAgICAgICAgICAgIDx1bD5cbiAgICAgICAgICAgICAgICA8bGk+PExpbmsgdG89XCIvYWJvdXRcIj5BYm91dCBVczwvTGluaz48L2xpPlxuICAgICAgICAgICAgICAgIDxsaT48TGluayB0bz1cIi9ibG9nXCI+QmxvZzwvTGluaz48L2xpPlxuICAgICAgICAgICAgICAgIDxsaT48TGluayB0bz1cIi9jYXJlZXJzXCI+Q2FyZWVyczwvTGluaz48L2xpPlxuICAgICAgICAgICAgICAgIDxsaT48TGluayB0bz1cIi9jb250YWN0XCI+Q29udGFjdDwvTGluaz48L2xpPlxuICAgICAgICAgICAgICA8L3VsPlxuICAgICAgICAgICAgPC9kaXY+XG5cbiAgICAgICAgICAgIDxkaXYgY2xhc3NOYW1lPVwiZm9vdGVyLWNvbFwiPlxuICAgICAgICAgICAgICA8aDQ+TGVnYWw8L2g0PlxuICAgICAgICAgICAgICA8dWw+XG4gICAgICAgICAgICAgICAgPGxpPjxMaW5rIHRvPVwiL3ByaXZhY3lcIj5Qcml2YWN5IFBvbGljeTwvTGluaz48L2xpPlxuICAgICAgICAgICAgICAgIDxsaT48TGluayB0bz1cIi90ZXJtc1wiPlRlcm1zIG9mIFNlcnZpY2U8L0xpbms+PC9saT5cbiAgICAgICAgICAgICAgICA8bGk+PExpbmsgdG89XCIvY29va2llc1wiPkNvb2tpZSBQb2xpY3k8L0xpbms+PC9saT5cbiAgICAgICAgICAgICAgPC91bD5cbiAgICAgICAgICAgIDwvZGl2PlxuICAgICAgICAgIDwvZGl2PlxuICAgICAgICA8L2Rpdj5cblxuICAgICAgICA8ZGl2IGNsYXNzTmFtZT1cImZvb3Rlci1ib3R0b21cIj5cbiAgICAgICAgICA8cD4mY29weTsge25ldyBEYXRlKCkuZ2V0RnVsbFllYXIoKX0gTm90ZXNjYXBlIEluYy4gQWxsIHJpZ2h0cyByZXNlcnZlZC48L3A+XG4gICAgICAgICAgPGRpdiBjbGFzc05hbWU9XCJmb290ZXItYmFkZ2VzXCI+XG4gICAgICAgICAgICA8c3Bhbj5CdWlsdCBmb3IgZm9jdXNlZCBsZWFybmluZzwvc3Bhbj5cbiAgICAgICAgICA8L2Rpdj5cbiAgICAgICAgPC9kaXY+XG4gICAgICA8L2Rpdj5cbiAgICA8L2Zvb3Rlcj5cbiAgKTtcbn07XG5cbmV4cG9ydCBkZWZhdWx0IEZvb3RlcjtcbiJdLCJmaWxlIjoiQzovVXNlcnMvUmFiYml5YS9EZXNrdG9wL05vdGVzY2FwZS9mcm9udGVuZC9zcmMvY29tcG9uZW50cy9Gb290ZXIudHN4In0=

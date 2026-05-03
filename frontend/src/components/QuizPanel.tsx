@@ -6,6 +6,7 @@ import { createQuizJob, getQuizJobStatus, type FileRow } from "../lib/api";
 interface QuizPanelProps {
   classId: number;
   files: FileRow[];
+  topicFocus?: string | null;
   onQuizCreated?: () => void | Promise<void>;
 }
 
@@ -32,7 +33,7 @@ function canUseForQuiz(file: FileRow) {
   return chunkCount > 0 || status !== "FAILED";
 }
 
-export default function QuizPanel({ classId, files, onQuizCreated }: QuizPanelProps) {
+export default function QuizPanel({ classId, files, topicFocus, onQuizCreated }: QuizPanelProps) {
   const [fileId, setFileId] = useState("");
   const [mcqCount, setMcqCount] = useState(10);
   const [subjectiveCount, setSubjectiveCount] = useState(5);
@@ -164,6 +165,7 @@ export default function QuizPanel({ classId, files, onQuizCreated }: QuizPanelPr
         mcq_count: mcqCount,
         types,
         difficulty,
+        topic: topicFocus || undefined,
       });
 
       setJobId(job.job_id);
@@ -297,6 +299,11 @@ export default function QuizPanel({ classId, files, onQuizCreated }: QuizPanelPr
           <p className="px-1 text-xs text-amber-600 dark:text-amber-400">
             This PDF is still being processed and cannot generate quizzes yet.
           </p>
+        )}
+        {topicFocus && (
+          <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)] px-4 py-3 text-xs font-semibold text-[var(--text-main)]">
+            Practice focus: {topicFocus}
+          </div>
         )}
       </div>
 

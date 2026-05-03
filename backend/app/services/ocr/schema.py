@@ -18,6 +18,7 @@ PageType = Literal[
 
 class ExtractionMethod(str, Enum):
     NATIVE_PDF = "native_pdf"
+    NATIVE_TEXT = "native_text"
     OCR = "ocr"
     MIXED = "mixed"
     PARTIAL = "partial"

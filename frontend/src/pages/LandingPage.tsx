@@ -215,7 +215,6 @@ export default function LandingPage() {
                 <Link to="/get-started" className="btn-premium">
                   Get Started for Free
                 </Link>
-                <p className="cta-no-card text-xs mt-4 opacity-70">No credit card required. Cancel anytime.</p>
               </div>
             </div>
           </div>

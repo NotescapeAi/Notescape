@@ -30,29 +30,7 @@ type Msg = ChatMessageType & {
   web_sources?: WebSource[];
 };
 
-const MESSAGE_CACHE_PREFIX = "chat_session_messages:";
 const DRAFT_SCOPE_KEY = "__draft__";
-
-function buildSessionKey(sessionId: string) {
-  return `${MESSAGE_CACHE_PREFIX}${sessionId}`;
-}
-function loadSessionMessages(sessionId: string | null): Msg[] {
-  if (!sessionId || typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(buildSessionKey(sessionId));
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch { return []; }
-}
-function persistSessionMessages(sessionId: string, messages: Msg[]) {
-  if (!sessionId || typeof window === "undefined") return;
-  try { window.localStorage.setItem(buildSessionKey(sessionId), JSON.stringify(messages)); } catch {}
-}
-function clearSessionMessagesCache(sessionId: string | null) {
-  if (!sessionId || typeof window === "undefined") return;
-  try { window.localStorage.removeItem(buildSessionKey(sessionId)); } catch {}
-}
 const EMPTY_SESSION_TITLE = "New Chat";
 
 const TITLE_STOP_WORDS = new Set([
@@ -297,6 +275,7 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
   const [errorBanner, setErrorBanner] = useState<string | null>(null);
   const [busyAsk, setBusyAsk] = useState(false);
   const [busySessions, setBusySessions] = useState(false);
+  const [busyMessages, setBusyMessages] = useState(false);
   const [busyFiles, setBusyFiles] = useState(false);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [showRightPanel, setShowRightPanel] = useState(true);
@@ -322,22 +301,18 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
   }, []);
 
   useEffect(() => {
-    if (!classId) { 
-      setSessions([]); 
-      setActiveSessionId(null); 
-      setMessages([]); 
-      setFiles([]); 
-      setScopeBySession({});
-      return; 
-    }
+    let cancelled = false;
     (async () => {
       setBusySessions(true);
       try {
-        const sess = await listChatSessions(classId);
+        const sess = await listChatSessions(classId ?? null);
         // Filter out Study Assistant sessions — they have document_id or [Study] prefix
-        const chatOnly = sess.filter(s =>
-          !(s as any).document_id && !s.title.startsWith("[Study]")
-        );
+        if (cancelled) return;
+        const chatOnly = (sess || []).filter(s => {
+          if ((s as any).document_id || s.title.startsWith("[Study]")) return false;
+          if (classId == null) return !s.class_id;
+          return s.class_id === classId;
+        });
         setSessions(chatOnly);
         
         // Only reopen a session when it is explicitly provided in the URL.
@@ -345,12 +320,29 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
         const fromUrl = searchParams.get("session");
         const next = fromUrl ? chatOnly.find(s => s.id === fromUrl)?.id ?? null : null;
         setActiveSessionId(next);
-      } finally { setBusySessions(false); }
+        if (!next) setMessages([]);
+      } catch (err) {
+        if (!cancelled) {
+          if (import.meta.env.DEV) console.error("[chat] failed to load sessions", err);
+          setSessions([]);
+          setActiveSessionId(null);
+          setMessages([]);
+        }
+      } finally {
+        if (!cancelled) setBusySessions(false);
+      }
     })();
-  }, [classId, searchParams]); // searchParams dependency helps sync with URL changes
+    return () => {
+      cancelled = true;
+    };
+  }, [classId, searchParams]);
 
   useEffect(() => {
-    if (!classId) return;
+    if (!classId) {
+      setFiles([]);
+      setScopeBySession({});
+      return;
+    }
     (async () => {
       setBusyFiles(true);
       try { setFiles(await listFiles(classId)); } finally { setBusyFiles(false); }
@@ -358,15 +350,18 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
   }, [classId]);
 
   useEffect(() => {
-    if (!activeSessionId) { setMessages([]); return; }
-    
-    // Load cached messages first for speed
-    const cached = loadSessionMessages(activeSessionId);
-    if (cached.length) setMessages(cached);
-    
+    if (!activeSessionId) {
+      setMessages([]);
+      setBusyMessages(false);
+      return;
+    }
+    let cancelled = false;
+    const sessionId = activeSessionId;
+    setBusyMessages(true);
     (async () => {
       try {
-        const msgs = await listChatSessionMessages(activeSessionId);
+        const msgs = await listChatSessionMessages(sessionId, classId ?? undefined);
+        if (cancelled) return;
         const normalized = (msgs || []).map(m => ({
           ...m, citations: m.citations ?? undefined,
           selected_text: m.selected_text ?? null,
@@ -374,32 +369,37 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
           image_attachment: m.image_attachment ?? null,
         }));
         setMessages(normalized);
-        persistSessionMessages(activeSessionId, normalized);
-        const currentSession = sessions.find(s => s.id === activeSessionId);
+        const currentSession = sessions.find(s => s.id === sessionId);
         const firstUser = normalized.find(m => m.role === "user" && m.content.trim());
         if (currentSession && firstUser && isGenericSessionTitle(currentSession.title)) {
           const title = generateTopicTitle(firstUser.content);
           if (title !== EMPTY_SESSION_TITLE) {
-            updateChatSession(activeSessionId, { title }).catch(console.error);
-            setSessions(prev => prev.map(s => s.id === activeSessionId ? { ...s, title } : s));
+            updateChatSession(sessionId, { title }).catch(console.error);
+            setSessions(prev => prev.map(s => s.id === sessionId ? { ...s, title } : s));
           }
         }
-      } catch {
-        // If fetch fails, keep showing cached
-        if (!cached.length) {
-          // Maybe show error?
+      } catch (err) {
+        if (!cancelled) {
+          if (import.meta.env.DEV) console.error("[chat] failed to load messages", err);
+          setErrorBanner("Couldn't load that chat. Try again.");
+          setMessages([]);
         }
+      } finally {
+        if (!cancelled) setBusyMessages(false);
       }
     })();
 
     // Update URL without full reload
     setSearchParams(prev => { 
       const newParams = new URLSearchParams(prev);
-      newParams.set("session", activeSessionId);
+      newParams.set("session", sessionId);
       return newParams;
     }, { replace: true });
 
-  }, [activeSessionId, classId]);
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSessionId, classId, setSearchParams]);
 
   useEffect(() => {
     if (!isAtBottom) return;
@@ -469,6 +469,7 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
     setInternalClassId(nextClassId);
     setActiveSessionId(null);
     setMessages([]);
+    setInput("");
     setSelectedText("");
     setFileSearch("");
     setScopeBySession({});
@@ -482,32 +483,30 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
 
   /* ─── Session management ─── */
   async function startNewSession() {
-    if (!classId) {
-      setErrorBanner("Choose a class context before starting a chat.");
-      return;
-    }
-    const draftScope = scopeBySession[DRAFT_SCOPE_KEY] ?? [];
-    const s = await createChatSession({ class_id: classId, title: EMPTY_SESSION_TITLE });
-    setSessions(prev => [s, ...prev]);
-    if (draftScope.length) {
-      setScopeBySession(prev => ({ ...prev, [s.id]: draftScope, [DRAFT_SCOPE_KEY]: [] }));
-    }
-    setActiveSessionId(s.id);
+    setActiveSessionId(null);
+    setMessages([]);
+    setInput("");
+    setSelectedText("");
+    setErrorBanner(null);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.delete("session");
+      return next;
+    }, { replace: true });
   }
 
   async function confirmDelete() {
-    if (!deleteTarget || !classId) return;
+    if (!deleteTarget) return;
     const sessionId = deleteTarget;
     setDeleteTarget(null);
     try {
-      await deleteChatSession(sessionId, classId);
+      await deleteChatSession(sessionId, classId ?? undefined);
       setSessions(prev => prev.filter(s => s.id !== sessionId));
       if (activeSessionId === sessionId) {
         const next = sessions.find(s => s.id !== sessionId)?.id ?? null;
         setActiveSessionId(next);
         if (!next) setMessages([]);
       }
-      clearSessionMessagesCache(sessionId);
       delete placeholderTitlesRef.current[sessionId];
     } catch { setErrorBanner("Couldn't delete chat. Try again."); }
   }
@@ -535,10 +534,6 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
 
   /* ─── Send message ─── */
   async function onAsk() {
-    if (!classId) {
-      setErrorBanner("Choose a class context before asking Study Assistant.");
-      return;
-    }
     if (!input.trim()) return;
     if (isListening) stopListening();
     stopSpeech();
@@ -555,17 +550,17 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
     let sessionId = activeSessionId;
     if (!sessionId) {
       const placeholderTitle = EMPTY_SESSION_TITLE;
-      const s = await createChatSession({ class_id: classId, title: placeholderTitle });
+      const s = await createChatSession({ class_id: classId ?? null, title: placeholderTitle });
       placeholderTitlesRef.current[s.id] = placeholderTitle;
       setSessions(prev => [s, ...prev]);
       sessionId = s.id;
-      if (scopeFileIds.length) {
+      if (classId && scopeFileIds.length) {
         setScopeBySession(prev => ({ ...prev, [s.id]: scopeFileIds, [DRAFT_SCOPE_KEY]: [] }));
       }
       setActiveSessionId(s.id);
     }
 
-    setMessages(prev => { const next = [...prev, userMsg]; persistSessionMessages(sessionId!, next); return next; });
+    setMessages(prev => [...prev, userMsg]);
     setInput("");
     setBusyAsk(true);
 
@@ -575,11 +570,11 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
         : userMsg.content;
 
       const res = await chatAsk({
-        class_id: classId,
+        class_id: classId ?? null,
         question,
         top_k: 8,
-        file_ids: scopeFileIds.length ? scopeFileIds : undefined,
-        mode: chatMode,
+        file_ids: classId && scopeFileIds.length ? scopeFileIds : undefined,
+        mode: classId ? chatMode : "general",
       });
 
       const fullAnswer = (res.answer || "").trim() || "Not found in the uploaded material.";
@@ -602,11 +597,12 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
 
       const saved = await addChatMessages({
         session_id: sessionId!,
+        class_id: classId ?? undefined,
         user_content: userMsg.content,
         assistant_content: fullAnswer,
         citations: res.citations ?? null,
         selected_text: selectedText || null,
-        file_scope: scopeFileIds.length ? scopeFileIds : null,
+        file_scope: classId && scopeFileIds.length ? scopeFileIds : null,
       });
 
       if (Array.isArray(saved?.messages)) {
@@ -617,7 +613,6 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
           image_attachment: m.image_attachment ?? null,
         }));
         setMessages(normalized);
-        persistSessionMessages(sessionId!, normalized);
       }
 
       setSelectedText("");
@@ -637,8 +632,21 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
         }
         return { ...s, updated_at: new Date().toISOString() };
       }));
-    } catch {
-      setErrorBanner("Couldn't save that message. Please try again.");
+    } catch (err) {
+      try {
+        await addChatMessages({
+          session_id: sessionId!,
+          class_id: classId ?? undefined,
+          user_content: userMsg.content,
+          assistant_content: null,
+          selected_text: selectedText || null,
+          file_scope: classId && scopeFileIds.length ? scopeFileIds : null,
+        });
+      } catch (saveErr) {
+        if (import.meta.env.DEV) console.error("[chat] failed to save user message after assistant error", saveErr);
+      }
+      if (import.meta.env.DEV) console.error("[chat] ask failed", err);
+      setErrorBanner("Couldn't finish that response. Your message was saved; please try again.");
       setMessages(prev => prev.filter(m => m.role !== "assistant" || m.content !== ""));
     } finally {
       setBusyAsk(false);
@@ -662,16 +670,24 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
   const statusLabel = (status?: string | null) => {
     const s = (status || "UPLOADED").toUpperCase();
     if (s === "FAILED") return "Failed";
-    if (s === "INDEXED") return "Ready";
+    if (s === "INDEXED" || s === "READY") return "Ready";
+    if (s === "EXTRACTING_TEXT" || s === "RUNNING_OCR") return "Extracting text";
+    if (s === "CHUNKING" || s === "GENERATING_EMBEDDINGS") return "Indexing";
     return "Processing";
   };
 
   const activeSession = sessions.find(s => s.id === activeSessionId);
   const showVoiceBar = playingMessageId !== null;
+  const selectedClassName = classId ? classes.find(c => c.id === classId)?.name ?? "Selected class" : "";
+  const classHelperText = classes.length === 0
+    ? "No classes found. Create a class first."
+    : "Optional: select a class to chat with your study materials.";
 
   const suggestions = [
-    { icon: "🎯", label: "Create a quiz from notes", desc: "Test your knowledge" },
-    { icon: "💡", label: "Explain key concepts", desc: "Deep-dive into topics" },
+    { label: "Summarize this class", desc: "Get a quick overview of key topics" },
+    { label: "Explain a concept", desc: "Deep-dive into a specific idea" },
+    { label: "Generate a quiz", desc: "Test your knowledge on the material" },
+    { label: "List the key points", desc: "Pull the essentials from your files" },
   ];
 
   return (
@@ -719,10 +735,10 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
 
 
 
-      <div className="flex h-full min-h-0 overflow-hidden bg-[var(--surface-2,#f4f4f6)] dark:bg-[var(--bg,#0d0d10)]">
+      <div className="flex h-full min-h-0 overflow-hidden rounded-[var(--radius-xl)] border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow-sm)]">
 
         {/* ── LEFT SIDEBAR ── */}
-        <aside className="w-[268px] flex-shrink-0 border-r border-[var(--border)] bg-[var(--surface)] hidden md:flex flex-col overflow-hidden">
+        <aside className="hidden w-[260px] flex-shrink-0 flex-col overflow-hidden border-r border-[var(--border)] bg-[var(--surface)] md:flex">
           <ChatSidebar
             sessions={sessions}
             activeSessionId={activeSessionId}
@@ -735,7 +751,7 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
         </aside>
 
         {/* ── MAIN CHAT ── */}
-        <main className="relative flex-1 flex min-h-0 flex-col min-w-0 bg-[var(--bg,#ffffff)] dark:bg-[var(--bg)]">
+        <main className="relative flex min-w-0 min-h-0 flex-1 flex-col bg-[var(--surface)]">
 
           {/* Floating Voice Player Bar */}
           {showVoiceBar && (
@@ -751,46 +767,58 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
           )}
 
           {/* Header */}
-          <header className="flex-shrink-0 flex items-center justify-between px-5 py-3 border-b border-[var(--border)] bg-[var(--surface)]/95 backdrop-blur-md z-10">
-            <div className="flex items-center gap-3 min-w-0 flex-1">
-              {/* AI avatar with pulse */}
-              <div className="flex-shrink-0 w-9 h-9 rounded-xl bg-[var(--primary)] flex items-center justify-center shadow-sm ai-pulse">
-                <svg className="w-4.5 h-4.5 text-white w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.7}>
+          <header className="z-10 flex flex-shrink-0 flex-col gap-3 border-b border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex min-w-0 flex-1 items-center gap-3">
+              <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--primary-soft)] text-[var(--primary)]">
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z" />
                 </svg>
               </div>
 
               <div className="min-w-0 flex-1">
-                <h2 className="text-sm font-semibold text-[var(--text-main)] truncate leading-tight">
+                <h2 className="truncate text-[14px] font-semibold leading-tight text-[var(--text-main)]">
                   {activeSession?.title || EMPTY_SESSION_TITLE}
                 </h2>
-                <div className="flex items-center gap-1.5 mt-0.5">
-                  <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${classId ? "bg-emerald-500" : "bg-amber-400"}`} />
+                <div className="mt-1 flex items-center gap-2">
                   {isClassLocked ? (
-                     <span className="text-[11px] text-[var(--text-secondary)]">
-                       {classes.find(c => c.id === classId)?.name || "Class Context"}
-                     </span>
+                    <span className="inline-flex min-w-0 max-w-full items-center gap-1.5 text-[11.5px] text-[var(--text-muted)]">
+                      <span className="font-semibold uppercase tracking-wide text-[var(--text-muted-soft)]">
+                        Class
+                      </span>
+                      <span className="truncate font-medium text-[var(--text-main)]" title={selectedClassName}>
+                        {selectedClassName || "Class context"}
+                      </span>
+                    </span>
                   ) : (
-                    <select
-                      value={classId ?? ""}
-                      onChange={e => handleClassChange(e.target.value ? Number(e.target.value) : null)}
-                      className="text-[11px] text-[var(--text-secondary)] bg-transparent border-none p-0 focus:ring-0 cursor-pointer appearance-none max-w-[200px] truncate"
-                      style={{ backgroundImage: "none" }}
-                    >
-                      <option value="">Select Class Context…</option>
-                      {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                    </select>
+                    <label className="inline-flex min-w-0 max-w-full items-center gap-1.5 text-[11.5px] text-[var(--text-muted)]">
+                      <span className="font-semibold uppercase tracking-wide text-[var(--text-muted-soft)]">
+                        Class
+                      </span>
+                      <select
+                        value={classId ?? ""}
+                        onChange={e => handleClassChange(e.target.value ? Number(e.target.value) : null)}
+                        disabled={classes.length === 0}
+                        className="h-7 min-w-[160px] max-w-[260px] cursor-pointer truncate rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface-2)] px-2 py-0 pr-6 text-[11.5px] font-medium text-[var(--text-main)] shadow-none outline-none focus:border-[color-mix(in_srgb,var(--primary)_55%,var(--border))] focus:ring-2 focus:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-60"
+                        aria-label="Select a class"
+                      >
+                        <option value="">Select a class</option>
+                        {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </select>
+                    </label>
+                  )}
+                  {!classId && (
+                    <span className="hidden text-[11px] text-[var(--text-muted-soft)] sm:inline">
+                      {classHelperText}
+                    </span>
                   )}
                 </div>
               </div>
             </div>
 
-            <div className="flex items-center gap-1 flex-shrink-0">
-              {/* Voice status indicator when speaking */}
+            <div className="flex flex-shrink-0 flex-wrap items-center gap-1.5">
               {isSpeaking && (
-                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[var(--primary)]/8 mr-1">
-                  <div className="flex gap-[3px] items-center h-3.5">
+                <div className="mr-1 flex items-center gap-1.5 rounded-full bg-[var(--primary-soft)] px-2.5 py-1">
+                  <div className="flex h-3 items-center gap-[3px]">
                     {[0,1,2].map(i => (
                       <div key={i} className="voice-wave-bar" style={{ height: `${8 + i * 2}px`, animation: `voiceBar 0.7s ease-in-out infinite`, animationDelay: `${i * 0.12}s` }} />
                     ))}
@@ -799,47 +827,50 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
                 </div>
               )}
 
-              {/* Mode toggle */}
-              <div className="flex items-center gap-0.5 p-0.5 rounded-xl border border-[var(--border)] bg-[var(--surface-2)]">
+              {/* Mode selector */}
+              <div className="flex items-center gap-0.5 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-2)] p-0.5">
                 {(["auto", "rag", "general"] as ChatMode[]).map((m) => (
                   <button
                     key={m}
                     onClick={() => setChatMode(m)}
-                    title={m === "auto" ? "Smart mode — auto-detects PDF vs general" : m === "rag" ? "PDF-only mode" : "General AI mode"}
-                    className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold transition-all duration-150 ${
+                    title={m === "auto" ? "Smart mode" : m === "rag" ? "Documents only" : "General AI"}
+                    className={`h-7 rounded-[var(--radius-sm)] px-2.5 text-[11px] font-semibold transition ${
                       chatMode === m
-                        ? "bg-[var(--primary)] text-white shadow-sm"
-                        : "text-[var(--text-secondary)] hover:text-[var(--text-main)]"
+                        ? "bg-[var(--surface)] text-[var(--text-main)] shadow-[var(--shadow-xs)]"
+                        : "text-[var(--text-muted)] hover:text-[var(--text-main)]"
                     }`}
                   >
-                    {m === "auto" ? "✦ Auto" : m === "rag" ? "📄 PDF" : "🌍 AI"}
+                    {m === "auto" ? "Auto" : m === "rag" ? "PDF" : "AI"}
                   </button>
                 ))}
               </div>
 
               {/* Citations toggle */}
-              <label className="flex items-center gap-2 cursor-pointer px-3 py-1.5 rounded-xl hover:bg-[var(--surface-2)] transition-colors text-[11px] font-medium text-[var(--text-secondary)] select-none">
-                <div className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors duration-200 ${sourcesEnabled ? "bg-[var(--primary)]" : "bg-[var(--border)]"}`}>
-                  <span className={`inline-block h-3 w-3 rounded-full bg-white shadow-sm transition-transform duration-200 ${sourcesEnabled ? "translate-x-3.5" : "translate-x-0.5"}`} />
+              <label className="inline-flex cursor-pointer select-none items-center gap-1.5 rounded-[var(--radius-sm)] px-2 py-1 text-[11px] font-medium text-[var(--text-muted)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text-main)]">
+                <span className={`relative inline-flex h-4 w-7 items-center rounded-full transition ${sourcesEnabled ? "bg-[var(--primary)]" : "bg-[var(--border-strong)]"}`}>
+                  <span className={`inline-block h-3 w-3 rounded-full bg-white shadow-sm transition-transform ${sourcesEnabled ? "translate-x-3.5" : "translate-x-0.5"}`} />
                   <input type="checkbox" checked={sourcesEnabled} onChange={toggleSources} className="sr-only" />
-                </div>
+                </span>
                 Citations
               </label>
 
-              {/* Panel toggle */}
               <button
                 onClick={() => setShowRightPanel(v => !v)}
                 title="Toggle files panel"
-                className={`p-2 rounded-xl transition-all ${showRightPanel ? "bg-[var(--primary)]/10 text-[var(--primary)]" : "text-[var(--text-secondary)] hover:bg-[var(--surface-2)]"}`}
+                aria-pressed={showRightPanel}
+                className={`flex h-8 w-8 items-center justify-center rounded-[var(--radius-sm)] transition ${
+                  showRightPanel
+                    ? "bg-[var(--primary-soft)] text-[var(--primary)]"
+                    : "text-[var(--text-muted)] hover:bg-[var(--surface-2)] hover:text-[var(--text-main)]"
+                }`}
               >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
                   <rect x="3" y="3" width="18" height="18" rx="2.5" />
                   <path strokeLinecap="round" d="M15 3v18" />
                 </svg>
               </button>
             </div>
           </header>
-
           {/* Error banner */}
           {errorBanner && (
             <div className="mx-4 mt-3 flex items-center gap-3 rounded-xl border border-red-200 dark:border-red-800/40 bg-red-50 dark:bg-red-900/10 px-4 py-2.5 msg-appear">
@@ -868,43 +899,43 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
               if (el) setIsAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 80);
             }}
           >
-            {messages.length === 0 ? (
-              /* Empty state */
-              <div className="flex flex-col items-center justify-center h-full min-h-[60vh] text-center px-4 msg-appear">
-                <div className="relative mb-8">
-                  <div className="w-20 h-20 rounded-2xl bg-[var(--primary)] flex items-center justify-center shadow-lg ai-pulse">
-                    <svg className="w-10 h-10 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.4}>
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z" />
-                    </svg>
-                  </div>
-                  <div className="absolute -inset-3  rounded-3xl  border border-[var(--primary)]/15 -z-10" />
-                  <div className="absolute -inset-7  rounded-[2.5rem] border border-[var(--primary)]/6  -z-10" />
+            {busyMessages ? (
+              <div className="flex h-full min-h-[60vh] items-center justify-center text-sm text-[var(--text-secondary)]">
+                Loading chat history...
+              </div>
+            ) : messages.length === 0 ? (
+              /* Empty state — shown only when there are no messages yet */
+              <div className="msg-appear flex h-full min-h-[56vh] flex-col items-center justify-center px-4 text-center">
+                <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-[var(--radius-xl)] bg-[var(--primary-soft)] text-[var(--primary)]">
+                  <svg className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+                  </svg>
                 </div>
 
-                <h3 className="text-2xl font-bold text-[var(--text-main)] mb-2 tracking-tight">
-                  {classId ? "What would you like to explore?" : "Welcome to Notescape AI"}
+                <h3 className="mb-1.5 text-[20px] font-semibold tracking-tight text-[var(--text-main)]">
+                  {classId ? "What would you like to explore?" : "Start a study chat"}
                 </h3>
-                <p className="text-sm text-[var(--text-secondary)] max-w-xs leading-relaxed mb-10">
+                <p className="mb-8 max-w-sm text-[13.5px] leading-relaxed text-[var(--text-muted)]">
                   {classId
                     ? "Ask about your materials, get summaries, create quizzes, or explore key concepts."
-                    : "Select a class context above, then start chatting with your study materials."}
+                    : "Ask a general question, or select a class to ground answers in your materials."}
                 </p>
 
                 {classId && (
-                  <div className="grid grid-cols-2 gap-3 w-full max-w-lg">
-                    {suggestions.map((s, i) => (
+                  <div className="grid w-full max-w-lg grid-cols-1 gap-2 sm:grid-cols-2">
+                    {suggestions.map((s) => (
                       <button
-                        key={i}
+                        key={s.label}
                         onClick={() => setInput(s.label)}
-                        className="suggestion-card group flex items-start gap-3 p-4 rounded-2xl border border-[var(--border)] bg-[var(--surface)] hover:border-[var(--primary)]/40 hover:shadow-lg text-left transition-all duration-200"
+                        className="suggestion-card group flex items-start gap-2.5 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] p-3 text-left transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-2)]"
                       >
-                        <span className="text-xl mt-0.5 flex-shrink-0">{s.icon}</span>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-xs font-semibold text-[var(--text-main)] mb-0.5 group-hover:text-[var(--primary)] transition-colors leading-snug">{s.label}</div>
-                          <div className="text-[10px] text-[var(--text-secondary)]">{s.desc}</div>
+                        <div className="min-w-0 flex-1">
+                          <div className="mb-0.5 text-[13px] font-semibold leading-snug text-[var(--text-main)] transition-colors group-hover:text-[var(--primary)]">
+                            {s.label}
+                          </div>
+                          <div className="text-[11.5px] text-[var(--text-muted)]">{s.desc}</div>
                         </div>
-                        <svg className="suggestion-icon w-3.5 h-3.5 text-[var(--primary)] mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                        <svg className="suggestion-icon mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-[var(--primary)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                           <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
                         </svg>
                       </button>
@@ -925,20 +956,20 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
                     />
                     {/* Answer mode badge + web sources — only on assistant messages */}
                     {m.role === "assistant" && (
-                      <div className="flex flex-col gap-2 pl-11 pb-2 msg-appear">
-                        {/* Mode badge */}
+                      <div className="msg-appear flex flex-col gap-2 pb-2 pl-11">
                         {m.content && m.answer_mode && (
                           <div className="flex items-center gap-2">
-                            <span className={`inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full border ${
-                              m.answer_mode === "rag"
-                                ? "bg-violet-50 dark:bg-violet-900/20 text-violet-700 dark:text-violet-300 border-violet-200 dark:border-violet-800/50"
-                                : "bg-sky-50 dark:bg-sky-900/20 text-sky-700 dark:text-sky-300 border-sky-200 dark:border-sky-800/50"
-                            }`}>
-                              {m.answer_mode === "rag" ? "📄 From your PDFs" : "🌍 General knowledge"}
+                            <span
+                              className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] ${
+                                m.answer_mode === "rag"
+                                  ? "border-[color-mix(in_srgb,var(--primary)_30%,transparent)] bg-[var(--primary-soft)] text-[var(--primary)]"
+                                  : "border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-muted)]"
+                              }`}
+                            >
+                              {m.answer_mode === "rag" ? "From your documents" : "General knowledge"}
                             </span>
                           </div>
                         )}
-                        {/* Web sources */}
                         {m.answer_mode === "general" && m.web_sources && m.web_sources.length > 0 && (
                           <div className="flex flex-wrap gap-1.5">
                             {m.web_sources.map((src, i) => (
@@ -947,9 +978,9 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
                                 href={src.url}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 text-[9px] font-medium px-2 py-0.5 rounded-lg border border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)] hover:text-[var(--primary)] hover:border-[var(--primary)]/40 transition-colors max-w-[200px] truncate"
+                                className="inline-flex max-w-[220px] items-center gap-1 truncate rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface)] px-2 py-0.5 text-[10px] font-medium text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:text-[var(--primary)]"
                               >
-                                <svg className="w-2.5 h-2.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <svg className="h-2.5 w-2.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                   <path strokeLinecap="round" strokeLinejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
                                 </svg>
                                 <span className="truncate">{src.title || src.url}</span>
@@ -1015,19 +1046,26 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
                 isLoading={busyAsk}
                 isListening={isListening}
                 onToggleListening={handleMicClick}
+                disabled={false}
               />
             </div>
 
             {/* Mode hint bar */}
-            <div className="mt-0.5 max-w-3xl mx-auto flex items-center justify-center gap-2">
-              <span className={`inline-flex items-center gap-1 text-[9px] font-semibold uppercase tracking-widest px-2 py-0.5 rounded-full border transition-all ${
-                chatMode === "auto"
-                  ? "bg-[var(--primary)]/8 text-[var(--primary)] border-[var(--primary)]/20"
+            <div className="mx-auto mt-1 flex max-w-3xl items-center justify-center gap-2">
+              <span
+                className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] transition ${
+                  chatMode === "auto"
+                    ? "border-[color-mix(in_srgb,var(--primary)_30%,transparent)] bg-[var(--primary-soft)] text-[var(--primary)]"
+                    : chatMode === "rag"
+                    ? "border-[color-mix(in_srgb,var(--primary)_30%,transparent)] bg-[var(--primary-soft)] text-[var(--primary)]"
+                    : "border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-muted)]"
+                }`}
+              >
+                {chatMode === "auto"
+                  ? "Smart mode · auto-detects PDF vs general"
                   : chatMode === "rag"
-                  ? "bg-violet-50 dark:bg-violet-900/20 text-violet-600 dark:text-violet-400 border-violet-200 dark:border-violet-800/40"
-                  : "bg-sky-50 dark:bg-sky-900/20 text-sky-600 dark:text-sky-400 border-sky-200 dark:border-sky-800/40"
-              }`}>
-                {chatMode === "auto" ? "✦ Smart mode — auto-detects PDF vs general" : chatMode === "rag" ? "📄 PDF-only mode" : "🌍 General AI mode"}
+                  ? "Documents only"
+                  : "General AI mode"}
               </span>
             </div>
 
@@ -1047,84 +1085,95 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
 
         {/* ── RIGHT SIDEBAR ── */}
         {showRightPanel && (
-          <aside className="w-[272px] flex-shrink-0 border-l border-[var(--border)] bg-[var(--surface)] hidden xl:flex flex-col overflow-hidden">
-            <div className="p-4 border-b border-[var(--border)]">
-              <div className="flex items-center justify-between mb-3">
+          <aside className="hidden w-[280px] flex-shrink-0 flex-col overflow-hidden border-l border-[var(--border)] bg-[var(--surface)] xl:flex">
+            <div className="border-b border-[var(--border)] p-3">
+              <div className="mb-2.5 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded-lg bg-[var(--primary)]/10 flex items-center justify-center">
-                    <svg className="w-3.5 h-3.5 text-[var(--primary)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <div className="flex h-6 w-6 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--primary-soft)] text-[var(--primary)]">
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
                     </svg>
                   </div>
-                  <h2 className="text-xs font-semibold text-[var(--text-main)]">Context Files</h2>
+                  <h2 className="text-[12.5px] font-semibold text-[var(--text-main)]">Context files</h2>
                 </div>
                 {scopeFileIds.length > 0 && (
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[var(--primary)]/10 text-[var(--primary)]">
+                  <span className="rounded-full bg-[var(--primary-soft)] px-2 py-0.5 text-[10px] font-semibold text-[var(--primary)]">
                     {scopeFileIds.length} active
                   </span>
                 )}
               </div>
+              {classId != null && (
               <div className="relative">
-                <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--text-secondary)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <svg className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[var(--text-muted-soft)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                 </svg>
                 <input
                   value={fileSearch}
                   onChange={e => setFileSearch(e.target.value)}
                   placeholder="Filter files…"
-                  className="w-full h-9 pl-9 pr-3 rounded-xl border border-[var(--border)] bg-[var(--surface-2)] text-xs text-[var(--text-main)] placeholder:text-[var(--text-secondary)] focus:outline-none focus:border-[var(--primary)]/50 focus:ring-1 focus:ring-[var(--primary)]/20 transition-all"
+                  className="h-9 w-full rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface-2)] pl-9 pr-3 text-[12.5px] text-[var(--text-main)] placeholder:text-[var(--text-muted-soft)] focus:border-[color-mix(in_srgb,var(--primary)_55%,var(--border))] focus:ring-2 focus:ring-[var(--ring)] focus:outline-none"
                 />
               </div>
+              )}
             </div>
 
-            <div className="flex-1 overflow-y-auto chat-scrollbar p-3 space-y-1.5">
+            <div className="ns-scroll chat-scrollbar flex-1 space-y-1.5 overflow-y-auto p-2.5">
               {classId == null ? (
-                <div className="flex flex-col items-center justify-center h-32 text-[var(--text-secondary)] text-center gap-2">
-                  <svg className="w-8 h-8 opacity-25" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <div className="flex h-32 flex-col items-center justify-center gap-2 px-3 text-center text-[var(--text-muted)]">
+                  <svg className="h-8 w-8 opacity-25" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
                   </svg>
-                  <p className="text-xs">Select a class first</p>
+                  <p className="text-[11.5px]">Select a class to view its documents.</p>
                 </div>
               ) : busyFiles ? (
-                <div className="flex items-center justify-center h-20">
-                  <div className="w-5 h-5 border-2 border-[var(--primary)]/20 border-t-[var(--primary)] rounded-full animate-spin" />
+                <div className="flex h-20 items-center justify-center">
+                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-[var(--border)] border-t-[var(--primary)]" />
                 </div>
               ) : filteredFiles.length === 0 ? (
-                <div className="text-xs text-[var(--text-secondary)] text-center py-10 italic">No files found</div>
+                <div className="py-10 text-center text-[11.5px] italic text-[var(--text-muted-soft)]">No files found</div>
               ) : (
                 filteredFiles.map(f => {
                   const checked = scopeFileIds.includes(f.id);
                   const ext = f.filename.split(".").pop()?.toUpperCase() || "FILE";
+                  const isReady = ["INDEXED", "READY"].includes(String(f.status || "").toUpperCase());
                   return (
                     <button
                       key={f.id}
                       onClick={() => toggleFileScope(f.id)}
-                      className={`w-full group flex items-center gap-3 rounded-xl border p-3 text-left transition-all duration-200 ${
+                      className={`group flex w-full items-center gap-2.5 rounded-[var(--radius-sm)] border p-2.5 text-left transition ${
                         checked
-                          ? "border-[var(--primary)]/40 bg-[var(--primary)]/5 shadow-sm"
-                          : "border-[var(--border)] hover:bg-[var(--surface-2)] hover:border-[var(--primary)]/20"
+                          ? "border-[color-mix(in_srgb,var(--primary)_35%,transparent)] bg-[var(--primary-soft)]"
+                          : "border-[var(--border)] hover:border-[var(--border-strong)] hover:bg-[var(--surface-2)]"
                       }`}
                     >
-                      <div className={`flex-shrink-0 w-4 h-4 rounded-[5px] border flex items-center justify-center transition-all ${
-                        checked ? "border-[var(--primary)] bg-[var(--primary)]" : "border-[var(--border)] group-hover:border-[var(--primary)]/50"
-                      }`}>
+                      <div
+                        className={`flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-[4px] border transition ${
+                          checked
+                            ? "border-[var(--primary)] bg-[var(--primary)]"
+                            : "border-[var(--border-strong)] group-hover:border-[var(--primary)]"
+                        }`}
+                      >
                         {checked && (
-                          <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                          <svg className="h-2.5 w-2.5 text-[var(--text-inverse)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                             <polyline points="20 6 9 17 4 12" />
                           </svg>
                         )}
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <div className={`text-xs font-medium truncate mb-1 ${checked ? "text-[var(--primary)]" : "text-[var(--text-main)]"}`}>
+                      <div className="min-w-0 flex-1">
+                        <div
+                          className={`mb-1 truncate text-[12px] font-medium ${
+                            checked ? "text-[var(--primary)]" : "text-[var(--text-main)]"
+                          }`}
+                        >
                           {f.filename}
                         </div>
                         <div className="flex items-center gap-1.5">
-                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-[var(--surface-2)] text-[var(--text-secondary)] uppercase tracking-wide">{ext}</span>
-                          <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${
-                            f.status === "INDEXED"
-                              ? "bg-emerald-100 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400"
-                              : "bg-amber-100 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400"
-                          }`}>{statusLabel(f.status)}</span>
+                          <span className="rounded-[4px] bg-[var(--surface-2)] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-[var(--text-muted-soft)]">
+                            {ext}
+                          </span>
+                          <span className={`pill ${isReady ? "pill-success" : "pill-warning"} text-[9.5px]`}>
+                            {statusLabel(f.status)}
+                          </span>
                         </div>
                       </div>
                     </button>
@@ -1134,9 +1183,10 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
             </div>
 
             {scopeFileIds.length > 0 && (
-              <div className="p-3 border-t border-[var(--border)]">
-                <p className="text-[10px] text-[var(--text-secondary)] text-center">
-                  Scoped to <span className="font-bold text-[var(--primary)]">{scopeFileIds.length}</span> file{scopeFileIds.length !== 1 ? "s" : ""}
+              <div className="border-t border-[var(--border)] p-2.5">
+                <p className="text-center text-[10.5px] text-[var(--text-muted)]">
+                  Scoped to <span className="font-bold text-[var(--primary)]">{scopeFileIds.length}</span> file
+                  {scopeFileIds.length !== 1 ? "s" : ""}
                 </p>
               </div>
             )}

@@ -70,6 +70,17 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, [theme]);
 
   useEffect(() => {
+    const handler = (event: StorageEvent) => {
+      if (event.key !== "notescape.theme") return;
+      const next = event.newValue;
+      if (next !== "light" && next !== "dark" && next !== "system") return;
+      setThemeState(next);
+    };
+    window.addEventListener("storage", handler);
+    return () => window.removeEventListener("storage", handler);
+  }, []);
+
+  useEffect(() => {
     if (isMounted.current) return;
     isMounted.current = true;
     (async () => {

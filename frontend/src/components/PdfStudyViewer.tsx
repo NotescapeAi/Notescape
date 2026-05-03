@@ -1,4 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Maximize2,
+  Minimize2,
+  PanelRightClose,
+  PanelRightOpen,
+  Scissors,
+  X,
+} from "lucide-react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/esm/Page/AnnotationLayer.css";
 import "react-pdf/dist/esm/Page/TextLayer.css";
@@ -21,6 +31,10 @@ export type PdfSnip = {
 type Props = {
   fileUrl: string;
   fileName: string;
+  /** Toolbar label: ``page`` (default) or ``slide`` for converted presentations. */
+  pageLabelKind?: "page" | "slide";
+  /** When false, hide Snip and Focus (e.g. plain image viewers reusing layout — not used for PDF). */
+  showPdfTools?: boolean;
   onTextSelect?: (selection: PdfSelection) => void;
   onContextSelect?: (selection: PdfSelection) => void;
   onSnip?: (snip: PdfSnip) => void;
@@ -29,16 +43,20 @@ type Props = {
   isFocusMode?: boolean;
   isChatVisible?: boolean;
   onToggleChatVisibility?: () => void;
+  /** When set, a failed react-pdf load on a blob URL delegates to the parent (e.g. PPTX converted-PDF fallback UI). */
+  onBlobPdfLoadFailed?: () => void;
 };
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-  "pdfjs-dist/build/pdf.worker.min.js",
+  "pdfjs-dist/build/pdf.worker.min.mjs",
   import.meta.url
 ).toString();
 
 export default function PdfStudyViewer({
   fileUrl,
   fileName,
+  pageLabelKind = "page",
+  showPdfTools = true,
   onTextSelect,
   onContextSelect,
   onSnip,
@@ -47,11 +65,14 @@ export default function PdfStudyViewer({
   isFocusMode,
   isChatVisible,
   onToggleChatVisibility,
+  onBlobPdfLoadFailed,
 }: Props) {
   const [numPages, setNumPages] = useState(1);
   const [pageNumber, setPageNumber] = useState(1);
   const [snipMode, setSnipMode] = useState(false);
   const [useIframe, setUseIframe] = useState(false);
+  /** When react-pdf fails on a blob URL, do not fall back to iframe (iframe often shows raw JSON error bodies). */
+  const [hardPdfFailure, setHardPdfFailure] = useState(false);
   const [snipRect, setSnipRect] = useState<{
     left: number;
     top: number;
@@ -67,6 +88,7 @@ export default function PdfStudyViewer({
   useEffect(() => {
     setPageNumber(1);
     setUseIframe(false);
+    setHardPdfFailure(false);
   }, [fileUrl]);
 
   useEffect(() => {
@@ -83,6 +105,7 @@ export default function PdfStudyViewer({
   }, []);
 
   const pageLabel = useMemo(() => `${pageNumber} / ${numPages}`, [pageNumber, numPages]);
+  const pageToolbarPrefix = pageLabelKind === "slide" ? "Slide" : "Page";
 
   function handleSelection(callback?: (selection: PdfSelection) => void) {
     if (snipMode) return;
@@ -177,57 +200,90 @@ export default function PdfStudyViewer({
     setSnipRect(null);
   }
 
+  const toolBtn =
+    "inline-flex h-8 w-8 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface)] text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-2)] hover:text-[var(--text-main)] disabled:cursor-not-allowed disabled:opacity-40";
+  const toolBtnActive =
+    "border-[color-mix(in_srgb,var(--primary)_45%,transparent)] bg-[var(--primary-soft)] text-[var(--primary)]";
+
   return (
     <div className="flex h-full flex-col">
-      <div className="sticky top-0 z-10 flex items-center justify-between border-b border-token surface px-4 py-2 text-xs text-muted">
-        <div className="font-semibold">{fileName}</div>
-        <div className="flex items-center gap-2">
+      <div className="sticky top-0 z-10 flex flex-wrap items-center justify-center gap-1.5 border-b border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs">
+        <button
+          className={toolBtn}
+          onClick={() => setPageNumber((p) => Math.max(1, p - 1))}
+          disabled={pageNumber <= 1}
+          aria-label="Previous page"
+          title="Previous page"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+        <span className="min-w-[96px] text-center text-[12.5px] font-semibold text-[var(--text-main)] tabular-nums">
+          {pageToolbarPrefix} {pageLabel}
+        </span>
+        <button
+          className={toolBtn}
+          onClick={() => setPageNumber((p) => Math.min(numPages, p + 1))}
+          disabled={pageNumber >= numPages}
+          aria-label="Next page"
+          title="Next page"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </button>
+
+        {(showPdfTools && (onSnip || onToggleFocus || (isFocusMode && onToggleChatVisibility))) ? (
+          <span
+            aria-hidden
+            className="mx-1 hidden h-5 w-px bg-[var(--border)] sm:inline-block"
+          />
+        ) : null}
+
+        {showPdfTools && !useIframe && onSnip && (
           <button
-            className="rounded-lg border border-token px-2 py-1"
-            onClick={() => setPageNumber((p) => Math.max(1, p - 1))}
-            disabled={pageNumber <= 1}
+            className={`inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-sm)] border px-2.5 text-[12px] font-semibold transition ${
+              snipMode
+                ? toolBtnActive
+                : "border-[var(--border)] bg-[var(--surface)] text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:bg-[var(--surface-2)] hover:text-[var(--text-main)]"
+            }`}
+            onClick={() => {
+              setSnipMode((v) => !v);
+              setSnipRect(null);
+              setDragStart(null);
+            }}
+            aria-label={snipMode ? "Cancel snip" : "Capture snippet"}
+            aria-pressed={snipMode}
+            title={snipMode ? "Cancel snip" : "Capture snippet"}
           >
-            Prev
+            {snipMode ? <X className="h-3.5 w-3.5" /> : <Scissors className="h-3.5 w-3.5" />}
+            <span className="hidden sm:inline">{snipMode ? "Cancel" : "Snip"}</span>
           </button>
-          <span>{pageLabel}</span>
+        )}
+        {showPdfTools && onToggleFocus && (
           <button
-            className="rounded-lg border border-token px-2 py-1"
-            onClick={() => setPageNumber((p) => Math.min(numPages, p + 1))}
-            disabled={pageNumber >= numPages}
+            className={`inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-sm)] border px-2.5 text-[12px] font-semibold transition ${
+              isFocusMode
+                ? toolBtnActive
+                : "border-[var(--border)] bg-[var(--surface)] text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:bg-[var(--surface-2)] hover:text-[var(--text-main)]"
+            }`}
+            onClick={onToggleFocus}
+            aria-label={isFocusMode ? "Exit focus" : "Focus reader"}
+            aria-pressed={isFocusMode}
+            title={isFocusMode ? "Exit focus" : "Focus reader"}
           >
-            Next
+            {isFocusMode ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+            <span className="hidden sm:inline">{isFocusMode ? "Exit" : "Focus"}</span>
           </button>
-          {!useIframe && onSnip && (
-            <button
-              className={`rounded-lg border px-2 py-1 ${
-                snipMode ? "border-strong bg-inverse text-inverse" : "border-token"
-              }`}
-              onClick={() => {
-                setSnipMode((v) => !v);
-                setSnipRect(null);
-                setDragStart(null);
-              }}
-            >
-              {snipMode ? "Cancel snip" : "Snip"}
-            </button>
-          )}
-          {onToggleFocus && (
-            <button
-              className={`rounded-lg border px-2 py-1 ${isFocusMode ? "border-strong bg-inverse text-inverse" : "border-token"}`}
-              onClick={onToggleFocus}
-            >
-              {isFocusMode ? "Exit focus" : "Focus"}
-            </button>
-          )}
-          {isFocusMode && onToggleChatVisibility && (
-            <button
-              className="rounded-lg border border-token px-2 py-1"
-              onClick={onToggleChatVisibility}
-            >
-              {isChatVisible ? "Hide chat" : "Show chat"}
-            </button>
-          )}
-        </div>
+        )}
+        {showPdfTools && isFocusMode && onToggleChatVisibility && (
+          <button
+            className="inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface)] px-2.5 text-[12px] font-semibold text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-2)] hover:text-[var(--text-main)]"
+            onClick={onToggleChatVisibility}
+            aria-label={isChatVisible ? "Hide chat" : "Show chat"}
+            title={isChatVisible ? "Hide chat" : "Show chat"}
+          >
+            {isChatVisible ? <PanelRightClose className="h-3.5 w-3.5" /> : <PanelRightOpen className="h-3.5 w-3.5" />}
+            <span className="hidden sm:inline">{isChatVisible ? "Hide chat" : "Show chat"}</span>
+          </button>
+        )}
       </div>
       <div
         ref={containerRef}
@@ -241,7 +297,15 @@ export default function PdfStudyViewer({
           onMouseMove={moveSnip}
           onMouseUp={endSnip}
         >
-          {useIframe ? (
+          {hardPdfFailure ? (
+            <div className="flex min-h-[50vh] flex-col items-center justify-center gap-2 px-6 text-center">
+              <div className="text-sm font-semibold text-main">Preview unavailable</div>
+              <p className="max-w-md text-sm text-muted">
+                The file could not be loaded as a PDF in this viewer. Try Retry from the document toolbar, download the
+                file, or open it in another app.
+              </p>
+            </div>
+          ) : useIframe ? (
             <iframe
               title={fileName}
               src={`${fileUrl}#toolbar=1&navpanes=0&view=FitH`}
@@ -251,7 +315,18 @@ export default function PdfStudyViewer({
             <Document
               file={fileUrl}
               onLoadSuccess={(data) => setNumPages(data.numPages)}
-              onLoadError={() => setUseIframe(true)}
+              onLoadError={() => {
+                if (fileUrl.startsWith("blob:")) {
+                  setUseIframe(true);
+                  return;
+                }
+                if (onBlobPdfLoadFailed) {
+                  onBlobPdfLoadFailed();
+                  return;
+                } else {
+                  setUseIframe(true);
+                }
+              }}
               loading={<div className="text-xs text-muted">Loading PDF...</div>}
               error={<div className="text-xs text-muted">Could not load this PDF.</div>}
             >

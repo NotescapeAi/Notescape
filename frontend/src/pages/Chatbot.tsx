@@ -10,7 +10,8 @@ export default function Chatbot() {
 
   return (
     <AppShell
-      title="Chat"
+      title="Study Assistant"
+      subtitle="Ask questions with your class and documents in context."
       contentGapClassName="gap-2"
       contentOverflowClassName="overflow-hidden"
       contentHeightClassName="h-full"

@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import {
   forwardRef,
   useEffect,
@@ -7,7 +8,17 @@ import {
   useRef,
   useState,
 } from "react";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import {
+  Clock,
+  Eye,
+  EyeOff,
+  Layers,
+  RefreshCw,
+  RotateCcw,
+  Square,
+  Target,
+} from "lucide-react";
 import AppShell from "../layouts/AppShell";
 import Button from "../components/Button";
 import {
@@ -66,6 +77,26 @@ function formatDuration(seconds: number) {
   const secs = seconds % 60;
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
+
+/** Returns true for 404 / "no cards" scenarios that are expected empty states, not real failures. */
+function isEmptyError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const e = err as Record<string, any>;
+  const status = e?.response?.status as number | undefined;
+  if (status === 404) return true;
+  const detail = String(e?.response?.data?.detail ?? e?.response?.data?.message ?? "").toLowerCase();
+  const msg = String(e?.message ?? "").toLowerCase();
+  return (
+    detail.includes("no card") ||
+    detail.includes("not found") ||
+    msg.includes("request failed with status code 404") ||
+    msg.includes("no card")
+  );
+}
+
+// ─── SessionTimer ─────────────────────────────────────────────────────────────
+// Hidden component: drives heartbeat / localStorage persistence only.
+// The *visible* timer is a simple elapsedSeconds counter in the parent.
 
 type SessionTimerHandle = {
   flush: () => void;
@@ -131,13 +162,8 @@ const SessionTimer = forwardRef<
     },
   }));
 
-  useEffect(() => {
-    activeRef.current = active;
-  }, [active]);
-
-  useEffect(() => {
-    sessionIdRef.current = sessionId;
-  }, [sessionId]);
+  useEffect(() => { activeRef.current = active; }, [active]);
+  useEffect(() => { sessionIdRef.current = sessionId; }, [sessionId]);
 
   useEffect(() => {
     const storedRaw = sessionId ? localStorage.getItem(storageKey) : null;
@@ -166,16 +192,12 @@ const SessionTimer = forwardRef<
       const now = Date.now();
       const isActive = activeRef.current && !!sessionIdRef.current && document.visibilityState === "visible";
       if (!isActive) {
-        if (lastResumedRef.current !== null) {
-          pause();
-        }
+        if (lastResumedRef.current !== null) pause();
         return;
       }
       resume();
       setDisplaySeconds(Math.floor(computeSeconds(now)));
-      if (now - lastSaveRef.current >= 15000) {
-        persist();
-      }
+      if (now - lastSaveRef.current >= 15000) persist();
     }, 1000);
     return () => {
       if (intervalRef.current) {
@@ -185,12 +207,19 @@ const SessionTimer = forwardRef<
     };
   }, []);
 
-  return <span>{formatDuration(displaySeconds)}</span>;
+  // This span is screen-reader only; the visible timer lives in the parent.
+  return <span aria-hidden="true">{formatDuration(displaySeconds)}</span>;
 });
+
+// ─── Main Component ────────────────────────────────────────────────────────────
 
 export default function FlashcardsStudyMode() {
   const { classId } = useParams();
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const classNum = Number(classId);
+  const topicFilter = (searchParams.get("topic") || "").trim();
+
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [currentCard, setCurrentCard] = useState<MasteryCard | null>(null);
   const [stats, setStats] = useState<SessionStats>({
@@ -210,7 +239,11 @@ export default function FlashcardsStudyMode() {
   const [submitting, setSubmitting] = useState(false);
   const [files, setFiles] = useState<{ id: string; filename: string }[]>([]);
   const [fileFilter, setFileFilter] = useState<string>("all");
+  // error = user-facing friendly message for *real* failures only (not empty-state)
   const [error, setError] = useState<string | null>(null);
+  // emptyState = no flashcards for this selection (expected 404 / empty session)
+  const [emptyState, setEmptyState] = useState(false);
+
   const responseStart = useRef<number | null>(null);
   const scrollRestoreRef = useRef<number | null>(null);
   const reviewInFlightRef = useRef(false);
@@ -218,10 +251,16 @@ export default function FlashcardsStudyMode() {
   const studySecondsRef = useRef(0);
   const [studySessionId, setStudySessionId] = useState<string | null>(null);
   const [studyBaseSeconds, setStudyBaseSeconds] = useState(0);
-  const [displayStudySeconds, setDisplayStudySeconds] = useState(0);
+
+  // ── Visible display timer ────────────────────────────────────────────────
+  // Simple, self-contained: ticks every second when timerActive is true.
+  // Independent of the heartbeat SessionTimer so it always shows live time.
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const elapsedBaseRef = useRef(0);   // accumulated seconds before current run
+  const elapsedStartRef = useRef<number | null>(null); // Date.now() when current run started
 
   const sessionKey = classNum
-    ? `mastery_session_${classNum}_${fileFilter}`
+    ? `mastery_session_${classNum}_${fileFilter}_${topicFilter || "all-topics"}`
     : "mastery_session_unknown";
 
   useEffect(() => {
@@ -237,9 +276,7 @@ export default function FlashcardsStudyMode() {
     setCurrentCard(data.current_card ?? null);
     setStats(normalizeStats(data));
     setRevealed(false);
-    if (data.current_card) {
-      responseStart.current = Date.now();
-    }
+    if (data.current_card) responseStart.current = Date.now();
   }
 
   async function startSession() {
@@ -247,16 +284,21 @@ export default function FlashcardsStudyMode() {
     setLoading(true);
     setSubmitting(false);
     setError(null);
+    setEmptyState(false);
     try {
-      const payload = {
+      const data = await startMasterySession({
         class_id: classNum,
         file_ids: fileFilter === "all" ? undefined : [fileFilter],
-      };
-      const data = await startMasterySession(payload);
+        topic: topicFilter || undefined,
+      });
       localStorage.setItem(sessionKey, data.session_id);
       applySession(data);
-    } catch (err: any) {
-      setError(err?.message || "Failed to start session");
+    } catch (err: unknown) {
+      if (isEmptyError(err)) {
+        setEmptyState(true);
+      } else {
+        setError("Something went wrong while loading your flashcards. Please try again.");
+      }
     } finally {
       setLoading(false);
     }
@@ -267,20 +309,27 @@ export default function FlashcardsStudyMode() {
     setLoading(true);
     setSubmitting(false);
     setError(null);
+    setEmptyState(false);
     try {
       const stored = localStorage.getItem(sessionKey);
       if (stored) {
-        const data = await getMasterySession(stored);
-        applySession(data);
-        setLoading(false);
-        return;
+        try {
+          const data = await getMasterySession(stored);
+          applySession(data);
+          setLoading(false);
+          return;
+        } catch (innerErr: unknown) {
+          // Stale / expired session — remove and fall through to start fresh.
+          // Only re-throw genuine unexpected errors (not 404).
+          localStorage.removeItem(sessionKey);
+          if (!isEmptyError(innerErr)) throw innerErr;
+        }
       }
       await startSession();
-    } catch (err: any) {
-      localStorage.removeItem(sessionKey);
+    } catch (err: unknown) {
       setSessionId(null);
       setCurrentCard(null);
-      setError(err?.message || "Failed to load session");
+      setError("Something went wrong. Please try again.");
       setLoading(false);
     }
   }
@@ -288,14 +337,25 @@ export default function FlashcardsStudyMode() {
   useEffect(() => {
     if (!classNum) return;
     loadOrCreateSession();
-  }, [classNum, fileFilter]);
+  }, [classNum, fileFilter, topicFilter]);
 
+  // Reset display timer when mastery session changes
   useEffect(() => {
     setStudySessionId(null);
     setStudyBaseSeconds(0);
     studySecondsRef.current = 0;
-    setDisplayStudySeconds(0);
+    elapsedBaseRef.current = 0;
+    elapsedStartRef.current = null;
+    setElapsedSeconds(0);
   }, [sessionId]);
+
+  // Sync base when study session loads from server
+  useEffect(() => {
+    if (studyBaseSeconds > elapsedBaseRef.current) {
+      elapsedBaseRef.current = studyBaseSeconds;
+      setElapsedSeconds((prev) => Math.max(prev, studyBaseSeconds));
+    }
+  }, [studyBaseSeconds]);
 
   useEffect(() => {
     if (!classNum || !sessionId || stats.ended) return;
@@ -308,20 +368,48 @@ export default function FlashcardsStudyMode() {
         const base = sess.active_seconds ?? sess.duration_seconds ?? 0;
         setStudyBaseSeconds(base);
         studySecondsRef.current = base;
-        setDisplayStudySeconds(base);
       } catch {
         // keep timer local if session logging fails
       }
     })();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [classNum, sessionId, stats.ended]);
 
   useEffect(() => {
     if (!classNum) return;
     localStorage.setItem("last_class_id", String(classNum));
   }, [classNum]);
+
+  // ── 1-second tick for the visible timer ────────────────────────────────────
+  const timerActive = Boolean(sessionId) && !loading && !stats.ended && !stats.done && !emptyState;
+
+  useEffect(() => {
+    if (!timerActive) {
+      // Pause: save accumulated seconds so far
+      if (elapsedStartRef.current !== null) {
+        elapsedBaseRef.current += Math.floor((Date.now() - elapsedStartRef.current) / 1000);
+        elapsedStartRef.current = null;
+      }
+      return;
+    }
+    // Resume / start
+    elapsedStartRef.current = Date.now();
+    const id = window.setInterval(() => {
+      const start = elapsedStartRef.current;
+      if (start !== null) {
+        setElapsedSeconds(elapsedBaseRef.current + Math.floor((Date.now() - start) / 1000));
+      }
+    }, 1000);
+    return () => {
+      window.clearInterval(id);
+      if (elapsedStartRef.current !== null) {
+        elapsedBaseRef.current += Math.floor((Date.now() - elapsedStartRef.current) / 1000);
+        elapsedStartRef.current = null;
+      }
+    };
+  }, [timerActive]);
+
+  // ── Actions ──────────────────────────────────────────────────────────────
 
   async function handleReview(confidence: 1 | 2 | 3 | 4 | 5) {
     if (!currentCard || !sessionId) return;
@@ -341,8 +429,8 @@ export default function FlashcardsStudyMode() {
       });
       applySession(data);
       timerRef.current?.flush();
-    } catch (err: any) {
-      setError(err?.message || "Failed to save review");
+    } catch (err: unknown) {
+      setError("Failed to save your rating. Please try again.");
     } finally {
       reviewInFlightRef.current = false;
       setSubmitting(false);
@@ -355,7 +443,7 @@ export default function FlashcardsStudyMode() {
       if (studySessionId) {
         await endStudySession({
           session_id: studySessionId,
-          accumulated_seconds: Math.floor(studySecondsRef.current || 0),
+          accumulated_seconds: Math.floor(elapsedSeconds),
         });
       }
       await endMasterySession(sessionId);
@@ -377,20 +465,19 @@ export default function FlashcardsStudyMode() {
       setSessionId(null);
       setCurrentCard(null);
       await startSession();
-    } catch (err: any) {
-      setError(err?.message || "Failed to reset mastery");
+    } catch (err: unknown) {
+      setError("Failed to reset mastery. Please try again.");
       setLoading(false);
     }
   }
 
   async function handleFileChange(next: string) {
-    if (sessionId) {
-      await endMasterySession(sessionId).catch(() => undefined);
-    }
+    if (sessionId) await endMasterySession(sessionId).catch(() => undefined);
     timerRef.current?.flush();
     localStorage.removeItem(sessionKey);
     setSessionId(null);
     setCurrentCard(null);
+    setEmptyState(false);
     setFileFilter(next);
   }
 
@@ -403,7 +490,8 @@ export default function FlashcardsStudyMode() {
   const masteryPct =
     stats.mastery_percent ||
     (stats.total_unique ? Math.round((stats.mastered_count / stats.total_unique) * 100) : 0);
-  const timerActive = Boolean(sessionId) && !loading && !stats.ended && !stats.done;
+
+  // Keyboard shortcuts
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (!currentCard || loading || stats.ended || stats.done || submitting) return;
@@ -423,7 +511,6 @@ export default function FlashcardsStudyMode() {
 
   const handleSessionSave = (seconds: number) => {
     studySecondsRef.current = seconds;
-    setDisplayStudySeconds(seconds);
     if (!studySessionId) return;
     heartbeatStudySession({
       session_id: studySessionId,
@@ -432,212 +519,328 @@ export default function FlashcardsStudyMode() {
     }).catch(() => undefined);
   };
 
+  // Rating options — label + keyboard key only, no verbose hint text
+  const ratingOptions = [
+    { score: 1 as const, label: "Again",   tone: "var(--danger)"   },
+    { score: 2 as const, label: "Hard",    tone: "var(--warning)"  },
+    { score: 3 as const, label: "Good",    tone: "#2563eb"         },
+    { score: 4 as const, label: "Easy",    tone: "var(--success)"  },
+    { score: 5 as const, label: "Mastered",tone: "var(--primary)"  },
+  ] as const;
+
+  const activeFileName =
+    fileFilter === "all"
+      ? "All files"
+      : files.find((f) => f.id === fileFilter)?.filename || "Selected file";
+
+  const studyTime = formatDuration(elapsedSeconds);
+
   return (
     <AppShell
       title="Flashcards"
-      subtitle="Study mode"
       backLabel="Back to Flashcards"
       backTo={classId ? `/classes/${classId}/flashcards` : "/classes"}
-      contentGapClassName="gap-2"
+      contentGapClassName="gap-3"
       contentOverflowClassName="overflow-hidden"
       contentHeightClassName="h-full"
       mainClassName="min-h-0 overflow-hidden"
     >
-      <div className="mx-auto -mt-3 flex h-full min-h-0 w-full max-w-[980px] flex-col gap-3 overflow-hidden">
+      {/* Hidden SessionTimer — drives heartbeat / localStorage only */}
+      <span className="sr-only" aria-hidden="true">
+        <SessionTimer
+          ref={timerRef}
+          sessionId={studySessionId ?? sessionId}
+          baseSeconds={studyBaseSeconds || stats.session_seconds}
+          active={timerActive}
+          onSave={handleSessionSave}
+        />
+      </span>
+
+      {/* Outer column — fills the main flex-1 area exactly */}
+      <div className="flex h-full min-h-0 w-full flex-col gap-3">
+
+        {/* Friendly error banner (real failures only, not empty-state) */}
         {error && (
-          <div className="rounded-2xl border border-accent bg-accent-soft px-4 py-3 text-sm text-accent">
+          <div className="shrink-0 rounded-[var(--radius-md)] border border-[color-mix(in_srgb,var(--danger)_30%,transparent)] bg-[var(--danger-soft)] px-4 py-2.5 text-sm font-medium text-[var(--danger)]">
             {error}
           </div>
         )}
 
-        <span className="sr-only" aria-hidden="true">
-          <SessionTimer
-            ref={timerRef}
-            sessionId={studySessionId ?? sessionId}
-            baseSeconds={studyBaseSeconds || stats.session_seconds}
-            active={timerActive}
-            onSave={handleSessionSave}
-          />
-        </span>
+        {/* ── Session header ── compact single-row control bar ── */}
+        <div className="ns-card shrink-0 px-3 py-2.5 sm:px-4">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            {/* Left: progress info */}
+            <div className="flex min-w-0 flex-1 items-center gap-2.5">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-[var(--primary-soft)] text-[var(--primary)]">
+                <Target className="h-4 w-4" />
+              </div>
+              <div className="min-w-0 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                <span className="text-[13px] font-semibold text-[var(--text-main)]">
+                  Card {stats.total_cards ? stats.current_index + 1 : 0}
+                  <span className="mx-1 text-[var(--text-muted-soft)]">/</span>
+                  <span className="text-[var(--text-muted)]">{stats.total_cards || 0}</span>
+                </span>
+                <span className="text-[11px] font-medium text-[var(--text-muted-soft)]">
+                  {masteryPct}% mastered
+                </span>
+                {topicFilter ? (
+                  <span className="text-[11px] font-semibold text-[var(--primary)]">
+                    · {topicFilter}
+                  </span>
+                ) : null}
+              </div>
+            </div>
 
-        <div className="rounded-[22px] border border-[var(--border)] bg-[var(--bg-surface)] px-4 py-3 shadow-[0_12px_28px_rgba(15,16,32,0.06)] dark:shadow-none">
-          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--text-secondary)]">
-            <span className="font-semibold text-main">
-              Progress {stats.total_cards ? stats.current_index + 1 : 0} / {stats.total_cards || 0}
-            </span>
-            <span className="truncate">
-              {fileFilter === "all" ? "All files" : files.find((f) => f.id === fileFilter)?.filename || "Selected file"}
-            </span>
-          </div>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <Button className="rounded-full px-4 py-2 text-xs" onClick={startSession}>
-              Study again
-            </Button>
-            <Button className="rounded-full px-4 py-2 text-xs" onClick={handleResetProgress}>
-              Reset progress
-            </Button>
-            <Button className="rounded-full px-4 py-2 text-xs" onClick={handleEndSession}>
-              End session
-            </Button>
-            <div className="relative min-w-[220px]">
-              <select
-                value={fileFilter}
-                onChange={(e) => handleFileChange(e.target.value)}
-                className="h-10 w-full appearance-none rounded-full border border-token bg-[var(--surface)] px-4 pr-12 text-sm font-semibold text-main shadow-sm transition hover:border-[var(--primary)] focus:border-[var(--primary)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]/15"
-              >
-                <option value="all">All files</option>
-                {files.map((f) => (
-                  <option key={f.id} value={f.id}>
-                    {f.filename}
-                  </option>
-                ))}
-              </select>
-              <span className="pointer-events-none absolute right-5 top-1/2 -translate-y-1/2 text-muted">
-                <svg width="13" height="13" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-                  <path d="M2.5 4.5 6 8l3.5-3.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
+            {/* Right: file select + action buttons + live timer */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              <div className="relative">
+                <select
+                  value={fileFilter}
+                  onChange={(e) => handleFileChange(e.target.value)}
+                  aria-label="Filter by file"
+                  className="h-8 min-w-[160px] appearance-none rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface)] pl-2.5 pr-8 text-[12px] font-semibold text-[var(--text-main)] transition hover:border-[var(--border-strong)] focus:border-[var(--primary)] focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
+                >
+                  <option value="all">All files</option>
+                  {files.map((f) => (
+                    <option key={f.id} value={f.id}>{f.filename}</option>
+                  ))}
+                </select>
+                <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-[var(--text-muted)]">
+                  <svg width="11" height="11" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                    <path d="M2.5 4.5 6 8l3.5-3.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </span>
+              </div>
+              <Button size="sm" onClick={startSession} title="Restart study queue" aria-label="Study again" className="gap-1">
+                <RefreshCw className="h-3 w-3" />
+                <span className="hidden sm:inline">Study again</span>
+              </Button>
+              <Button size="sm" onClick={handleResetProgress} title="Reset mastery progress" aria-label="Reset progress" className="gap-1">
+                <RotateCcw className="h-3 w-3" />
+                <span className="hidden sm:inline">Reset</span>
+              </Button>
+              <Button size="sm" variant="danger" onClick={handleEndSession} title="End this session" aria-label="End session" className="gap-1">
+                <Square className="h-3 w-3" />
+                <span className="hidden sm:inline">End</span>
+              </Button>
+              {/* Live timer — updates every second */}
+              <span className="inline-flex items-center gap-1 text-[11px] font-semibold tabular-nums text-[var(--text-muted)]">
+                <Clock className="h-3 w-3" />
+                {studyTime}
               </span>
             </div>
           </div>
+
+          {/* Mastery progress bar */}
+          <div
+            className="flash-progress-track mt-2"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={masteryPct}
+            aria-label="Mastery progress"
+          >
+            <div
+              className="flash-progress-fill"
+              style={{ ["--value" as any]: `${masteryPct}%` } as CSSProperties}
+            />
+          </div>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-hidden rounded-[24px] border border-[var(--border)] bg-[var(--bg-surface)] p-4 shadow-[0_16px_38px_rgba(15,16,32,0.08)] dark:shadow-none">
-          {!stats.ended && !stats.done && (
-            <div className="mb-3 flex items-center justify-end gap-2">
-              <div className="text-xs text-[var(--text-secondary)]">Space: flip / 1-5: rate</div>
-            </div>
-          )}
-
+        {/* ── Main study canvas ── fills all remaining vertical space ── */}
+        <div className="relative min-h-0 flex-1 overflow-hidden rounded-[var(--radius-2xl)] border border-[var(--border)] bg-[var(--surface-2)]">
           {loading ? (
-            <div className="text-sm text-muted">Loading session...</div>
+            <div className="flex h-full items-center justify-center text-sm text-[var(--text-muted)]">
+              Loading session…
+            </div>
+
           ) : stats.ended || stats.done ? (
-            <div className="flex h-full min-h-0 items-center justify-center">
-              <div className="w-full max-w-[760px] rounded-[26px] border border-[var(--border)] bg-[var(--surface)] p-5 shadow-[0_20px_48px_rgba(15,16,32,0.10)] dark:shadow-none sm:p-7">
+            /* ── Session summary screen ── */
+            <div className="ns-scroll flex h-full min-h-0 items-start justify-center overflow-y-auto p-4 sm:p-6">
+              <div className="w-full max-w-[720px] rounded-[var(--radius-2xl)] border border-[var(--border)] bg-[var(--surface)] p-5 shadow-[var(--shadow-elevated)] sm:p-7">
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div>
-                    <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--text-muted-soft)]">
+                    <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--text-muted-soft)]">
                       Session summary
                     </div>
-                    <h2 className="mt-2 text-2xl font-semibold text-main sm:text-3xl">
+                    <h2 className="mt-2 text-2xl font-semibold text-[var(--text-main)] sm:text-3xl">
                       {stats.done ? "Study queue complete" : "Session ended"}
                     </h2>
                     <p className="mt-2 max-w-[520px] text-sm leading-6 text-[var(--text-secondary)]">
-                      Your review progress has been saved. Start a new round when you are ready to continue.
+                      Your review progress has been saved. Start a new round when you're ready to continue.
                     </p>
                   </div>
-                  <div className="rounded-full border border-[var(--border-subtle)] bg-[var(--surface-2)] px-4 py-2 text-sm font-semibold text-main">
+                  <div className="inline-flex items-center gap-1.5 rounded-full border border-[color-mix(in_srgb,var(--primary)_30%,transparent)] bg-[var(--primary-soft)] px-3.5 py-1.5 text-sm font-semibold text-[var(--primary)]">
+                    <span className="h-1.5 w-1.5 rounded-full bg-[var(--primary)]" />
                     {masteryPct}% mastery
                   </div>
                 </div>
-
-                <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                  <div className="rounded-[18px] border border-[var(--border)] bg-[var(--bg-surface)] px-4 py-4 shadow-sm">
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-muted-soft)]">
-                      Study time
+                <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  {[
+                    { label: "Study time",  value: studyTime },
+                    { label: "Mastered",    value: `${stats.mastered_count}/${stats.total_unique}` },
+                    { label: "Avg rating",  value: stats.total_reviews ? stats.average_rating.toFixed(2) : "0.00" },
+                    { label: "Reviews",     value: stats.total_reviews },
+                  ].map((cell) => (
+                    <div key={cell.label} className="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface-2)] px-4 py-3">
+                      <div className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted-soft)]">{cell.label}</div>
+                      <div className="mt-1.5 text-xl font-semibold tabular-nums text-[var(--text-main)]">{cell.value}</div>
                     </div>
-                    <div className="mt-2 text-xl font-semibold text-main">
-                      {formatDuration(Math.floor(displayStudySeconds || studySecondsRef.current || studyBaseSeconds || stats.session_seconds || 0))}
-                    </div>
-                  </div>
-                  <div className="rounded-[18px] border border-[var(--border)] bg-[var(--bg-surface)] px-4 py-4 shadow-sm">
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-muted-soft)]">
-                      Mastered
-                    </div>
-                    <div className="mt-2 text-xl font-semibold text-main">
-                      {stats.mastered_count}/{stats.total_unique}
-                    </div>
-                  </div>
-                  <div className="rounded-[18px] border border-[var(--border)] bg-[var(--bg-surface)] px-4 py-4 shadow-sm">
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-muted-soft)]">
-                      Avg rating
-                    </div>
-                    <div className="mt-2 text-xl font-semibold text-main">
-                      {stats.total_reviews ? stats.average_rating.toFixed(2) : "0.00"}
-                    </div>
-                  </div>
-                  <div className="rounded-[18px] border border-[var(--border)] bg-[var(--bg-surface)] px-4 py-4 shadow-sm">
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[var(--text-muted-soft)]">
-                      Reviews
-                    </div>
-                    <div className="mt-2 text-xl font-semibold text-main">{stats.total_reviews}</div>
-                  </div>
+                  ))}
                 </div>
-
-                <div className="mt-6 flex flex-wrap gap-2">
-                  <Button className="rounded-full px-5" onClick={startSession}>
-                    Study again
+                <div className="mt-5 flex flex-wrap gap-2">
+                  <Button variant="primary" onClick={startSession} className="gap-1.5">
+                    <RefreshCw className="h-3.5 w-3.5" />Study again
                   </Button>
-                  <Button className="rounded-full px-5" onClick={handleResetProgress}>
-                    Reset progress
+                  <Button onClick={handleResetProgress} className="gap-1.5">
+                    <RotateCcw className="h-3.5 w-3.5" />Reset progress
                   </Button>
                 </div>
               </div>
             </div>
+
+          ) : emptyState ? (
+            /* ── Empty state: no flashcards for this selection ── */
+            <div className="flex h-full flex-col items-center justify-center gap-4 p-6 text-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-[var(--border)] bg-[var(--surface)] text-[var(--text-muted-soft)] shadow-[var(--shadow-xs)]">
+                <Layers className="h-6 w-6" />
+              </div>
+              <div>
+                <div className="text-[15px] font-semibold text-[var(--text-main)]">No flashcards found</div>
+                <p className="mt-1.5 max-w-[340px] text-[13px] leading-[1.65] text-[var(--text-muted)]">
+                  {fileFilter !== "all"
+                    ? `"${activeFileName}" doesn't have any flashcards yet. Try a different file or generate cards first.`
+                    : "This class doesn't have any flashcards yet. Generate some from the Flashcards page."}
+                </p>
+              </div>
+              <div className="flex flex-wrap justify-center gap-2">
+                {fileFilter !== "all" && (
+                  <Button size="sm" onClick={() => handleFileChange("all")} className="gap-1.5">
+                    Show all files
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="primary"
+                  onClick={() => navigate(classId ? `/classes/${classId}/flashcards` : "/classes")}
+                  className="gap-1.5"
+                >
+                  Go to Flashcards
+                </Button>
+              </div>
+            </div>
+
           ) : !currentCard ? (
-            <div className="text-sm text-muted">No cards available in this session.</div>
+            /* ── No card in session (empty queue, not an error) ── */
+            <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
+              <div className="text-[15px] font-semibold text-[var(--text-main)]">No cards available</div>
+              <p className="max-w-[300px] text-[13px] text-[var(--text-muted)]">
+                There are no cards to review in this session.
+              </p>
+              <Button size="sm" onClick={startSession} className="gap-1.5 mt-1">
+                <RefreshCw className="h-3.5 w-3.5" />Try again
+              </Button>
+            </div>
+
           ) : (
-            <div className={`flex h-full min-h-0 flex-col gap-3 ${revealed ? "overflow-y-auto pr-1" : "overflow-hidden"}`}>
-              <div className="mx-auto w-full max-w-[760px]">
-                <div className="rounded-[24px] border border-[var(--border)] bg-[var(--surface)] p-5 shadow-[0_18px_42px_rgba(15,16,32,0.08)] transition-shadow duration-200 dark:shadow-none sm:p-6">
-                  <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--text-muted-soft)]">
-                    Question
-                  </div>
-                  <div className="mt-3 text-lg font-semibold leading-relaxed text-[var(--text-main)] sm:text-2xl">
-                    {sanitizeText(currentCard.question)}
-                  </div>
-                  {revealed && (
-                    <div className="mt-4 max-h-[210px] overflow-y-auto rounded-[18px] border border-[var(--border-subtle)] bg-[var(--surface-2)] px-4 py-3">
-                      <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted-soft)]">
-                        Answer
-                      </div>
-                      <div className="mt-2 text-sm font-medium leading-6 text-neutral-700 dark:text-neutral-300">
-                        {sanitizeText(currentCard.answer)}
-                      </div>
+            /*
+             * ── Active study layout ──
+             * Sticky-footer flex:
+             *   • Card area  → flex-1, min-h-0, scrolls only if card is extremely long
+             *   • Rating row → shrink-0, always pinned at the bottom
+             */
+            <div className="flex h-full min-h-0 flex-col gap-2 p-3 sm:p-4">
+
+              {/* Card area — scrollable only when content overflows */}
+              <div className="ns-scroll min-h-0 flex-1 overflow-y-auto">
+                <div className="mx-auto w-full max-w-[680px] py-1">
+                  <div className={`flash-hero px-5 py-5 sm:px-7 sm:py-6 ${revealed ? "flash-hero--revealed" : ""}`}>
+                    {/* Header row: label + counter */}
+                    <div className="flex items-center justify-between">
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--primary-soft)] bg-[var(--primary-soft)] px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--primary)]">
+                        <span className="h-1.5 w-1.5 rounded-full bg-[var(--primary)]" />
+                        Question
+                      </span>
+                      <span className="text-[11px] font-semibold tabular-nums text-[var(--text-muted-soft)]">
+                        {stats.total_cards ? stats.current_index + 1 : 0} / {stats.total_cards || 0}
+                      </span>
                     </div>
-                  )}
-                  <div className="mt-4 flex flex-wrap items-center gap-2">
-                    <Button
-                      variant="primary"
-                      className="rounded-full px-5"
-                      onClick={() => setRevealed((v) => !v)}
-                    >
-                      {revealed ? "Show question" : "Show answer"}
-                    </Button>
-                    <span className="text-xs text-[var(--text-secondary)]">Press Space</span>
+
+                    {/* Question text */}
+                    <div className="mt-4 text-[20px] font-semibold leading-[1.4] tracking-tight text-[var(--text-main)] sm:text-[23px]">
+                      {sanitizeText(currentCard.question)}
+                    </div>
+
+                    {/* Answer — revealed with max-height so the card never grows past the viewport */}
+                    {revealed && (
+                      <div className="flash-reveal mt-4 rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface-2)]">
+                        <div className="px-4 pt-3 pb-1">
+                          <span className="inline-flex items-center gap-1.5 rounded-full border border-[color-mix(in_srgb,var(--success)_30%,transparent)] bg-[var(--success-soft)] px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--success)]">
+                            <span className="h-1.5 w-1.5 rounded-full bg-[var(--success)]" />
+                            Answer
+                          </span>
+                        </div>
+                        <div className="ns-scroll max-h-[clamp(120px,26vh,260px)] overflow-y-auto px-4 pb-3">
+                          <p className="text-[14px] font-medium leading-[1.7] text-[var(--text-main)]">
+                            {sanitizeText(currentCard.answer)}
+                          </p>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Show Answer / Hide Answer CTA */}
+                    <div className="mt-5 flex items-center justify-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => setRevealed((v) => !v)}
+                        className={revealed ? "flash-cta flash-cta--secondary" : "flash-cta"}
+                        aria-pressed={revealed}
+                        title={revealed ? "Hide answer (Space)" : "Show answer (Space)"}
+                      >
+                        {revealed
+                          ? <><EyeOff className="h-4 w-4" /><span>Hide answer</span></>
+                          : <><Eye className="h-4 w-4" /><span>Show answer</span></>
+                        }
+                        <span className="kbd ml-1">Space</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
 
-              <div>
-                <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-                  {[
-                    { score: 1, label: "Again" },
-                    { score: 2, label: "Hard" },
-                    { score: 3, label: "Good" },
-                    { score: 4, label: "Easy" },
-                    { score: 5, label: "Mastered" },
-                  ].map((opt) => (
+              {/* ── Rating row — always pinned at the bottom, never scrolls away ── */}
+              <div className="shrink-0 mx-auto w-full max-w-[680px]">
+                <div className="mb-1.5 flex items-center justify-between gap-2">
+                  <span className="text-[10.5px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted-soft)]">
+                    How well did you know it?
+                  </span>
+                  <span className="hidden sm:inline-flex items-center gap-1 text-[10.5px] text-[var(--text-muted-soft)]">
+                    <span className="kbd">Space</span>
+                    <span>flip</span>
+                    <span className="mx-0.5">&middot;</span>
+                    <span className="kbd">1</span>
+                    <span>–</span>
+                    <span className="kbd">5</span>
+                    <span>rate</span>
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-5 gap-1.5 sm:gap-2">
+                  {ratingOptions.map((opt) => (
                     <button
                       key={opt.score}
-                      onClick={() => handleReview(opt.score as 1 | 2 | 3 | 4 | 5)}
+                      type="button"
+                      onClick={() => handleReview(opt.score)}
                       disabled={submitting || !revealed}
-                      className={`h-11 rounded-[14px] border px-3 text-sm font-semibold transition-all ${
-                        submitting ? "cursor-not-allowed opacity-60" : ""
-                      } ${
-                        revealed
-                          ? "border-neutral-950 bg-neutral-950 text-white shadow-[0_10px_22px_rgba(15,23,42,0.16)] hover:-translate-y-0.5 hover:bg-neutral-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]/35 dark:border-white dark:bg-white dark:text-neutral-950 dark:hover:bg-neutral-200"
-                          : "border-token bg-[var(--surface)] text-[var(--text-main)] opacity-45"
-                      }`}
+                      aria-label={`Rate: ${opt.label}`}
+                      title={revealed ? `${opt.label} (key ${opt.score})` : "Reveal the answer first"}
+                      className={`rating-btn ${revealed ? "rating-btn--ready" : ""}`}
+                      style={{ ["--tone" as any]: opt.tone } as CSSProperties}
                     >
-                      {opt.label}{" "}
-                      <span className={`ml-1 text-[11px] ${revealed ? "opacity-70" : "text-[var(--text-muted-soft)]"}`}>
-                        {opt.score}
-                      </span>
+                      <span className="rating-btn__label">{opt.label}</span>
+                      <span className="rating-btn__key">{opt.score}</span>
                     </button>
                   ))}
-                </div>
-                <div className="mt-2 flex items-center justify-end text-xs text-[var(--text-secondary)]">
-                  <span>1 = Again / 5 = Mastered</span>
                 </div>
               </div>
             </div>

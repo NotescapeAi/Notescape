@@ -11,11 +11,12 @@ from pydantic import BaseModel, Field
 
 from app.core.db import db_conn
 from app.core.embedding_cache import embed_texts_cached
-from app.core.llm import get_embedder
+from app.core.llm import get_embedder, grade_theory_answer
 from app.core.settings import settings
 from app.dependencies import get_request_user_uid
 from app.lib.flashcard_generation import insert_flashcards, pick_relevant_chunks, vec_literal
 from app.lib.study_analytics import apply_study_review
+from app.lib.tags import normalize_tag_names, sync_flashcard_tags
 from app.services.transcription import (
     TranscriptionError,
     TranscriptionUnavailableError,
@@ -148,12 +149,22 @@ async def _ensure_voice_quiz_schema():
               transcript TEXT,
               audio_url TEXT,
               user_rating INT NOT NULL CHECK (user_rating BETWEEN 1 AND 5),
+              score NUMERIC(4, 2),
+              feedback TEXT,
+              missing_points JSONB,
+              session_id TEXT,
+              attempt_number INT,
               response_time_seconds NUMERIC(8, 2),
               created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
               next_review_at TIMESTAMPTZ
             )
             """
         )
+        await cur.execute("ALTER TABLE voice_quiz_attempts ADD COLUMN IF NOT EXISTS score NUMERIC(4, 2)")
+        await cur.execute("ALTER TABLE voice_quiz_attempts ADD COLUMN IF NOT EXISTS feedback TEXT")
+        await cur.execute("ALTER TABLE voice_quiz_attempts ADD COLUMN IF NOT EXISTS missing_points JSONB")
+        await cur.execute("ALTER TABLE voice_quiz_attempts ADD COLUMN IF NOT EXISTS session_id TEXT")
+        await cur.execute("ALTER TABLE voice_quiz_attempts ADD COLUMN IF NOT EXISTS attempt_number INT")
         await cur.execute(
             "CREATE INDEX IF NOT EXISTS voice_quiz_attempts_user_idx ON voice_quiz_attempts (user_id, created_at DESC)"
         )
@@ -190,6 +201,64 @@ def _audio_extension(content_type: Optional[str], filename: Optional[str]) -> st
     if ext in {".webm", ".wav", ".mp3", ".m4a", ".ogg"}:
         return ext
     return ".webm"
+
+
+def _answer_terms(value: str) -> List[str]:
+    raw = "".join(ch.lower() if ch.isalnum() else " " for ch in value or "")
+    stop = {
+        "the", "and", "for", "with", "that", "this", "from", "are", "was", "were",
+        "you", "your", "has", "have", "had", "but", "not", "into", "its", "their",
+        "about", "what", "when", "where", "why", "how", "which", "also", "can",
+    }
+    return [w for w in raw.split() if len(w) > 2 and w not in stop]
+
+
+def _evaluate_answer_locally(expected: str, actual: str) -> "VoiceEvaluationOut":
+    actual = (actual or "").strip()
+    if not actual:
+        return VoiceEvaluationOut(
+            score=0,
+            feedback="No answer was captured.",
+            missingPoints=[],
+            isCorrectEnough=False,
+        )
+    expected_terms = _answer_terms(expected)
+    actual_terms = set(_answer_terms(actual))
+    if not expected_terms:
+        return VoiceEvaluationOut(
+            score=3,
+            feedback="Answer captured. The card answer is too short for detailed scoring.",
+            missingPoints=[],
+            isCorrectEnough=True,
+        )
+    key_terms = []
+    for term in expected_terms:
+        if term not in key_terms:
+            key_terms.append(term)
+    matched = [term for term in key_terms if term in actual_terms]
+    ratio = len(matched) / max(1, len(key_terms))
+    if ratio >= 0.82:
+        score = 5
+        feedback = "Excellent answer. You covered the key points."
+    elif ratio >= 0.62:
+        score = 4
+        feedback = "Good answer. You covered most of the important points."
+    elif ratio >= 0.4:
+        score = 3
+        feedback = "Partially correct. Some core ideas were present, but important details were missing."
+    elif ratio >= 0.18:
+        score = 2
+        feedback = "Weak answer. You mentioned a few related ideas but missed the main explanation."
+    else:
+        score = 1
+        feedback = "Attempt recorded, but it did not match the expected answer closely."
+    missing = [term for term in key_terms if term not in actual_terms][:6]
+    return VoiceEvaluationOut(
+        score=score,
+        feedback=feedback,
+        missingPoints=missing,
+        isCorrectEnough=score >= 4,
+    )
 
 
 def _uploads_root_from_request(request: Request) -> Path:
@@ -229,7 +298,9 @@ class GenerateReq(BaseModel):
     topic: Optional[str] = None
     style: Optional[str] = Field(default="mixed", pattern="^(mixed|definitions|conceptual|qa)$")
     top_k: int = Field(default=12, ge=1, le=100)
-    n_cards: int = Field(default=24, ge=1, le=50)
+    n_cards: Optional[int] = Field(default=None, ge=1, le=100)
+    cardCountMode: Optional[str] = Field(default=None, pattern="^(auto|fixed|custom)$")
+    requestedCount: Optional[int] = Field(default=None, ge=1, le=100)
     difficulty: Optional[str] = Field(default=None, pattern="^(easy|medium|hard)$")
     page_start: Optional[int] = Field(default=None, ge=1)
     page_end: Optional[int] = Field(default=None, ge=1)
@@ -242,10 +313,16 @@ class FlashcardJobOut(BaseModel):
     correlation_id: Optional[str] = None
     error_message: Optional[str] = None
     created_at: Optional[str] = None
+    generatedCount: Optional[int] = None
+    requestedCount: Optional[int] = None
+    cardCountMode: Optional[str] = None
+    warning: Optional[str] = None
+    sourceDocumentIds: List[str] = Field(default_factory=list)
 
 
 def _job_from_row(row: Tuple) -> FlashcardJobOut:
     correlation = row[4]
+    payload = row[7] if len(row) > 7 and isinstance(row[7], dict) else {}
     return FlashcardJobOut(
         job_id=row[0],
         deck_id=row[1],
@@ -254,6 +331,11 @@ def _job_from_row(row: Tuple) -> FlashcardJobOut:
         correlation_id=str(correlation) if correlation else None,
         error_message=row[5],
         created_at=row[6].isoformat() if row[6] else None,
+        generatedCount=payload.get("generatedCount"),
+        requestedCount=payload.get("requestedCount"),
+        cardCountMode=payload.get("cardCountMode"),
+        warning=payload.get("warning"),
+        sourceDocumentIds=payload.get("sourceDocumentIds") or payload.get("file_ids") or [],
     )
 
 class FlashcardOut(BaseModel):
@@ -265,6 +347,7 @@ class FlashcardOut(BaseModel):
     answer: str
     hint: Optional[str] = None
     difficulty: Optional[str] = "medium"
+    topic: Optional[str] = "General"
     tags: List[str] = []
     due_at: Optional[str] = None
     repetitions: Optional[int] = None
@@ -288,7 +371,7 @@ def _maybe_expand_legacy_jsonblob(
       {"cards":[{question,answer,hint,difficulty,tags}, ...]}
     Expand them on read so the UI shows individual cards.
     """
-    _id, _class_id, _src_id, question, answer, hint, difficulty, tags = row
+    _id, _class_id, _src_id, question, answer, hint, difficulty, topic, tags = row
     if not isinstance(answer, str) or '"cards"' not in answer:
         return None
     try:
@@ -307,6 +390,7 @@ def _maybe_expand_legacy_jsonblob(
                     answer=str(c.get("answer") or "").strip(),
                     hint=(c.get("hint") if c.get("hint") not in (None, "", "null") else None),
                     difficulty=(c.get("difficulty") or difficulty or "medium"),
+                    topic=(c.get("topic") or topic or (c.get("tags") or ["General"])[0]),
                     tags=list(c.get("tags") or []),
                 )
             )
@@ -326,6 +410,7 @@ class ManualCreateReq(BaseModel):
     answer: str
     file_id: Optional[str] = None
     hint: Optional[str] = None
+    topic: Optional[str] = None
     tags: List[str] = Field(default_factory=list)
     difficulty: Optional[str] = Field(default="medium", pattern="^(easy|medium|hard)$")
 
@@ -335,6 +420,7 @@ class ManualUpdateReq(BaseModel):
     answer: Optional[str] = None
     file_id: Optional[str] = None
     hint: Optional[str] = None
+    topic: Optional[str] = None
     tags: Optional[List[str]] = None
     difficulty: Optional[str] = Field(default=None, pattern="^(easy|medium|hard)$")
     reset_progress: bool = False
@@ -343,6 +429,7 @@ class ManualUpdateReq(BaseModel):
 class MasteryStartReq(BaseModel):
     class_id: int
     file_ids: Optional[List[str]] = None
+    topic: Optional[str] = None
 
 
 class MasteryReviewReq(BaseModel):
@@ -362,6 +449,25 @@ class VoiceAttemptReq(BaseModel):
     user_rating: int = Field(ge=1, le=5)
     response_time_seconds: Optional[float] = Field(default=None, ge=0)
     audio_url: Optional[str] = Field(default=None, max_length=2048)
+    score: Optional[float] = Field(default=None, ge=0, le=5)
+    feedback: Optional[str] = Field(default=None, max_length=4000)
+    missing_points: List[str] = Field(default_factory=list)
+    session_id: Optional[str] = Field(default=None, max_length=128)
+    attempt_number: Optional[int] = Field(default=None, ge=1)
+
+
+class VoiceEvaluationReq(BaseModel):
+    flashcard_id: str
+    question: str = Field(min_length=1, max_length=5000)
+    expected_answer: str = Field(min_length=1, max_length=10000)
+    user_answer_transcript: str = Field(default="", max_length=20000)
+
+
+class VoiceEvaluationOut(BaseModel):
+    score: int
+    feedback: str
+    missingPoints: List[str] = Field(default_factory=list)
+    isCorrectEnough: bool
 
 
 def _mastery_offset(rating: int) -> int:
@@ -481,10 +587,13 @@ async def create_manual_flashcard(payload: ManualCreateReq, user_id: str = Depen
         await _ensure_file_in_class(payload.file_id, payload.class_id)
 
     async with db_conn() as (conn, cur):
+        raw_tags = [payload.topic, *(payload.tags or [])] if payload.topic else (payload.tags or [])
+        normalized_tags = normalize_tag_names(raw_tags)
+        topic = (payload.topic or (normalized_tags[0] if normalized_tags else "General")).strip()
         await cur.execute(
             """
-            INSERT INTO flashcards (class_id, file_id, question, answer, hint, difficulty, tags, created_by, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, now())
+            INSERT INTO flashcards (class_id, file_id, question, answer, hint, difficulty, tags, topic, created_by, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, now())
             RETURNING id::text
             """,
             (
@@ -494,13 +603,14 @@ async def create_manual_flashcard(payload: ManualCreateReq, user_id: str = Depen
                 payload.answer.strip(),
                 payload.hint,
                 payload.difficulty or "medium",
-                normalize_tag_names(payload.tags or []),
+                normalized_tags,
+                topic,
                 user_id,
             ),
         )
         row = await cur.fetchone()
         card_id = row[0]
-        await sync_flashcard_tags(cur, card_id, payload.tags or [])
+        await sync_flashcard_tags(cur, card_id, normalized_tags)
         await cur.execute(
             """
             INSERT INTO card_review_state (card_id, user_id, next_review_at, repetitions, interval, ease_factor, lapse_count, updated_at)
@@ -548,8 +658,12 @@ async def update_flashcard(
             values.append(payload.hint)
         if payload.tags is not None:
             fields.append("tags=%s")
-            normalized_tags = normalize_tag_names(payload.tags)
+            raw_tags = [payload.topic, *payload.tags] if payload.topic else payload.tags
+            normalized_tags = normalize_tag_names(raw_tags)
             values.append(normalized_tags)
+        if payload.topic is not None:
+            fields.append("topic=%s")
+            values.append(payload.topic.strip() or "General")
         if payload.difficulty is not None:
             fields.append("difficulty=%s")
             values.append(payload.difficulty)
@@ -700,6 +814,49 @@ async def transcribe_voice_answer(
     return VoiceTranscriptionOut(transcript=transcript, audio_url=audio_url)
 
 
+@router.post("/voice/evaluate", response_model=VoiceEvaluationOut)
+async def evaluate_voice_answer(
+    payload: VoiceEvaluationReq,
+    user_id: str = Depends(get_request_user_uid),
+):
+    async with db_conn() as (conn, cur):
+        await cur.execute(
+            """
+            SELECT class_id
+            FROM flashcards
+            WHERE id::text=%s AND deleted_at IS NULL
+            """,
+            (payload.flashcard_id,),
+        )
+        row = await cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Card not found")
+    await _ensure_class_owner(row[0], user_id)
+    baseline = _evaluate_answer_locally(payload.expected_answer, payload.user_answer_transcript)
+    try:
+        grade = await grade_theory_answer(
+            payload.question,
+            payload.expected_answer,
+            payload.user_answer_transcript,
+        )
+    except Exception:
+        return baseline
+    score = {0: min(baseline.score, 1), 1: max(2, min(3, baseline.score)), 2: max(4, baseline.score)}.get(grade, baseline.score)
+    feedback = baseline.feedback
+    if grade == 2:
+        feedback = "Good answer. Your response matched the expected meaning."
+    elif grade == 1:
+        feedback = "Partially correct. You showed some understanding, but important details were missing."
+    elif grade == 0:
+        feedback = "Attempt recorded, but it did not match the expected answer closely."
+    return VoiceEvaluationOut(
+        score=score,
+        feedback=feedback,
+        missingPoints=baseline.missingPoints,
+        isCorrectEnough=score >= 4,
+    )
+
+
 @router.post("/voice/attempts")
 async def save_voice_attempt(
     payload: VoiceAttemptReq,
@@ -745,8 +902,10 @@ async def save_voice_attempt(
         await cur.execute(
             """
             INSERT INTO voice_quiz_attempts
-              (id, user_id, flashcard_id, mode, transcript, audio_url, user_rating, response_time_seconds, next_review_at)
-            VALUES (%s, %s, %s, 'voice', %s, %s, %s, %s, %s)
+              (id, user_id, flashcard_id, mode, transcript, audio_url, user_rating,
+               score, feedback, missing_points, session_id, attempt_number,
+               response_time_seconds, next_review_at)
+            VALUES (%s, %s, %s, 'voice', %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s, %s)
             """,
             (
                 attempt_id,
@@ -755,6 +914,11 @@ async def save_voice_attempt(
                 transcript,
                 payload.audio_url,
                 payload.user_rating,
+                payload.score,
+                payload.feedback,
+                json.dumps(payload.missing_points or []),
+                payload.session_id,
+                payload.attempt_number,
                 payload.response_time_seconds,
                 updated.get("next_review_at"),
             ),
@@ -828,6 +992,45 @@ async def _insert_embeddings(pairs: List[Tuple[int, List[float]]]):
 
  
 
+def _estimate_flashcard_count(chunk_count: int, char_count: int, file_count: int) -> Tuple[int, Optional[str]]:
+    if char_count < 500:
+        count = max(1, min(3, chunk_count))
+    elif char_count < 1500:
+        count = 5
+    elif char_count < 4000:
+        count = 8
+    elif char_count < 9000:
+        count = 12
+    elif char_count < 20000:
+        count = 20
+    elif char_count < 45000:
+        count = 30
+    else:
+        count = 40
+    count += max(0, file_count - 1) * 4
+    count = max(1, min(50, count))
+    warning = None
+    if count < 5:
+        warning = "The selected content is short, so fewer than 5 useful cards may be generated."
+    return count, warning
+
+
+async def _selected_content_stats(class_id: int, file_ids: List[str]) -> Tuple[int, int]:
+    async with db_conn() as (conn, cur):
+        await cur.execute(
+            """
+            SELECT COUNT(fc.id)::int, COALESCE(SUM(COALESCE(fc.char_len, length(fc.content))), 0)::int
+            FROM file_chunks fc
+            JOIN files f ON f.id = fc.file_id
+            WHERE f.class_id = %s
+              AND fc.file_id = ANY(%s::uuid[])
+            """,
+            (class_id, file_ids),
+        )
+        row = await cur.fetchone()
+    return int(row[0] or 0), int(row[1] or 0)
+
+
 async def _enqueue_flashcard_job(req: GenerateReq, user_id: str) -> FlashcardJobOut:
     await _ensure_class_owner(req.class_id, user_id)
     if not req.file_ids:
@@ -848,15 +1051,32 @@ async def _enqueue_flashcard_job(req: GenerateReq, user_id: str) -> FlashcardJob
         if not valid_ids:
             raise HTTPException(status_code=404, detail="No files found for this class scope.")
 
+        chunk_count, char_count = await _selected_content_stats(req.class_id, valid_ids)
+        mode = req.cardCountMode or ("fixed" if req.n_cards else "auto")
+        requested_count = req.requestedCount or req.n_cards
+        warning = None
+        if mode == "auto":
+            target_count, warning = _estimate_flashcard_count(chunk_count, char_count, len(valid_ids))
+            requested_count = None
+        else:
+            target_count = max(1, min(100 if mode == "custom" else 50, int(requested_count or 20)))
+
         payload = req.model_dump()
         payload["file_ids"] = valid_ids
+        payload["sourceDocumentIds"] = valid_ids
+        payload["cardCountMode"] = mode
+        payload["requestedCount"] = requested_count
+        payload["n_cards"] = target_count
+        payload["contentStats"] = {"chunks": chunk_count, "chars": char_count}
+        if warning:
+            payload["warning"] = warning
 
         correlation_id = str(uuid.uuid4())
         await cur.execute(
             """
             INSERT INTO flashcard_jobs (user_id, deck_id, status, progress, payload, correlation_id)
             VALUES (%s, %s, 'queued', 0, %s::jsonb, %s)
-            RETURNING id::text, deck_id, status, progress, correlation_id, error_message, created_at
+            RETURNING id::text, deck_id, status, progress, correlation_id, error_message, created_at, payload
             """,
             (user_id, req.class_id, json.dumps(payload), correlation_id),
         )
@@ -864,10 +1084,14 @@ async def _enqueue_flashcard_job(req: GenerateReq, user_id: str) -> FlashcardJob
         await conn.commit()
 
     log.info(
-        "[flashcards] job queued user_id=%s class_id=%s files=%d job_id=%s correlation_id=%s",
+        "[flashcards] job queued user_id=%s class_id=%s files=%d card_count_mode=%s target=%s chunks=%s chars=%s job_id=%s correlation_id=%s",
         user_id,
         req.class_id,
         len(valid_ids),
+        mode,
+        target_count,
+        chunk_count,
+        char_count,
         row[0],
         row[4],
     )
@@ -908,7 +1132,7 @@ async def get_flashcard_job_status(job_id: str, user_id: str = Depends(get_reque
     async with db_conn() as (conn, cur):
         await cur.execute(
             """
-            SELECT id::text, deck_id, status, progress, correlation_id, error_message, created_at
+            SELECT id::text, deck_id, status, progress, correlation_id, error_message, created_at, payload
             FROM flashcard_jobs
             WHERE id::text=%s AND user_id=%s
             """,
@@ -929,7 +1153,7 @@ async def list_flashcards_for_class(
 ):
     await _ensure_class_owner(class_id, user_id)
     q = """
-      SELECT f.id::text, f.class_id, f.file_id::text, f.source_chunk_id, f.question, f.answer, f.hint, f.difficulty, f.tags,
+      SELECT f.id::text, f.class_id, f.file_id::text, f.source_chunk_id, f.question, f.answer, f.hint, f.difficulty, COALESCE(f.topic, f.tags[1], 'General') AS topic, f.tags,
              s.next_review_at, s.repetitions, s.ease_factor, s.interval, s.lapse_count, f.created_at, f.updated_at
       FROM flashcards f
       LEFT JOIN card_review_state s ON s.card_id = f.id AND s.user_id = %s
@@ -944,12 +1168,12 @@ async def list_flashcards_for_class(
 
     out: List[FlashcardOut] = []
     for r in rows:
-        expanded = _maybe_expand_legacy_jsonblob((r[0], r[1], r[3], r[4], r[5], r[6], r[7], r[8]))
+        expanded = _maybe_expand_legacy_jsonblob((r[0], r[1], r[3], r[4], r[5], r[6], r[7], r[8], r[9]))
         if expanded:
             out.extend(expanded)
         else:
-            repetitions = r[10] or 0
-            interval = r[12] or 0
+            repetitions = r[11] or 0
+            interval = r[13] or 0
             state = "new" if repetitions == 0 else ("learning" if interval == 0 else "review")
             out.append(
                 FlashcardOut(
@@ -961,14 +1185,15 @@ async def list_flashcards_for_class(
                     answer=r[5],
                     hint=r[6],
                     difficulty=r[7] or "medium",
-                    tags=r[8] or [],
-                    due_at=r[9].isoformat() if r[9] else None,
+                    topic=r[8] or "General",
+                    tags=r[9] or [],
+                    due_at=r[10].isoformat() if r[10] else None,
                     repetitions=repetitions,
-                    ease_factor=r[11],
+                    ease_factor=r[12],
                     interval_days=interval,
                     state=state,
-                    created_at=r[14].isoformat() if r[14] else None,
-                    updated_at=r[15].isoformat() if r[15] else None,
+                    created_at=r[15].isoformat() if r[15] else None,
+                    updated_at=r[16].isoformat() if r[16] else None,
                 )
             )
 
@@ -1004,6 +1229,7 @@ async def start_mastery_session(payload: MasteryStartReq, user_id: str = Depends
     await _ensure_mastery_schema()
     await _ensure_class_owner(payload.class_id, user_id)
     file_ids = payload.file_ids or []
+    topic = (payload.topic or "").strip() or None
     if file_ids:
         for fid in file_ids:
             await _ensure_file_in_class(fid, payload.class_id)
@@ -1013,20 +1239,25 @@ async def start_mastery_session(payload: MasteryStartReq, user_id: str = Depends
                 """
                 SELECT id::text, question, answer, hint, difficulty, tags
                 FROM flashcards
-                WHERE class_id=%s AND deleted_at IS NULL AND file_id = ANY(%s::uuid[])
+                WHERE class_id=%s
+                  AND deleted_at IS NULL
+                  AND file_id = ANY(%s::uuid[])
+                  AND (%s::text IS NULL OR lower(COALESCE(topic, tags[1], 'General')) = lower(%s::text))
                 ORDER BY created_at ASC
                 """,
-                (payload.class_id, file_ids),
+                (payload.class_id, file_ids, topic, topic),
             )
         else:
             await cur.execute(
                 """
                 SELECT id::text, question, answer, hint, difficulty, tags
                 FROM flashcards
-                WHERE class_id=%s AND deleted_at IS NULL
+                WHERE class_id=%s
+                  AND deleted_at IS NULL
+                  AND (%s::text IS NULL OR lower(COALESCE(topic, tags[1], 'General')) = lower(%s::text))
                 ORDER BY created_at ASC
                 """,
-                (payload.class_id,),
+                (payload.class_id, topic, topic),
             )
         rows = await cur.fetchall()
         if not rows:
@@ -1177,6 +1408,17 @@ async def review_mastery_card(
         current_id = card_order[current_index]
         if current_id != payload.card_id:
             raise HTTPException(status_code=400, detail="Card is not the current session item")
+        await cur.execute(
+            """
+            SELECT file_id, COALESCE(topic, tags[1], 'General')
+            FROM flashcards
+            WHERE id=%s AND class_id=%s AND deleted_at IS NULL
+            """,
+            (payload.card_id, session[0]),
+        )
+        card_scope = await cur.fetchone()
+        if not card_scope:
+            raise HTTPException(status_code=404, detail="Card not found")
 
         await cur.execute(
             """
@@ -1236,6 +1478,16 @@ async def review_mastery_card(
             VALUES (%s, %s, %s, %s, %s)
             """,
             (user_id, payload.card_id, payload.rating, payload.response_time_ms, session_id),
+        )
+        rating_label = "again" if payload.rating <= 1 else "hard" if payload.rating == 2 else "good" if payload.rating == 3 else "easy"
+        await apply_study_review(
+            cur,
+            user_id=user_id,
+            card_id=payload.card_id,
+            deck_id=session[0],
+            topic_id=str(card_scope[0]) if card_scope[0] else None,
+            rating=rating_label,
+            response_time_ms=payload.response_time_ms,
         )
 
         card_order.pop(current_index)

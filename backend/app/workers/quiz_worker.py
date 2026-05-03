@@ -9,7 +9,7 @@ import re
 import time
 from collections import defaultdict
 from io import BytesIO
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from pypdf import PdfReader
@@ -22,6 +22,7 @@ from app.core.migrations import ensure_learning_analytics_schema, ensure_quiz_jo
 from app.lib.chunking import chunk_by_pages
 from app.lib.quiz_counts import count_items_by_type, resolve_requested_counts, validate_quiz_counts
 from app.lib.tags import normalize_tag_names, sync_quiz_question_tags
+from app.lib.stored_document_paths import resolve_local_original_file
 
 POLL_SECONDS = 2
 QUIZ_GENERATION_RETRIES = max(1, int(os.environ.get("QUIZ_GENERATION_RETRIES", "2")))
@@ -284,9 +285,19 @@ async def _fetch_chunks(file_id: str, limit: int = 500) -> List[Dict[str, Any]]:
     return [dict(chunk) for chunk in out]
 
 
-def _local_path_for_storage_key(storage_key: str) -> Path:
-    rel = PurePosixPath(storage_key)
-    return (Path(settings.upload_root) / Path(rel.as_posix())).resolve()
+def _filter_chunks_for_topic(chunks: List[Dict[str, Any]], topic: Optional[str]) -> List[Dict[str, Any]]:
+    focus = (topic or "").strip().lower()
+    if not focus:
+        return chunks
+    terms = [term for term in re.split(r"[^a-z0-9]+", focus) if len(term) >= 3]
+    if not terms:
+        return chunks
+    focused = []
+    for chunk in chunks:
+        content = str(chunk.get("text") or chunk.get("content") or "").lower()
+        if focus in content or any(term in content for term in terms):
+            focused.append(chunk)
+    return focused or chunks
 
 
 def _extract_pdf_pages(data: bytes) -> List[str]:
@@ -309,7 +320,7 @@ async def _build_chunks_from_pdf_source(file_id: str) -> List[Dict[str, Any]]:
     async with db_conn() as (conn, cur):
         await cur.execute(
             """
-            SELECT filename, mime_type, storage_backend, storage_key
+            SELECT filename, mime_type, storage_backend, storage_key, storage_url, class_id
             FROM files
             WHERE id=%s
             """,
@@ -320,16 +331,29 @@ async def _build_chunks_from_pdf_source(file_id: str) -> List[Dict[str, Any]]:
     if not row:
         return []
 
-    filename, mime_type, storage_backend, storage_key = row
+    filename, mime_type, storage_backend, storage_key, storage_url, class_id = row
     is_pdf = str(filename or "").lower().endswith(".pdf") or "pdf" in str(mime_type or "").lower()
-    if not is_pdf or not storage_key:
+    if not is_pdf:
         return []
 
     try:
         backend = str(storage_backend or settings.storage_backend).lower()
         if backend == "local":
-            data = _local_path_for_storage_key(str(storage_key)).read_bytes()
+            path, _rel = resolve_local_original_file(
+                Path(settings.upload_root).resolve(),
+                int(class_id),
+                str(file_id),
+                str(storage_key) if storage_key else None,
+                str(storage_url) if storage_url else None,
+                hint_display_filename=str(filename or ""),
+                context="quiz_worker",
+            )
+            if not path:
+                return []
+            data = path.read_bytes()
         else:
+            if not storage_key:
+                return []
             data = get_object_bytes(str(storage_key))
         page_texts = _extract_pdf_pages(data)
     except Exception as err:
@@ -414,7 +438,7 @@ def _build_prompt(
     )
 
     return f"""
-You are an exam-quality quiz generator.
+You are an educational, exam-quality quiz generator.
 
 TASK:
 Generate EXACTLY {requested_count} distinct {batch_label} quiz items STRICTLY based on the provided context.
@@ -427,9 +451,14 @@ DIFFICULTY: {difficulty}
 RANDOMIZATION NONCE: {variation_nonce}
 
 QUALITY RULES:
+- Generate questions only from the provided document context.
+- Do not ask generic questions like "What is the purpose of this slide?" or "What is this section about?"
+- Mention specific concepts, terms, definitions, comparisons, examples, causes/effects, or applications from the document.
 - Prioritize reasoning, recall, and comprehension over shallow extraction.
 - Cover different parts of the context (avoid clustering).
 - Avoid rephrasing the same question multiple times.
+- Avoid vague yes/no questions unless the answer requires explanation.
+- If the context is weak, still use the strongest available document-specific concepts instead of inventing facts.
 - Return exactly {requested_count} items.
 - Do not return fewer or more items.
 - Do not include disallowed question types.
@@ -440,6 +469,7 @@ FORMAT RULES:
 - MCQ options must be a valid JSON array of four plain strings, for example ["option one","option two","option three","option four"]. Do not write ["A"] "text" or separate A/B/C/D labels.
 - For non-MCQ types ({non_mcq_types}): answer_key required, options=null, correct_index=null.
 - Include source chunk_id/page_start/page_end for every question.
+- Every item must include one short, meaningful topic label. Use specific concepts like "SQL Injection" or "Bayes Theorem"; avoid "General" unless there is no better label.
 
 OUTPUT FORMAT:
 Return ONLY valid JSON:
@@ -453,6 +483,7 @@ Return ONLY valid JSON:
       "correct_index": 0 or null,
       "answer_key": "text or null",
       "explanation": "optional",
+      "topic": "Short concept label",
       "tags": ["topic one", "topic two"],
       "difficulty": "{difficulty}",
       "source": {{"chunk_id": 123, "page_start": 1, "page_end": 1}}
@@ -490,6 +521,7 @@ def _sanitize_generated_items(
             "type": qtype,
             "question": question,
             "explanation": item.get("explanation"),
+            "topic": str(item.get("topic") or item.get("concept") or "").strip(),
             "tags": item.get("tags") or [],
             "difficulty": str(item.get("difficulty") or difficulty or "medium").lower(),
             "source": {
@@ -925,6 +957,7 @@ async def _save_quiz(
             answer_key = it.get("answer_key")
             explanation = it.get("explanation")
             diff = it.get("difficulty", settings.get("difficulty", "medium"))
+            topic = str(it.get("topic") or "").strip()
 
             src = it.get("source") or {}
             chunk_id = src.get("chunk_id")
@@ -935,17 +968,17 @@ async def _save_quiz(
                 """
                 INSERT INTO quiz_questions
                 (quiz_id, position, qtype, question, options, correct_index, answer_key,
-                 explanation, difficulty, source_chunk_id, page_start, page_end)
+                 explanation, difficulty, topic, source_chunk_id, page_start, page_end)
                 VALUES
                 (%s, %s, %s, %s, %s, %s, %s,
-                 %s, %s, %s, %s, %s)
+                 %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
                 (
                     quiz_id, idx,
                     qtype, question,
                     options, correct_index, answer_key,
-                    explanation, diff,
+                    explanation, diff, topic or None,
                     chunk_id, page_start, page_end
                 ),
             )
@@ -954,6 +987,8 @@ async def _save_quiz(
             raw_tags = it.get("tags") or []
             if not isinstance(raw_tags, list):
                 raw_tags = []
+            if topic:
+                raw_tags = [topic, *raw_tags]
             normalized = normalize_tag_names(raw_tags)
             if not normalized:
                 normalized = [str(qtype or "quiz")]
@@ -1096,6 +1131,7 @@ async def run():
                 mcq_count = int(mcq_count)
             types = settings.get("types", ["mcq", "conceptual"])
             difficulty = settings.get("difficulty", "medium")
+            topic_focus = str(settings.get("topic") or "").strip()
             requested_mcq_count, requested_theory_count = resolve_requested_counts(
                 n_questions=n_questions,
                 mcq_count=mcq_count,
@@ -1107,6 +1143,7 @@ async def run():
 
             load_started_at = time.perf_counter()
             all_chunks = await _fetch_chunks(file_id=file_id, limit=500)
+            all_chunks = _filter_chunks_for_topic(all_chunks, topic_focus)
             if not all_chunks:
                 raise QuizSourceUnavailableError(
                     "This document does not have indexed text yet. Please wait for document processing to finish or choose another PDF."
@@ -1158,6 +1195,11 @@ async def run():
                 recent_questions=recent_questions,
                 rng=rng,
             )
+            if topic_focus:
+                for item in items:
+                    if not str(item.get("topic") or "").strip() or str(item.get("topic")).strip().lower() == "general":
+                        item["topic"] = topic_focus
+                title = f"{topic_focus} practice quiz"
             timing_ms["generate_questions"] = _timing_ms(generation_started_at)
 
             await _set_job_progress(

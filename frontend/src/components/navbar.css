@@ -27,20 +27,10 @@
   gap: 10px;
   text-decoration: none;
 }
-.ns-logo img {
-  height: 32px;
-  width: 40px;
-  border-radius: 8px;
-}
-.ns-logo .ns-brand {
-  font-weight: 610;
-  letter-spacing: -0.3px;
-  font-size: 20px;
-  color: rgb(30, 30, 30);
-}
+
 .ns-link {
   position: relative;
-  color: rgb(124, 69, 133);
+  color: var(--text-main);
   text-decoration: none;
   font-weight: 600;
   font-size: 14px;
@@ -49,8 +39,18 @@
   transition: color .15s ease, background .15s ease;
 }
 .ns-link:hover {
-  color: #4f46e5;
+  color: var(--primary);
   background: rgba(79,70,229,.08);
+}
+
+.ns-link--active {
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+}
+
+[data-theme="dark"] .ns-link--active {
+  color: #c4b5fd;
+  background: rgba(124, 58, 237, 0.16);
 }
 /* Navbar link underline animation */
 .ns-link::after {
@@ -240,4 +240,10 @@
   -webkit-backdrop-filter: saturate(160%) blur(12px);
   border-bottom-color: rgba(15,23,36,0.08) !important;
   box-shadow: 0 6px 18px rgba(15,23,36,0.06) !important;
+}
+
+[data-theme="dark"] .ns-nav-wrap.is-scrolled {
+  background: rgba(14, 17, 24, 0.88) !important;
+  border-bottom-color: rgba(255,255,255,0.08) !important;
+  box-shadow: 0 8px 22px rgba(0,0,0,0.22) !important;
 }

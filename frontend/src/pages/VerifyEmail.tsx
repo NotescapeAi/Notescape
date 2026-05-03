@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { sendEmailVerification, signOut } from "firebase/auth";
 import { useNavigate } from "react-router-dom";
 import { auth } from "../firebase/firebase";
+import BrandLogo from "../components/BrandLogo";
 import "./NotescapeStartPage.css";
 
 const RESEND_COOLDOWN_SECONDS = 45;
@@ -97,8 +98,7 @@ export default function VerifyEmail() {
       <main className="page">
         <section className="auth-page" aria-live="polite">
           <header className="logo">
-            <img src="/logo1.png" alt="Notescape logo" width={70} height={50} />
-            <h1>Notescape</h1>
+            <BrandLogo variant="header" className="auth-brand-logo" />
           </header>
           <div className="login-container">
             <h2 className="login-title">Check your inbox to verify your email</h2>

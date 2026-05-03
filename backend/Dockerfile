@@ -8,9 +8,18 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Install Tesseract OCR and Poppler utils for PDF processing
+# Install OCR, PDF, and PPTX conversion tools.
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends tesseract-ocr poppler-utils curl && \
+    apt-get install -y --no-install-recommends \
+      tesseract-ocr \
+      poppler-utils \
+      curl \
+      libreoffice \
+      libreoffice-impress \
+      fonts-dejavu \
+      fonts-liberation \
+      fontconfig && \
+    libreoffice --headless --version && \
     rm -rf /var/lib/apt/lists/*
 
 # Upgrade pip to ensure better download resilience

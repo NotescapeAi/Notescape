@@ -1,6 +1,7 @@
 // src/pages/FlashcardsPage.tsx
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { BookOpen, Mic, Plus, Sparkles, Target, TrendingUp, Zap } from "lucide-react";
 import {
   listFlashcards,
   deleteFlashcard,
@@ -299,146 +300,233 @@ export default function FlashcardsPage() {
     setSearchParams(next, { replace: true });
   }
 
+  const masteryPct = masteryStats?.mastery_percent ?? 0;
+  const dueNowCount = progress?.due_now ?? 0;
+  const totalCount = progress?.total ?? cardsRaw.length;
+
   return (
     <AppShell title="Flashcards" breadcrumbs={["Flashcards"]} subtitle={className || undefined}>
-      <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <div className="text-xs uppercase tracking-[0.3em] text-[var(--primary)]">Flashcards</div>
-            <h1 className="mt-2 text-3xl font-semibold text-main">Practice with intent</h1>
-            <div className="text-sm text-muted">{className}</div>
-          </div>
-          <div className="flex items-center gap-3">
-            <Button variant="primary" onClick={openCreate} className="rounded-full px-5">
-              New flashcard
-            </Button>
-            <Button className="rounded-full" onClick={() => handleStudy(dueCards)}>
-              Study due
-            </Button>
-            <Button className="rounded-full" onClick={() => handleVoiceQuiz(dueCards.length ? dueCards : filtered)}>
-              Voice quiz
-            </Button>
-          </div>
-        </div>
-
-        <div className="rounded-[28px] surface p-6 shadow-[0_16px_40px_rgba(15,16,32,0.08)]">
+      <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-5">
+        {/* Hero header */}
+        <div className="rounded-[var(--radius-2xl)] border border-[var(--border)] bg-[var(--surface)] p-5 shadow-[var(--shadow-sm)] sm:p-6">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0">
+              <div className="inline-flex items-center gap-1.5 rounded-full border border-[color-mix(in_srgb,var(--primary)_28%,var(--border))] bg-[var(--primary-soft)] px-2.5 py-1 text-[10.5px] font-semibold uppercase tracking-[0.18em] text-[var(--primary)]">
+                <Sparkles className="h-3 w-3" />
+                Flashcards
+              </div>
+              <h1 className="mt-3 text-[26px] font-semibold leading-tight tracking-tight text-[var(--text-main)] sm:text-[30px]">
+                Practice with intent
+              </h1>
+              <p className="mt-1 text-[13.5px] text-[var(--text-muted)]">
+                {className ? (
+                  <>Class: <span className="font-medium text-[var(--text-main)]">{className}</span></>
+                ) : (
+                  "Browse, study, or add new cards"
+                )}
+                {totalCount > 0 ? (
+                  <> &middot; {totalCount} total {totalCount === 1 ? "card" : "cards"}</>
+                ) : null}
+              </p>
+            </div>
             <div className="flex flex-wrap items-center gap-2">
-          {(["all", "due"] as const).map((v) => (
-            <button
-              key={v}
-              onClick={() => setViewFilter(v)}
-              className={`rounded-full border px-4 py-1.5 text-xs font-semibold ${
-                viewFilter === v
-                  ? "border-[var(--primary)] bg-[var(--primary)] text-inverse shadow-md"
-                  : "border-token surface text-muted"
-              }`}
-            >
-              {v === "all" ? "All cards" : "Due"}
-            </button>
-          ))}
-          {(["all", "easy", "medium", "hard"] as Diff[]).map((d) => (
-            <button
-              key={d}
-              onClick={() => setDifficultyFilter(d)}
-              className={`rounded-full border px-4 py-1.5 text-xs font-semibold ${
-                difficultyFilter === d
-                  ? "border-[var(--primary)] bg-[var(--primary)] text-inverse shadow-md"
-                  : "border-token surface text-muted"
-              }`}
-            >
-              {d === "all" ? "Any difficulty" : d}
-            </button>
-          ))}
-          <select
-            value={fileFilter}
-            onChange={(e) => setFileFilter(e.target.value)}
-            className="h-10 rounded-2xl border border-token surface px-3 text-sm text-muted"
-          >
-            <option value="all">All files</option>
-            {files.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.filename}
-              </option>
-            ))}
-          </select>
-          <select
-            value={tagFilter}
-            onChange={(e) => setTagAndQuery(e.target.value)}
-            className="h-10 rounded-2xl border border-token surface px-3 text-sm text-muted"
-          >
-            <option value="all">All tags</option>
-            {availableTags.map((tag) => (
-              <option key={tag} value={tag}>
-                {tag}
-              </option>
-            ))}
-          </select>
+              <Button variant="primary" onClick={() => handleStudy(dueCards)} className="gap-1.5">
+                <BookOpen className="h-4 w-4" />
+                Study due{dueNowCount ? ` (${dueNowCount})` : ""}
+              </Button>
+              <Button onClick={() => handleVoiceQuiz(dueCards.length ? dueCards : filtered)} className="gap-1.5">
+                <Mic className="h-4 w-4" />
+                Voice quiz
+              </Button>
+              <Button onClick={openCreate} className="gap-1.5">
+                <Plus className="h-4 w-4" />
+                New flashcard
+              </Button>
             </div>
           </div>
 
-        {weakTags.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {weakTags.map((tag) => (
+          {/* Mastery ribbon */}
+          <div className="mt-5 flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2">
+              <Target className="h-4 w-4 text-[var(--primary)]" />
+              <span className="text-[13px] font-semibold text-[var(--text-main)]">Mastery</span>
+              <span className="text-[13px] font-semibold tabular-nums text-[var(--primary)]">{masteryPct}%</span>
+            </div>
+            <div
+              className="flash-progress-track flex-1 min-w-[180px]"
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={masteryPct}
+              aria-label="Mastery progress"
+            >
+              <div
+                className="flash-progress-fill"
+                style={{ ["--value" as any]: `${masteryPct}%` } as React.CSSProperties}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Stat tiles — combined mastery + progress */}
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {[
+            {
+              label: "Due now",
+              value: progress?.due_now ?? 0,
+              icon: <Zap className="h-4 w-4" />,
+              tone: "var(--danger)",
+              bg: "var(--danger-soft)",
+            },
+            {
+              label: "Due today",
+              value: progress?.due_today ?? 0,
+              icon: <Target className="h-4 w-4" />,
+              tone: "var(--warning)",
+              bg: "var(--warning-soft)",
+            },
+            {
+              label: "Learning",
+              value: progress?.learning ?? 0,
+              icon: <TrendingUp className="h-4 w-4" />,
+              tone: "var(--primary)",
+              bg: "var(--primary-soft)",
+            },
+            {
+              label: "Mastered",
+              value: masteryStats?.mastered_count ?? 0,
+              icon: <Sparkles className="h-4 w-4" />,
+              tone: "var(--success)",
+              bg: "var(--success-soft)",
+            },
+          ].map((stat) => (
+            <div
+              key={stat.label}
+              className="rounded-[var(--radius-xl)] border border-[var(--border)] bg-[var(--surface)] p-4 shadow-[var(--shadow-sm)] transition hover:-translate-y-[1px] hover:shadow-[var(--shadow-soft)]"
+            >
+              <div className="flex items-center justify-between">
+                <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted-soft)]">
+                  {stat.label}
+                </div>
+                <div
+                  className="flex h-7 w-7 items-center justify-center rounded-[var(--radius-sm)]"
+                  style={{ background: stat.bg, color: stat.tone }}
+                >
+                  {stat.icon}
+                </div>
+              </div>
+              <div className="mt-2 text-2xl font-semibold tabular-nums text-[var(--text-main)]">{stat.value}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Filters */}
+        <div className="rounded-[var(--radius-xl)] border border-[var(--border)] bg-[var(--surface)] p-4 shadow-[var(--shadow-sm)]">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted-soft)]">
+            Filter deck
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            {(["all", "due"] as const).map((v) => (
               <button
-                key={tag.tag_id}
-                onClick={() => setTagAndQuery(tag.tag.toLowerCase())}
-                className={`rounded-full border px-3 py-1 text-xs font-semibold ${
-                  tagFilter === tag.tag.toLowerCase()
-                    ? "border-[var(--primary)] bg-[var(--primary)] text-inverse"
-                    : "border-token surface text-muted"
-                }`}
+                key={v}
+                onClick={() => setViewFilter(v)}
+                className={`tab-pill ${viewFilter === v ? "tab-pill-active" : "tab-pill-muted"}`}
               >
-                {tag.tag}
+                {v === "all" ? "All cards" : "Due"}
               </button>
             ))}
+            <span className="mx-1 h-5 w-px bg-[var(--border)]" aria-hidden />
+            {(["all", "easy", "medium", "hard"] as Diff[]).map((d) => (
+              <button
+                key={d}
+                onClick={() => setDifficultyFilter(d)}
+                className={`tab-pill ${difficultyFilter === d ? "tab-pill-active" : "tab-pill-muted"}`}
+              >
+                {d === "all" ? "Any difficulty" : d.charAt(0).toUpperCase() + d.slice(1)}
+              </button>
+            ))}
+            <div className="ml-auto flex flex-wrap items-center gap-2">
+              <select
+                value={fileFilter}
+                onChange={(e) => setFileFilter(e.target.value)}
+                aria-label="Filter by file"
+                className="h-9 min-w-[180px] rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] px-3 text-[13px] font-medium text-[var(--text-main)]"
+              >
+                <option value="all">All files</option>
+                {files.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.filename}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={tagFilter}
+                onChange={(e) => setTagAndQuery(e.target.value)}
+                aria-label="Filter by tag"
+                className="h-9 min-w-[140px] rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] px-3 text-[13px] font-medium text-[var(--text-main)]"
+              >
+                <option value="all">All tags</option>
+                {availableTags.map((tag) => (
+                  <option key={tag} value={tag}>
+                    {tag}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {weakTags.length > 0 && (
+            <div className="mt-3 flex flex-wrap items-center gap-1.5">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-muted-soft)]">
+                Weak topics:
+              </span>
+              {weakTags.map((tag) => {
+                const active = tagFilter === tag.tag.toLowerCase();
+                return (
+                  <button
+                    key={tag.tag_id}
+                    onClick={() => setTagAndQuery(tag.tag.toLowerCase())}
+                    className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold transition ${
+                      active
+                        ? "border-[color-mix(in_srgb,var(--primary)_30%,var(--border))] bg-[var(--primary-soft)] text-[var(--primary)]"
+                        : "border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text-main)]"
+                    }`}
+                  >
+                    {tag.tag}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {loading && <div className="text-sm text-[var(--text-muted)]">Loading...</div>}
+        {error && (
+          <div className="rounded-[var(--radius-md)] border border-[color-mix(in_srgb,var(--danger)_30%,transparent)] bg-[var(--danger-soft)] px-4 py-3 text-sm font-medium text-[var(--danger)]">
+            {error}
           </div>
         )}
 
-        <div className="mt-2 grid grid-cols-1 md:grid-cols-4 gap-3">
-          {[
-            { label: "Mastery", value: `${masteryStats?.mastery_percent ?? 0}%` },
-            { label: "Mastered cards", value: masteryStats?.mastered_count ?? 0 },
-            { label: "Avg rating", value: masteryStats?.average_rating?.toFixed?.(2) ?? "0.00" },
-            { label: "Reviews", value: masteryStats?.total_reviews ?? 0 },
-          ].map((stat) => (
-            <div
-              key={stat.label}
-              className="rounded-[22px] surface p-4 shadow-[0_12px_30px_rgba(15,16,32,0.08)]"
-            >
-              <div className="text-xs text-muted">{stat.label}</div>
-              <div className="text-2xl font-semibold text-main">{stat.value}</div>
-            </div>
-          ))}
-        </div>
-
-        <div className="mt-2 grid grid-cols-1 md:grid-cols-4 gap-3">
-          {[
-            { label: "Due now", value: progress?.due_now ?? 0 },
-            { label: "Due today", value: progress?.due_today ?? 0 },
-            { label: "Learning", value: progress?.learning ?? 0 },
-            { label: "Total", value: progress?.total ?? 0 },
-          ].map((stat) => (
-            <div
-              key={stat.label}
-              className="rounded-[22px] surface p-4 shadow-[0_12px_30px_rgba(15,16,32,0.08)]"
-            >
-              <div className="text-xs text-muted">{stat.label}</div>
-              <div className="text-2xl font-semibold text-main">{stat.value}</div>
-            </div>
-          ))}
-        </div>
-
-        {loading && <div className="mt-4 text-sm text-muted">Loading...</div>}
-        {error && <div className="mt-4 text-sm text-[var(--accent-pink)]">{error}</div>}
-
         {!loading && !error && filtered.length === 0 && (
-          <div className="mt-6 rounded-[28px] border border-dashed border-token surface p-10 text-sm text-muted text-center">
-            No flashcards found. Generate or create one to start studying.
+          <div className="rounded-[var(--radius-2xl)] border border-dashed border-[var(--border-strong)] bg-[var(--surface-2)] p-10 text-center">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[var(--primary-soft)] text-[var(--primary)]">
+              <Sparkles className="h-5 w-5" />
+            </div>
+            <div className="mt-3 text-[15px] font-semibold text-[var(--text-main)]">No flashcards found</div>
+            <div className="mt-1 text-[13px] text-[var(--text-muted)]">
+              Generate cards from your documents or add one manually to start studying.
+            </div>
+            <div className="mt-4 flex flex-wrap justify-center gap-2">
+              <Button variant="primary" onClick={openCreate} className="gap-1.5">
+                <Plus className="h-4 w-4" />
+                New flashcard
+              </Button>
+            </div>
           </div>
         )}
 
         {!loading && !error && filtered.length > 0 && (
-          <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
             {filtered.map((c) => {
               const tags = Array.isArray(c.tags)
                 ? c.tags.map((t) => String(t).trim()).filter(Boolean)
@@ -446,15 +534,25 @@ export default function FlashcardsPage() {
               const status = dueStatus(c);
               const nextReview = formatNextReview(c.due_at);
               const startIndex = filtered.findIndex((fc) => String(fc.id) === String(c.id));
+              const rawDiff: string = (c as unknown as { difficulty?: string }).difficulty ?? "medium";
+              const diff = rawDiff.toLowerCase();
+              const difficultyTone =
+                diff === "easy" ? "pill-success" : diff === "hard" ? "pill-danger" : "pill-info";
+              const statusTone =
+                status === "Due" ? "pill-warning" : status === "Learning" ? "pill-info" : "pill-neutral";
 
               return (
-                <div key={c.id} className="rounded-[28px] surface p-5 shadow-[0_18px_40px_rgba(15,16,32,0.08)]">
+                <div
+                  key={c.id}
+                  className="group flex flex-col rounded-[var(--radius-xl)] border border-[var(--border)] bg-[var(--surface)] p-5 shadow-[var(--shadow-sm)] transition hover:-translate-y-[1px] hover:border-[color-mix(in_srgb,var(--primary)_22%,var(--border))] hover:shadow-[var(--shadow-soft)]"
+                >
                   <div className="flex items-start justify-between gap-2">
-                    <div className="flex flex-wrap items-center gap-2 text-xs">
-                      <span className="rounded-full border border-token surface-2 px-2 py-0.5 font-semibold text-[var(--primary)]">
-                        {(c.difficulty || "medium").toUpperCase()}
+                    <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                      <span className={`pill ${difficultyTone}`}>
+                        {diff.toUpperCase()}
                       </span>
-                      <span className="rounded-full border border-token surface-2 px-2 py-0.5 text-muted">
+                      <span className={`pill ${statusTone}`}>
+                        <span className="h-1.5 w-1.5 rounded-full" style={{ background: "currentColor" }} />
                         {status}
                       </span>
                     </div>
@@ -469,22 +567,43 @@ export default function FlashcardsPage() {
                     />
                   </div>
 
-                  <div className="mt-3 text-base font-semibold text-main">{sanitizeText(c.question)}</div>
-                  <div className="mt-2 text-xs text-muted">Next review: {nextReview}</div>
-                  <details className="mt-3">
-                    <summary className="cursor-pointer text-sm font-semibold text-muted">Show answer</summary>
-                    <div className="mt-2 text-sm text-muted whitespace-pre-wrap">
+                  <div className="mt-3 text-[15px] font-semibold leading-6 text-[var(--text-main)] line-clamp-3">
+                    {sanitizeText(c.question)}
+                  </div>
+                  <div className="mt-2 text-[11.5px] font-medium text-[var(--text-muted-soft)]">
+                    Next review: <span className="text-[var(--text-muted)]">{nextReview}</span>
+                  </div>
+
+                  <details className="mt-3 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-2)] px-3 py-2 text-sm open:py-3">
+                    <summary className="cursor-pointer list-none text-[12.5px] font-semibold text-[var(--text-muted)] transition hover:text-[var(--primary)]">
+                      Show answer
+                    </summary>
+                    <div className="mt-2 text-[13px] leading-6 text-[var(--text-main)] whitespace-pre-wrap">
                       {sanitizeText(c.answer)}
                     </div>
                   </details>
+
                   {c.hint && (
-                    <div className="mt-3 text-xs text-muted">
-                      <span className="font-semibold">Hint:</span> {sanitizeText(c.hint)}
+                    <div className="mt-3 text-[11.5px] text-[var(--text-muted)]">
+                      <span className="font-semibold text-[var(--text-muted-soft)]">Hint:</span>{" "}
+                      {sanitizeText(c.hint)}
                     </div>
                   )}
                   {tags.length > 0 && (
-                    <div className="mt-3 text-xs text-muted">
-                      <span className="font-semibold">Tags:</span> {tags.join(", ")}
+                    <div className="mt-3 flex flex-wrap gap-1">
+                      {tags.slice(0, 4).map((t) => (
+                        <span
+                          key={t}
+                          className="inline-flex items-center rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-2 py-0.5 text-[10.5px] font-medium text-[var(--text-muted)]"
+                        >
+                          {t}
+                        </span>
+                      ))}
+                      {tags.length > 4 && (
+                        <span className="inline-flex items-center text-[10.5px] font-medium text-[var(--text-muted-soft)]">
+                          +{tags.length - 4} more
+                        </span>
+                      )}
                     </div>
                   )}
                 </div>
