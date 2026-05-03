@@ -1941,4 +1941,9 @@ export async function chatAsk(req: ChatAskRequest): Promise<ChatAskResponse> {
       question: req.question,
       top_k:    req.top_k    ?? 6,
       file_ids: req.file_ids ?? undefined,
-      mode:     req.mode     ?? "aut
+      mode:     req.mode     ?? "auto",
+    },
+    { headers },
+  );
+  return data;
+}
