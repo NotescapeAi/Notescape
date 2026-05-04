@@ -95,10 +95,10 @@ export default function ChatInput({
           disabled={disabled}
           placeholder={
             disabled
-              ? (disabledMessage || "Select a class or document to ask from your materials.")
+              ? (disabledMessage || "Select a class to start.")
               : isListening
                 ? "Listening…"
-                : "Ask a question…"
+                : "Ask from your notes…"
           }
           rows={1}
           className="w-full resize-none bg-transparent text-sm leading-6 text-[var(--text-main)] placeholder:text-[var(--text-muted-soft)] focus:outline-none max-h-[200px] custom-scrollbar"

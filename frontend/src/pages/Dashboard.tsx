@@ -1,3 +1,19 @@
+/*
+ * Dashboard — premium, curated, student-centred.
+ *
+ * Information hierarchy (top → bottom):
+ *   1. Hero — primary review CTA + quick actions (Upload doc / New class)
+ *   2. Quick stats — Classes / Documents / Due / Quiz accuracy
+ *   3. This week — momentum panel: streak, study time, days studied + sparkline
+ *   4. What to study next — Best next step + Needs attention pair
+ *   5. Continue learning — resume card + due-cards preview pair
+ *   6. Class progress — class health rows with progress bars
+ *   7. Recent activity — clean timeline
+ *
+ * Every section either drives a decision, surfaces progress, or invites the
+ * next session. Sections gracefully omit when there's no real data.
+ */
+
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
@@ -5,13 +21,16 @@ import {
   BookOpen,
   ClipboardList,
   FileText,
+  Flame,
   FolderPlus,
   GraduationCap,
   Layers,
+  Lightbulb,
   MessageCircle,
   Mic,
   Sparkles,
   Target,
+  TrendingUp,
   Upload,
 } from "lucide-react";
 import AppShell from "../layouts/AppShell";
@@ -19,6 +38,13 @@ import Button from "../components/Button";
 import StatCard from "../components/ui/StatCard";
 import EmptyState from "../components/ui/EmptyState";
 import SectionHeader from "../components/ui/SectionHeader";
+import {
+  MiniWeekBars,
+  ProgressBar,
+  RadialProgress,
+  Sparkline,
+  WeekStrip,
+} from "../components/analytics/MiniCharts";
 import { useUser } from "../hooks/useUser";
 import {
   listClasses,
@@ -26,6 +52,7 @@ import {
   getFlashcardProgress,
   listFlashcards,
   getStudySessionOverview,
+  getStudySessionTrends,
   getWeakTags,
   getQuizHistory,
   listRecentStudySessions,
@@ -34,7 +61,12 @@ import {
   type WeakTag,
   type QuizHistoryItem,
   type StudySession,
+  type StudySessionTrend,
 } from "../lib/api";
+
+/* =================================================================
+   Helpers
+================================================================= */
 
 function formatDuration(seconds: number) {
   const mins = Math.floor(seconds / 60);
@@ -44,10 +76,17 @@ function formatDuration(seconds: number) {
   return `${mins}m`;
 }
 
-function formatShortDate(iso?: string | null) {
+function formatRelativeDay(iso?: string | null): string {
   if (!iso) return "";
   try {
-    return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    const d = new Date(iso);
+    const now = new Date();
+    const startOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const diffDays = Math.round((startOfDay(now).getTime() - startOfDay(d).getTime()) / (1000 * 60 * 60 * 24));
+    if (diffDays === 0) return "Today";
+    if (diffDays === 1) return "Yesterday";
+    if (diffDays < 7) return `${diffDays} days ago`;
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
   } catch {
     return "";
   }
@@ -73,31 +112,95 @@ function quizAttemptsAccuracyPct(attempts: QuizHistoryItem[]): number | null {
   return Math.round((earned / possible) * 100);
 }
 
+/**
+ * Build a 7-day series from study trend points (most recent on the right).
+ * Missing days come back as 0.
+ */
+function buildWeekSeries(trends: StudySessionTrend[]): { dates: string[]; seconds: number[] } {
+  const out: { dates: string[]; seconds: number[] } = { dates: [], seconds: [] };
+  const map = new Map<string, number>();
+  for (const t of trends) {
+    if (!t?.day) continue;
+    map.set(t.day.slice(0, 10), Number(t.total_seconds) || 0);
+  }
+  const today = new Date();
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    const key = d.toISOString().slice(0, 10);
+    out.dates.push(key);
+    out.seconds.push(map.get(key) ?? 0);
+  }
+  return out;
+}
+
+/** Compute current consecutive-day streak from a 7-day series (today first day). */
+function computeStreak(series: number[]): number {
+  let streak = 0;
+  for (let i = series.length - 1; i >= 0; i--) {
+    if (series[i] > 0) streak++;
+    else break;
+  }
+  return streak;
+}
+
+/** Two-letter day labels for the week strip (Mon-first locale-friendly). */
+function dayLabelFromIso(iso: string): string {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString(undefined, { weekday: "narrow" });
+  } catch {
+    return "";
+  }
+}
+
+/** Compute trend pct accuracy from recent quiz attempts, week-by-week. */
+function recentQuizTrend(attempts: QuizHistoryItem[]): number[] {
+  // Take the most recent 14 attempts and map each to pct accuracy.
+  const recent = [...attempts]
+    .filter((a) => Number(a.total_possible) > 0)
+    .sort((a, b) => String(a.attempted_at).localeCompare(String(b.attempted_at)))
+    .slice(-14);
+  return recent.map((a) =>
+    Math.max(0, Math.min(100, Math.round((Number(a.score) / Number(a.total_possible)) * 100))),
+  );
+}
+
+/* =================================================================
+   Dashboard
+================================================================= */
+
 export default function Dashboard() {
   const { profile } = useUser();
+  const navigate = useNavigate();
+
   const [classes, setClasses] = useState<ClassRow[]>([]);
   const [docCountByClassId, setDocCountByClassId] = useState<Record<number, number>>({});
+  const [dueByClassId, setDueByClassId] = useState<Record<number, number>>({});
   const [fileCount, setFileCount] = useState<number>(0);
   const [dueNow, setDueNow] = useState<number>(0);
   const [dueCards, setDueCards] = useState<Flashcard[]>([]);
   const [resumeFile, setResumeFile] = useState<string | null>(null);
   const [studyClassId, setStudyClassId] = useState<number | null>(null);
-  const [recentFiles, setRecentFiles] = useState<Array<{ filename: string; className: string }>>([]);
+  const [recentFiles, setRecentFiles] = useState<Array<{ filename: string; className: string; uploaded_at?: string }>>([]);
   const [studyOverview, setStudyOverview] = useState<{
     total_seconds_7d: number;
     sessions_7d: number;
     avg_seconds_7d: number;
   } | null>(null);
+  const [studyTrends, setStudyTrends] = useState<StudySessionTrend[]>([]);
   const [weakTags, setWeakTags] = useState<WeakTag[]>([]);
   const [quizHistory, setQuizHistory] = useState<QuizHistoryItem[]>([]);
   const [recentSessions, setRecentSessions] = useState<StudySession[]>([]);
   const [loading, setLoading] = useState(true);
-  const navigate = useNavigate();
 
+  // Surface the user's first name for personalised body copy elsewhere; the
+  // page heading itself stays product-like ("Today's focus") for premium feel.
   const firstName =
     profile?.display_name?.trim().split(/\s+/)[0] ||
     profile?.full_name?.trim().split(/\s+/)[0] ||
     "";
+  void firstName;
 
   useEffect(() => {
     (async () => {
@@ -107,7 +210,7 @@ export default function Dashboard() {
         setClasses(cs);
 
         const fileGroups = await Promise.all(
-          cs.map(async (c) => ({ classId: c.id, className: c.name, rows: await listFiles(c.id) }))
+          cs.map(async (c) => ({ classId: c.id, className: c.name, rows: await listFiles(c.id) })),
         );
         const counts: Record<number, number> = {};
         fileGroups.forEach((g) => {
@@ -120,15 +223,20 @@ export default function Dashboard() {
             filename: row.filename,
             uploaded_at: row.uploaded_at ?? undefined,
             className: group.className,
-          }))
+          })),
         );
         setFileCount(flatFiles.length);
         const sortedFiles = [...flatFiles].sort((a, b) =>
-          String(b.uploaded_at ?? "").localeCompare(String(a.uploaded_at ?? ""))
+          String(b.uploaded_at ?? "").localeCompare(String(a.uploaded_at ?? "")),
         );
         setRecentFiles(sortedFiles.slice(0, 4));
 
         const progRows = await Promise.all(cs.map((c) => getFlashcardProgress(c.id).catch(() => null)));
+        const dueMap: Record<number, number> = {};
+        cs.forEach((c, i) => {
+          dueMap[c.id] = Number(progRows[i]?.due_now ?? 0);
+        });
+        setDueByClassId(dueMap);
         const totalDue = progRows.reduce((sum, p) => sum + Number(p?.due_now ?? 0), 0);
         setDueNow(totalDue);
 
@@ -153,8 +261,9 @@ export default function Dashboard() {
           setDueCards([]);
         }
 
-        const [overview, weakTagRows, historyRows, sessionsRows] = await Promise.all([
+        const [overview, trendsRows, weakTagRows, historyRows, sessionsRows] = await Promise.all([
           getStudySessionOverview(),
+          getStudySessionTrends(7).catch(() => [] as StudySessionTrend[]),
           getWeakTags({ limit: 12 }),
           getQuizHistory().catch(() => [] as QuizHistoryItem[]),
           listRecentStudySessions(8).catch(() => [] as StudySession[]),
@@ -164,9 +273,12 @@ export default function Dashboard() {
           sessions_7d: overview.sessions_7d,
           avg_seconds_7d: overview.avg_seconds_7d,
         });
+        setStudyTrends(trendsRows);
         setWeakTags(weakTagRows);
         setQuizHistory(
-          [...historyRows].sort((a, b) => String(b.attempted_at).localeCompare(String(a.attempted_at))).slice(0, 8)
+          [...historyRows]
+            .sort((a, b) => String(b.attempted_at).localeCompare(String(a.attempted_at)))
+            .slice(0, 8),
         );
         setRecentSessions(sessionsRows);
       } finally {
@@ -175,8 +287,17 @@ export default function Dashboard() {
     })();
   }, []);
 
-  const recentClasses = useMemo(() => classes.slice(0, 6), [classes]);
+  /* ---------- Derived data ---------- */
 
+  const week = useMemo(() => buildWeekSeries(studyTrends), [studyTrends]);
+  const streak = useMemo(() => computeStreak(week.seconds), [week.seconds]);
+  const daysStudied7d = useMemo(() => week.seconds.filter((s) => s > 0).length, [week.seconds]);
+  const totalSecondsThisWeek = useMemo(
+    () => week.seconds.reduce((a, b) => a + b, 0),
+    [week.seconds],
+  );
+
+  const quizTrend = useMemo(() => recentQuizTrend(quizHistory), [quizHistory]);
   const quizAccuracyFromAttempts = useMemo(() => quizAttemptsAccuracyPct(quizHistory), [quizHistory]);
 
   const weakQuizTags = useMemo(() => {
@@ -200,38 +321,8 @@ export default function Dashboard() {
 
   const studyClass = studyClassId ? classes.find((c) => c.id === studyClassId) : null;
   const primaryClass = classes[0];
-
   const lastSession = recentSessions[0];
   const lastQuiz = quizHistory[0];
-
-  const activityRows = useMemo(() => {
-    const rows: Array<{ id: string; icon: ReactNode; label: string; detail?: string }> = [];
-    recentFiles.slice(0, 2).forEach((f) => {
-      rows.push({
-        id: `f-${f.filename}`,
-        icon: <FileText className="h-4 w-4" />,
-        label: "Document uploaded",
-        detail: `${f.filename} · ${f.className}`,
-      });
-    });
-    quizHistory.slice(0, 2).forEach((q) => {
-      rows.push({
-        id: `q-${q.attempt_id}`,
-        icon: <ClipboardList className="h-4 w-4" />,
-        label: "Quiz attempt",
-        detail: `${q.quiz_title} · ${q.score}/${q.total_possible}`,
-      });
-    });
-    recentSessions.slice(0, 3).forEach((s) => {
-      rows.push({
-        id: `s-${s.id}`,
-        icon: <BookOpen className="h-4 w-4" />,
-        label: s.mode?.includes("voice") ? "Voice flashcards session" : "Study session",
-        detail: [s.class_name, s.started_at ? formatShortDate(s.started_at) : ""].filter(Boolean).join(" · "),
-      });
-    });
-    return rows.slice(0, 6);
-  }, [recentFiles, quizHistory, recentSessions]);
 
   const isNewUser = !loading && classes.length === 0;
 
@@ -239,8 +330,11 @@ export default function Dashboard() {
     if (loading || isNewUser) return null;
     if (dueNow > 0 && studyClassId) {
       return {
-        title: "Review due flashcards",
-        body: `You have ${dueNow} card${dueNow === 1 ? "" : "s"} due for review across your classes (spaced repetition).`,
+        eyebrow: "Best next step",
+        title: dueNow === 1 ? "1 card is ready to review" : `${dueNow} cards are ready to review`,
+        body: studyClass
+          ? `Spaced repetition will surface the ones from ${studyClass.name} first.`
+          : "Spaced repetition will surface the ones you need most.",
         primaryLabel: dueCards.length ? "Start review" : "Open flashcards hub",
         onPrimary: () =>
           dueCards.length
@@ -255,9 +349,12 @@ export default function Dashboard() {
       const cname = lastSession.class_name || classes.find((c) => c.id === cid)?.name || "Your class";
       const voice = lastSession.mode?.includes("voice");
       return {
-        title: "Continue where you left off",
-        body: `${voice ? "Voice flashcards" : "Study session"} in ${cname}${lastSession.started_at ? ` · ${formatShortDate(lastSession.started_at)}` : ""}.`,
-        primaryLabel: voice ? "Open voice flashcards" : "Open flashcards",
+        eyebrow: "Pick up where you left off",
+        title: voice ? `Voice flashcards · ${cname}` : `Flashcards · ${cname}`,
+        body: lastSession.started_at
+          ? `Last studied ${formatRelativeDay(lastSession.started_at).toLowerCase()}.`
+          : "Continue your last session in one click.",
+        primaryLabel: voice ? "Open voice mode" : "Open flashcards",
         onPrimary: () =>
           voice
             ? navigate(`/classes/${cid}/flashcards/voice`)
@@ -265,24 +362,34 @@ export default function Dashboard() {
       };
     }
     if (lastQuiz) {
+      const pct =
+        Number(lastQuiz.total_possible) > 0
+          ? Math.round((Number(lastQuiz.score) / Number(lastQuiz.total_possible)) * 100)
+          : null;
       return {
-        title: "Pick up a quiz",
-        body: `Last attempt: ${lastQuiz.quiz_title} (${lastQuiz.score}/${lastQuiz.total_possible}).`,
-        primaryLabel: "Open this quiz",
+        eyebrow: "Continue practising",
+        title: lastQuiz.quiz_title,
+        body:
+          pct != null
+            ? `Last attempt scored ${pct}% — try a fresh round to lock it in.`
+            : "Try the quiz again to lock it in.",
+        primaryLabel: "Retake quiz",
         onPrimary: () => navigate(`/quizzes/${lastQuiz.quiz_id}`),
       };
     }
     if (fileCount === 0 && classes.length > 0) {
       return {
-        title: "Add study material",
-        body: "Upload a document so you can generate flashcards and quizzes.",
+        eyebrow: "Get started",
+        title: "Add your first study material",
+        body: "Upload a PDF or notes — flashcards and quizzes generate automatically.",
         primaryLabel: "Upload document",
         onPrimary: () => navigate("/classes"),
       };
     }
     return {
-      title: "Browse flashcards",
-      body: "Review or study cards from any of your classes.",
+      eyebrow: "Today's focus",
+      title: "Open your flashcards",
+      body: "Browse decks across every class.",
       primaryLabel: "Open flashcards hub",
       onPrimary: () => navigate("/flashcards"),
     };
@@ -292,14 +399,90 @@ export default function Dashboard() {
     dueNow,
     studyClassId,
     dueCards,
-    studyClass?.name,
+    studyClass,
     lastSession,
     lastQuiz,
     fileCount,
     classes,
     navigate,
-    dueCards.length,
   ]);
+
+  /* ---------- Activity feed ---------- */
+
+  const activityRows = useMemo(() => {
+    type Row = {
+      id: string;
+      icon: ReactNode;
+      iconTone: "primary" | "success" | "warning" | "neutral";
+      label: string;
+      detail?: string;
+      time: string;
+      sortKey: string;
+    };
+    const rows: Row[] = [];
+    recentFiles.slice(0, 3).forEach((f) => {
+      rows.push({
+        id: `f-${f.filename}-${f.uploaded_at ?? ""}`,
+        icon: <FileText className="h-4 w-4" />,
+        iconTone: "primary",
+        label: "Document added",
+        detail: `${f.filename} · ${f.className}`,
+        time: formatRelativeDay(f.uploaded_at) || "Recently",
+        sortKey: String(f.uploaded_at ?? ""),
+      });
+    });
+    quizHistory.slice(0, 3).forEach((q) => {
+      const pct =
+        Number(q.total_possible) > 0
+          ? Math.round((Number(q.score) / Number(q.total_possible)) * 100)
+          : null;
+      const passed = pct != null && pct >= 50;
+      rows.push({
+        id: `q-${q.attempt_id}`,
+        icon: <ClipboardList className="h-4 w-4" />,
+        iconTone: passed ? "success" : "warning",
+        label: "Quiz attempted",
+        detail: pct != null ? `${q.quiz_title} · ${pct}%` : q.quiz_title,
+        time: formatRelativeDay(q.attempted_at) || "Recently",
+        sortKey: String(q.attempted_at ?? ""),
+      });
+    });
+    recentSessions.slice(0, 3).forEach((s) => {
+      const isVoice = s.mode?.includes("voice");
+      rows.push({
+        id: `s-${s.id}`,
+        icon: isVoice ? <Mic className="h-4 w-4" /> : <BookOpen className="h-4 w-4" />,
+        iconTone: "neutral",
+        label: isVoice ? "Voice flashcards" : "Study session",
+        detail: [s.class_name, s.duration_seconds ? formatDuration(s.duration_seconds) : ""]
+          .filter(Boolean)
+          .join(" · "),
+        time: formatRelativeDay(s.started_at) || "Recently",
+        sortKey: String(s.started_at ?? ""),
+      });
+    });
+    rows.sort((a, b) => b.sortKey.localeCompare(a.sortKey));
+    return rows.slice(0, 7);
+  }, [recentFiles, quizHistory, recentSessions]);
+
+  /* ---------- Class health rows ---------- */
+
+  const classHealth = useMemo(() => {
+    return classes.slice(0, 6).map((c) => {
+      const due = Number(dueByClassId[c.id] ?? 0);
+      const docs = Number(docCountByClassId[c.id] ?? 0);
+      // Quiz history backend rows may include class_id/class_name even though
+      // the public type doesn't list them. Read them tolerantly.
+      const classAttempts = quizHistory.filter((q) => {
+        const meta = q as { class_id?: number; class_name?: string };
+        return meta.class_id === c.id || meta.class_name === c.name;
+      });
+      const acc = quizAttemptsAccuracyPct(classAttempts);
+      return { row: c, due, docs, acc };
+    });
+  }, [classes, dueByClassId, docCountByClassId, quizHistory]);
+
+  /* ---------- UI ---------- */
 
   const headerActions = (
     <div className="flex flex-wrap items-center gap-2">
@@ -322,21 +505,29 @@ export default function Dashboard() {
     </div>
   );
 
+  /* Build week strip cells */
+  const weekCells = week.seconds.map((s, i) => ({
+    label: dayLabelFromIso(week.dates[i]),
+    active: s > 0,
+    intensity: s > 0 ? Math.min(1, s / Math.max(...week.seconds, 600)) : 0,
+    title: `${week.dates[i]} · ${formatDuration(s)}`,
+  }));
+
   return (
     <AppShell
-      title={firstName ? `Welcome back, ${firstName}` : "Dashboard"}
-      subtitle="Continue studying from your classes, documents, flashcards, and quizzes."
+      title="Today's focus"
       headerMaxWidthClassName="max-w-[1180px]"
       headerActions={headerActions}
     >
-      <div className="mx-auto w-full max-w-[1180px] space-y-6 pb-10">
+      <div className="mx-auto w-full max-w-[1180px] space-y-7 pb-12">
+        {/* ── Section 1 — Hero / primary CTA ───────────────────────── */}
         {!isNewUser && primaryCta ? (
           <section className="premium-cta p-5 sm:p-7">
             <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
               <div className="min-w-0 flex-1">
                 <span className="eyebrow">
                   <span className="eyebrow-dot" aria-hidden />
-                  Next step
+                  {primaryCta.eyebrow}
                 </span>
                 <h2 className="mt-2 text-[22px] font-semibold leading-tight tracking-[-0.025em] text-[var(--text-main)] sm:text-[26px]">
                   {primaryCta.title}
@@ -347,26 +538,22 @@ export default function Dashboard() {
                 <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px]">
                   <Link
                     to="/chatbot"
-                    className="inline-flex items-center gap-1.5 font-semibold text-[var(--primary)] underline-offset-4 hover:underline"
+                    className="inline-flex items-center gap-1.5 font-semibold text-[var(--primary)] underline-offset-4 transition hover:underline hover:translate-x-[1px]"
                   >
                     <MessageCircle className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                    Ask from your materials
+                    Ask your materials
                   </Link>
                   <Link
                     to="/voice-revision"
-                    className="inline-flex items-center gap-1.5 font-medium text-[var(--text-secondary)] underline-offset-4 hover:text-[var(--text-main)] hover:underline"
+                    className="inline-flex items-center gap-1.5 font-medium text-[var(--text-secondary)] underline-offset-4 transition hover:text-[var(--text-main)] hover:underline hover:translate-x-[1px]"
                   >
                     <Mic className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                    Voice flashcards
+                    Voice revision
                   </Link>
                 </div>
               </div>
               <div className="flex shrink-0 items-end">
-                <button
-                  type="button"
-                  className="btn-premium"
-                  onClick={primaryCta.onPrimary}
-                >
+                <button type="button" className="btn-premium press-feedback" onClick={primaryCta.onPrimary}>
                   {primaryCta.primaryLabel}
                   <ArrowUpRight className="h-4 w-4" aria-hidden />
                 </button>
@@ -375,6 +562,7 @@ export default function Dashboard() {
           </section>
         ) : null}
 
+        {/* ── New user empty state ─────────────────────────────────── */}
         {isNewUser ? (
           <>
             <EmptyState
@@ -410,12 +598,12 @@ export default function Dashboard() {
           </>
         ) : null}
 
+        {/* ── Section 2 — Quick stats ──────────────────────────────── */}
         {!isNewUser ? (
           <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <StatCard
-              label="Active classes"
+              label="Classes"
               value={classes.length}
-              hint="Classes you created."
               icon={<GraduationCap className="h-4 w-4" />}
               tone="primary"
               loading={loading}
@@ -423,11 +611,7 @@ export default function Dashboard() {
             <StatCard
               label="Documents"
               value={fileCount}
-              hint={
-                fileCount === 0
-                  ? "No documents uploaded.\nUpload PDFs, notes, or slides to start studying with context."
-                  : "Files uploaded to your classes."
-              }
+              hint={fileCount === 0 ? "Upload one to get started." : undefined}
               icon={<FileText className="h-4 w-4" />}
               tone="neutral"
               loading={loading}
@@ -435,7 +619,7 @@ export default function Dashboard() {
             <StatCard
               label="Due for review"
               value={dueNow}
-              hint="Flashcards due now (spaced repetition), all classes."
+              hint={dueNow === 0 ? "You're caught up." : undefined}
               icon={<Layers className="h-4 w-4" />}
               tone={dueNow > 0 ? "warning" : "neutral"}
               loading={loading}
@@ -443,11 +627,7 @@ export default function Dashboard() {
             <StatCard
               label="Quiz accuracy"
               value={loading ? "—" : quizAccuracyFromAttempts != null ? `${quizAccuracyFromAttempts}%` : "—"}
-              hint={
-                quizAccuracyFromAttempts != null
-                  ? "Across your recent quiz attempts."
-                  : "No quiz attempts yet.\nTake a quiz to start tracking accuracy."
-              }
+              hint={quizAccuracyFromAttempts == null ? "Take a quiz to track this." : undefined}
               icon={<Target className="h-4 w-4" />}
               tone={
                 quizAccuracyFromAttempts != null
@@ -463,117 +643,308 @@ export default function Dashboard() {
           </section>
         ) : null}
 
+        {/* ── Section 3 — This week (momentum) ─────────────────────── */}
         {!isNewUser ? (
-          <section className="ns-card p-5 sm:p-6">
+          <section className="dash-momentum ns-card overflow-hidden p-5 sm:p-6">
             <SectionHeader
-              eyebrow="What to study next"
-              title={weakestQuiz ? "Topic from your quizzes" : weakestFlash ? "Topic from flashcard reviews" : "Build your queue"}
+              eyebrow="This week"
+              title="Your learning momentum"
               description={
-                weakestQuiz || weakestFlash
-                  ? "Based on your recent practice data."
-                  : "Add materials, review flashcards, or take a quiz to get targeted suggestions."
+                streak > 0
+                  ? streak >= 5
+                    ? "You're on a strong roll — keep it going."
+                    : "You're building consistent study habits."
+                  : "Get one short session in today to start a streak."
               }
             />
-            {weakestQuiz ? (
-              <div className="mt-4 flex flex-col gap-4 rounded-[var(--radius-xl)] border border-[var(--border)] bg-gradient-to-br from-[var(--surface-2)] to-[var(--surface)] p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
-                <div className="flex min-w-0 items-start gap-3">
-                  <span className="mt-0.5 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--primary-soft)] text-[var(--primary)]">
-                    <Target className="h-5 w-5" />
-                  </span>
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-[15.5px] font-semibold tracking-[-0.01em] text-[var(--text-main)]">
-                        {weakestQuiz.tag}
-                      </span>
-                      <span
-                        className={
-                          Math.round(weakestQuiz.quiz_accuracy_pct) < 50
-                            ? "topic-chip topic-chip--weak"
-                            : "topic-chip topic-chip--improving"
-                        }
-                      >
-                        {Math.round(weakestQuiz.quiz_accuracy_pct)}% accuracy
-                      </span>
+
+            <div className="mt-5 grid gap-4 lg:grid-cols-[1.05fr_1.4fr]">
+              {/* Left: streak + study time */}
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+                <div className="dash-momentum__cell">
+                  <div className="dash-momentum__cell-icon dash-momentum__cell-icon--flame">
+                    <Flame className="h-4 w-4" />
+                  </div>
+                  <div className="dash-momentum__cell-stat">
+                    <div className="dash-momentum__cell-value">
+                      {loading ? "—" : streak}
+                      <span className="dash-momentum__cell-unit">{streak === 1 ? "day" : "days"}</span>
                     </div>
-                    <div className="mt-1 text-[13.5px] leading-relaxed text-[var(--text-muted)]">
-                      {weakestQuizClassName ? `${weakestQuizClassName} · ` : ""}
-                      Recent quiz accuracy is below your average. Reinforce with targeted review.
+                    <div className="dash-momentum__cell-label">
+                      {streak > 0 ? "Current streak" : "No streak yet"}
                     </div>
                   </div>
                 </div>
-                <div className="flex shrink-0 flex-wrap gap-2">
-                  {weakestQuiz.class_id ? (
-                    <Button
-                      type="button"
-                      variant="primary"
-                      size="sm"
-                      onClick={() =>
-                        navigate(`/classes/${weakestQuiz.class_id}/flashcards?tag=${encodeURIComponent(weakestQuiz.tag)}`)
-                      }
-                    >
-                      Review flashcards
-                    </Button>
-                  ) : null}
-                  <Button type="button" variant="secondary" size="sm" onClick={() => navigate("/quizzes")}>
-                    Quizzes
-                  </Button>
-                </div>
-              </div>
-            ) : weakestFlash ? (
-              <div className="mt-4 flex flex-col gap-4 rounded-[var(--radius-xl)] border border-[var(--border)] bg-gradient-to-br from-[var(--surface-2)] to-[var(--surface)] p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
-                <div className="flex min-w-0 items-start gap-3">
-                  <span className="mt-0.5 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--warning-soft)] text-[var(--warning)]">
-                    <Layers className="h-5 w-5" />
-                  </span>
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="text-[15.5px] font-semibold tracking-[-0.01em] text-[var(--text-main)]">
-                        {weakestFlash.tag}
-                      </span>
-                      <span className="topic-chip topic-chip--improving">
-                        {Math.round(weakestFlash.flashcard_difficulty_pct)}% hard
-                      </span>
+
+                <div className="dash-momentum__cell">
+                  <div className="dash-momentum__cell-icon dash-momentum__cell-icon--time">
+                    <BookOpen className="h-4 w-4" />
+                  </div>
+                  <div className="dash-momentum__cell-stat">
+                    <div className="dash-momentum__cell-value">
+                      {loading ? "—" : formatDuration(totalSecondsThisWeek || studyOverview?.total_seconds_7d || 0)}
                     </div>
-                    <div className="mt-1 text-[13.5px] leading-relaxed text-[var(--text-muted)]">
-                      {weakestFlashClassName ? `${weakestFlashClassName} · ` : ""}
-                      Recent flashcard ratings show extra friction here.
+                    <div className="dash-momentum__cell-label">
+                      Study time · last 7 days
+                      {studyOverview && studyOverview.sessions_7d > 0
+                        ? ` · ${studyOverview.sessions_7d} session${studyOverview.sessions_7d === 1 ? "" : "s"}`
+                        : ""}
                     </div>
                   </div>
                 </div>
-                <div className="flex shrink-0 flex-wrap gap-2">
-                  {weakestFlash.class_id ? (
-                    <Button
-                      type="button"
-                      variant="primary"
-                      size="sm"
-                      onClick={() =>
-                        navigate(`/classes/${weakestFlash.class_id}/flashcards?tag=${encodeURIComponent(weakestFlash.tag)}`)
-                      }
-                    >
-                      Review flashcards
-                    </Button>
-                  ) : null}
-                </div>
               </div>
-            ) : (
-              <p className="mt-3 text-[13.5px] leading-relaxed text-[var(--text-muted)]">
-                No topic signals yet. Upload a document, review flashcards, or complete a quiz.
-              </p>
-            )}
+
+              {/* Right: week strip + sparkline */}
+              <div className="dash-momentum__chart">
+                <div className="dash-momentum__chart-head">
+                  <div>
+                    <div className="dash-momentum__chart-eyebrow">Days studied</div>
+                    <div className="dash-momentum__chart-value">
+                      {loading ? "—" : `${daysStudied7d} / 7`}
+                    </div>
+                  </div>
+                  <div className="dash-momentum__chart-spark">
+                    <Sparkline
+                      values={week.seconds.length ? week.seconds : [0, 0, 0, 0, 0, 0, 0]}
+                      width={140}
+                      height={36}
+                      ariaLabel="Last 7 days study time trend"
+                    />
+                  </div>
+                </div>
+
+                <WeekStrip cells={weekCells} className="mt-4" />
+              </div>
+            </div>
           </section>
         ) : null}
 
+        {/* ── Section 4 — What to study next ──────────────────────── */}
         {!isNewUser ? (
-          <div className="grid gap-4 lg:grid-cols-2">
-            <section className="ns-card flex flex-col p-5">
+          <section className="grid gap-4 lg:grid-cols-2">
+            {/* Best next step */}
+            <div className="dash-focus dash-focus--primary p-5 sm:p-6">
+              <div className="dash-focus__head">
+                <span className="dash-focus__chip dash-focus__chip--primary">
+                  <Target className="h-3.5 w-3.5" />
+                  Best next step
+                </span>
+              </div>
+              {weakestQuiz ? (
+                <>
+                  <h3 className="dash-focus__title">{weakestQuiz.tag}</h3>
+                  <p className="dash-focus__body">
+                    {weakestQuizClassName ? `${weakestQuizClassName} · ` : ""}
+                    Recent quiz accuracy is{" "}
+                    <strong className="text-[var(--text-main)]">{Math.round(weakestQuiz.quiz_accuracy_pct)}%</strong> —
+                    a focused review will lift it.
+                  </p>
+                  <ProgressBar value={weakestQuiz.quiz_accuracy_pct} className="mt-4" />
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {weakestQuiz.class_id ? (
+                      <Button
+                        type="button"
+                        variant="primary"
+                        size="sm"
+                        onClick={() =>
+                          navigate(
+                            `/classes/${weakestQuiz.class_id}/flashcards?tag=${encodeURIComponent(weakestQuiz.tag)}`,
+                          )
+                        }
+                      >
+                        Review flashcards
+                      </Button>
+                    ) : null}
+                    <Button type="button" variant="secondary" size="sm" onClick={() => navigate("/quizzes")}>
+                      Browse quizzes
+                    </Button>
+                  </div>
+                </>
+              ) : weakestFlash ? (
+                <>
+                  <h3 className="dash-focus__title">{weakestFlash.tag}</h3>
+                  <p className="dash-focus__body">
+                    {weakestFlashClassName ? `${weakestFlashClassName} · ` : ""}
+                    Flashcards here have been hard lately. A short review will move the needle.
+                  </p>
+                  <ProgressBar value={100 - weakestFlash.flashcard_difficulty_pct} className="mt-4" />
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {weakestFlash.class_id ? (
+                      <Button
+                        type="button"
+                        variant="primary"
+                        size="sm"
+                        onClick={() =>
+                          navigate(
+                            `/classes/${weakestFlash.class_id}/flashcards?tag=${encodeURIComponent(weakestFlash.tag)}`,
+                          )
+                        }
+                      >
+                        Review flashcards
+                      </Button>
+                    ) : null}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <h3 className="dash-focus__title">Build your queue</h3>
+                  <p className="dash-focus__body">
+                    Once you've taken a quiz or reviewed flashcards, we'll surface targeted suggestions here.
+                  </p>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <Button type="button" variant="primary" size="sm" onClick={() => navigate("/quizzes")}>
+                      Take a quiz
+                    </Button>
+                    <Button type="button" variant="secondary" size="sm" onClick={() => navigate("/flashcards")}>
+                      Open flashcards
+                    </Button>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Quiz accuracy / trend */}
+            <div className="dash-focus p-5 sm:p-6">
+              <div className="dash-focus__head">
+                <span className="dash-focus__chip">
+                  <TrendingUp className="h-3.5 w-3.5" />
+                  Quiz accuracy
+                </span>
+                {quizAccuracyFromAttempts != null ? (
+                  <span
+                    className={
+                      quizAccuracyFromAttempts >= 75
+                        ? "topic-chip topic-chip--strong"
+                        : quizAccuracyFromAttempts >= 50
+                          ? "topic-chip topic-chip--improving"
+                          : "topic-chip topic-chip--weak"
+                    }
+                  >
+                    {quizAccuracyFromAttempts}%
+                  </span>
+                ) : null}
+              </div>
+              <div className="mt-4 grid items-center gap-5 sm:grid-cols-[auto_1fr]">
+                <RadialProgress
+                  value={quizAccuracyFromAttempts ?? 0}
+                  size={92}
+                  thickness={8}
+                  ariaLabel="Quiz accuracy"
+                >
+                  <div className="text-[18px] font-semibold tabular-nums text-[var(--text-main)]">
+                    {quizAccuracyFromAttempts != null ? `${quizAccuracyFromAttempts}%` : "—"}
+                  </div>
+                </RadialProgress>
+                <div>
+                  <div className="text-[13px] font-semibold text-[var(--text-main)]">
+                    {quizHistory.length === 0
+                      ? "No attempts yet"
+                      : quizHistory.length === 1
+                        ? "Across 1 attempt"
+                        : `Across last ${quizHistory.length} attempts`}
+                  </div>
+                  <p className="mt-1 text-[12.5px] leading-relaxed text-[var(--text-muted)]">
+                    {quizAccuracyFromAttempts == null
+                      ? "Take a quiz to start tracking your accuracy here."
+                      : quizAccuracyFromAttempts >= 75
+                        ? "Strong work — keep practising new material."
+                        : quizAccuracyFromAttempts >= 50
+                          ? "You're improving — focus on your weak topics."
+                          : "Targeted flashcard review will help most right now."}
+                  </p>
+                  {quizTrend.length > 1 ? (
+                    <Sparkline
+                      values={quizTrend}
+                      className="mt-3"
+                      width={220}
+                      height={28}
+                      ariaLabel="Recent quiz score trend"
+                    />
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          </section>
+        ) : null}
+
+        {/* ── Section 5 — Continue / due cards ─────────────────────── */}
+        {!isNewUser ? (
+          <section className="grid gap-4 lg:grid-cols-2">
+            {/* Continue learning */}
+            <div className="ns-card flex flex-col p-5 sm:p-6">
+              <SectionHeader
+                eyebrow="Continue"
+                title={lastSession?.class_id ? "Pick up where you left off" : "Resume study"}
+              />
+              <div className="mt-3 space-y-3 text-[13.5px] text-[var(--text-muted)]">
+                {lastSession?.class_id ? (
+                  <div className="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface-2)] p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="text-[14px] font-semibold text-[var(--text-main)]">
+                          {lastSession.class_name || classes.find((c) => c.id === lastSession.class_id)?.name || "Your class"}
+                        </div>
+                        <div className="mt-0.5 text-[12.5px] text-[var(--text-muted-soft)]">
+                          {lastSession.mode?.includes("voice") ? "Voice flashcards" : "Flashcards study"}
+                          {lastSession.started_at ? ` · ${formatRelativeDay(lastSession.started_at)}` : ""}
+                          {lastSession.duration_seconds ? ` · ${formatDuration(lastSession.duration_seconds)}` : ""}
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="primary"
+                        size="sm"
+                        onClick={() =>
+                          lastSession.mode?.includes("voice")
+                            ? navigate(`/classes/${lastSession.class_id}/flashcards/voice`)
+                            : navigate(`/classes/${lastSession.class_id}/flashcards`)
+                        }
+                      >
+                        Continue
+                        <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
+                      </Button>
+                    </div>
+                  </div>
+                ) : recentFiles[0] ? (
+                  <div className="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface-2)] p-4">
+                    <div className="text-[14px] font-semibold text-[var(--text-main)]">
+                      {recentFiles[0].filename}
+                    </div>
+                    <div className="mt-0.5 text-[12.5px] text-[var(--text-muted-soft)]">
+                      {recentFiles[0].className}
+                      {recentFiles[0].uploaded_at ? ` · added ${formatRelativeDay(recentFiles[0].uploaded_at)}` : ""}
+                    </div>
+                    {primaryClass ? (
+                      <div className="mt-3">
+                        <Button
+                          type="button"
+                          variant="primary"
+                          size="sm"
+                          onClick={() => navigate("/classes", { state: { selectId: primaryClass.id } })}
+                        >
+                          Open class
+                          <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
+                        </Button>
+                      </div>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p>Upload a document in a class to anchor your next session.</p>
+                )}
+
+                {resumeFile && lastSession?.class_id ? (
+                  <p className="text-[12.5px] text-[var(--text-muted-soft)]">
+                    Latest file in this class: <span className="text-[var(--text-secondary)]">{resumeFile}</span>
+                  </p>
+                ) : null}
+              </div>
+            </div>
+
+            {/* Due cards preview */}
+            <div className="ns-card flex flex-col p-5 sm:p-6">
               <SectionHeader
                 eyebrow="Review queue"
-                title={studyClass ? `Due cards · ${studyClass.name}` : "Flashcards"}
-                description={
-                  dueNow > 0 && studyClass
-                    ? `${dueNow} due across all classes. Showing the next few from ${studyClass.name}.`
-                    : undefined
-                }
+                title={studyClass ? `Due cards · ${studyClass.name}` : "Due cards"}
                 action={
                   studyClassId ? (
                     <Button
@@ -594,138 +965,43 @@ export default function Dashboard() {
                   ) : null
                 }
               />
-              <div className="mt-4 min-h-[110px] space-y-2">
+              <div className="mt-3 min-h-[110px] space-y-2">
                 {dueCards.length === 0 ? (
                   <div className="rounded-[var(--radius-md)] border border-dashed border-[var(--border)] bg-[var(--surface-2)] px-4 py-6 text-center text-[13.5px] leading-relaxed text-[var(--text-muted)]">
-                    <span className="font-medium text-[var(--text-secondary)]">No flashcards ready for review.</span>
+                    <span className="font-medium text-[var(--text-secondary)]">You're caught up.</span>
                     <br />
-                    <span className="mt-2 inline-block text-[13px]">
-                      Generate flashcards from a document to begin review, or open the flashcards hub for every class.
+                    <span className="mt-1 inline-block text-[12.5px]">
+                      New cards will surface here as their next review approaches.
                     </span>
                   </div>
                 ) : (
-                  dueCards.map((card) => (
-                    <div
-                      key={card.id}
-                      className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5 text-sm"
-                    >
-                      <div className="line-clamp-2 font-medium text-[var(--text-main)]">{card.question}</div>
-                      <div className="mt-0.5 text-xs text-[var(--text-muted-soft)]">{card.difficulty ?? "medium"}</div>
-                    </div>
-                  ))
-                )}
-                <button
-                  type="button"
-                  onClick={() => navigate("/flashcards")}
-                  className="w-full pt-1 text-left text-[13px] font-medium text-[var(--primary)] underline-offset-4 hover:underline"
-                >
-                  View all classes in Flashcards hub
-                </button>
-              </div>
-            </section>
-
-            <section className="ns-card flex flex-col p-5">
-              <SectionHeader eyebrow="Continue" title="Resume" />
-              <div className="mt-2 space-y-3 text-[13.5px] text-[var(--text-muted)]">
-                {lastSession?.class_id ? (
-                  <p>
-                    <span className="font-medium text-[var(--text-main)]">Last session: </span>
-                    {lastSession.mode?.includes("voice") ? "Voice flashcards" : "Flashcards study"}
-                    {lastSession.class_name ? ` · ${lastSession.class_name}` : ""}
-                    {lastSession.started_at ? ` · ${formatShortDate(lastSession.started_at)}` : ""}
-                  </p>
-                ) : recentFiles[0] ? (
-                  <p>
-                    <span className="font-medium text-[var(--text-main)]">Recent file: </span>
-                    {recentFiles[0].filename} ({recentFiles[0].className})
-                  </p>
-                ) : (
-                  <p>Upload a document in a class to anchor your next session.</p>
-                )}
-              </div>
-              {lastSession?.class_id ? (
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    variant="primary"
-                    size="sm"
-                    onClick={() =>
-                      lastSession.mode?.includes("voice")
-                        ? navigate(`/classes/${lastSession.class_id}/flashcards/voice`)
-                        : navigate(`/classes/${lastSession.class_id}/flashcards`)
-                    }
-                  >
-                    Continue
-                  </Button>
-                  <Button type="button" variant="secondary" size="sm" onClick={() => navigate("/quizzes")}>
-                    Quizzes
-                  </Button>
-                </div>
-              ) : primaryClass ? (
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    variant="primary"
-                    size="sm"
-                    onClick={() => navigate("/classes", { state: { selectId: primaryClass.id } })}
-                  >
-                    Open class
-                  </Button>
-                  {resumeFile ? (
-                    <span className="self-center text-xs text-[var(--text-muted)]">Latest file: {resumeFile}</span>
-                  ) : null}
-                </div>
-              ) : null}
-            </section>
-          </div>
-        ) : null}
-
-        {!isNewUser && quizHistory.length > 0 ? (
-          <section className="ns-card p-5 sm:p-6">
-            <SectionHeader
-              eyebrow="Quizzes"
-              title="Recent attempts"
-              action={
-                <Button type="button" variant="ghost" size="sm" onClick={() => navigate("/quizzes/history")}>
-                  Full history
-                  <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
-                </Button>
-              }
-            />
-            <ul className="mt-4 divide-y divide-[var(--border)] rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface)]">
-              {quizHistory.slice(0, 5).map((q) => {
-                const pct =
-                  q.total_possible > 0 ? Math.round((Number(q.score) / Number(q.total_possible)) * 100) : null;
-                return (
-                  <li key={q.attempt_id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-                    <div className="min-w-0">
-                      <div className="truncate font-medium text-[var(--text-main)]">{q.quiz_title}</div>
-                      <div className="mt-0.5 text-xs text-[var(--text-muted)]">
-                        {q.file_name ? `${q.file_name} · ` : ""}
-                        {formatShortDate(q.attempted_at)}
+                  dueCards.slice(0, 4).map((card) => {
+                    const meta = card.topic ?? card.tags?.[0] ?? "";
+                    return (
+                      <div
+                        key={card.id}
+                        className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5 text-sm transition hover:border-[color-mix(in_srgb,var(--primary)_30%,var(--border))] hover:bg-[var(--surface-2)]"
+                      >
+                        <div className="line-clamp-2 font-medium text-[var(--text-main)]">{card.question}</div>
+                        {meta ? (
+                          <div className="mt-0.5 truncate text-xs text-[var(--text-muted-soft)]">{meta}</div>
+                        ) : null}
                       </div>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <span className="tabular-nums text-sm font-semibold text-[var(--text-secondary)]">
-                        {q.score}/{q.total_possible}
-                        {pct != null ? ` (${pct}%)` : ""}
-                      </span>
-                      <Button type="button" variant="secondary" size="sm" onClick={() => navigate(`/quizzes/${q.quiz_id}`)}>
-                        Retry
-                      </Button>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
+                    );
+                  })
+                )}
+              </div>
+            </div>
           </section>
         ) : null}
 
-        {!isNewUser ? (
+        {/* ── Section 6 — Class progress (health) ─────────────────── */}
+        {!isNewUser && classHealth.length > 0 ? (
           <section className="ns-card p-5 sm:p-6">
             <SectionHeader
               eyebrow="Your classes"
-              title="Overview"
+              title="Class health"
+              description="A quick snapshot of how each class is going."
               action={
                 <Button type="button" variant="ghost" size="sm" onClick={() => navigate("/classes")}>
                   All classes
@@ -734,65 +1010,119 @@ export default function Dashboard() {
               }
             />
             <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {recentClasses.length === 0 ? (
-                <div className="rounded-[var(--radius-md)] border border-dashed border-[var(--border)] px-4 py-8 text-center text-[13.5px] leading-relaxed text-[var(--text-muted)] sm:col-span-2 lg:col-span-3">
-                  Start by creating a class or uploading a study document.
-                </div>
-              ) : (
-                recentClasses.map((c) => (
+              {classHealth.map(({ row: c, due, docs, acc }) => {
+                const accTone =
+                  acc == null
+                    ? "neutral"
+                    : acc >= 75
+                      ? "success"
+                      : acc >= 50
+                        ? "warning"
+                        : "danger";
+                return (
                   <button
                     key={c.id}
                     type="button"
                     onClick={() => navigate("/classes", { state: { selectId: c.id } })}
-                    className="group flex flex-col rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface)] p-4 text-left transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                    className="dash-class-card group press-feedback"
                   >
-                    <div className="flex min-w-0 items-center gap-3">
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--primary-soft)] text-[11px] font-bold text-[var(--primary)]">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <span className="dash-class-card__abbr">
                         {c.name.slice(0, 2).toUpperCase()}
                       </span>
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-[14px] font-semibold text-[var(--text-main)]">{c.name}</div>
-                        <div className="truncate text-xs text-[var(--text-muted-soft)]">{c.subject ?? "General"}</div>
+                      <div className="min-w-0 flex-1 text-left">
+                        <div className="truncate text-[14.5px] font-semibold text-[var(--text-main)]">
+                          {c.name}
+                        </div>
+                        <div className="mt-0.5 truncate text-[12px] text-[var(--text-muted-soft)]">
+                          {docs} {docs === 1 ? "doc" : "docs"}
+                          {due > 0 ? ` · ${due} due` : ""}
+                        </div>
                       </div>
                       <ArrowUpRight className="h-4 w-4 shrink-0 text-[var(--text-muted-soft)] transition group-hover:text-[var(--text-main)]" />
                     </div>
-                    <div className="mt-3 flex flex-wrap gap-1.5 text-xs text-[var(--text-muted)]">
-                      <span className="pill pill-neutral">{docCountByClassId[c.id] ?? 0} docs</span>
+                    <div className="mt-3 flex items-center gap-2">
+                      <ProgressBar
+                        value={acc ?? 0}
+                        color={
+                          accTone === "success"
+                            ? "var(--success)"
+                            : accTone === "warning"
+                              ? "var(--warning)"
+                              : accTone === "danger"
+                                ? "var(--danger)"
+                                : "var(--primary)"
+                        }
+                        height={4}
+                        className="flex-1"
+                      />
+                      <span className="dash-class-card__pct">{acc != null ? `${acc}%` : "—"}</span>
                     </div>
                   </button>
-                ))
-              )}
+                );
+              })}
             </div>
           </section>
         ) : null}
 
-        {!isNewUser ? (
+        {/* ── Section 7 — Recent activity (premium timeline) ──────── */}
+        {!isNewUser && activityRows.length > 0 ? (
           <section className="ns-card p-5 sm:p-6">
             <SectionHeader
-              eyebrow="Activity"
-              title="Recent moves"
-              description={`Study time (7d): ${studyOverview ? formatDuration(studyOverview.total_seconds_7d) : "—"} · ${studyOverview?.sessions_7d ?? 0} sessions`}
+              eyebrow="Recent"
+              title="Activity"
+              description={
+                studyOverview && studyOverview.total_seconds_7d > 0
+                  ? `${formatDuration(studyOverview.total_seconds_7d)} of focused study in the last 7 days.`
+                  : undefined
+              }
             />
-            {activityRows.length === 0 ? (
-              <p className="mt-4 text-sm text-[var(--text-secondary)]">No activity yet. Create a class to begin.</p>
-            ) : (
-              <ul className="mt-4 space-y-3">
-                {activityRows.map((item) => (
-                  <li
-                    key={item.id}
-                    className="flex gap-3 rounded-xl border border-transparent px-1 py-1 transition hover:border-[var(--border)] hover:bg-[var(--surface-2)]/60"
+            <ul className="dash-activity mt-4">
+              {activityRows.map((item) => (
+                <li key={item.id} className="dash-activity__row">
+                  <span
+                    className={`dash-activity__icon dash-activity__icon--${item.iconTone}`}
+                    aria-hidden
                   >
-                    <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--surface-2)] text-[var(--primary)]">
-                      {item.icon}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="text-sm font-medium text-[var(--text-main)]">{item.label}</div>
-                      {item.detail ? <div className="text-xs text-[var(--text-secondary)]">{item.detail}</div> : null}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
+                    {item.icon}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[13.5px] font-semibold text-[var(--text-main)]">{item.label}</div>
+                    {item.detail ? (
+                      <div className="mt-0.5 truncate text-[12.5px] text-[var(--text-secondary)]">
+                        {item.detail}
+                      </div>
+                    ) : null}
+                  </div>
+                  <span className="dash-activity__time">{item.time}</span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
+
+        {/* ── Section 8 — Compact insights / footer hint ──────────── */}
+        {!isNewUser ? (
+          <section className="dash-footer-hint">
+            <div className="dash-footer-hint__inner">
+              <span className="dash-footer-hint__icon" aria-hidden>
+                <Lightbulb className="h-4 w-4" />
+              </span>
+              <p>
+                Short, focused sessions beat long marathons. Try a{" "}
+                <Link to="/voice-revision" className="dash-footer-hint__link">
+                  10-minute voice revision
+                </Link>{" "}
+                to lock in what you reviewed today.
+              </p>
+              {/* Mini bars showing the last 7 days at a glance */}
+              <MiniWeekBars
+                values={week.seconds.length ? week.seconds : [0, 0, 0, 0, 0, 0, 0]}
+                height={28}
+                className="dash-footer-hint__bars"
+                ariaLabel="Last 7 days of study time"
+              />
+            </div>
           </section>
         ) : null}
       </div>

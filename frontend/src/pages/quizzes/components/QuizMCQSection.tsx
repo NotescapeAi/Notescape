@@ -108,16 +108,26 @@ export default function QuizMCQSection({ questions, onComplete, initialAnswers =
           <div className="mt-5 space-y-2.5">
             {currentQuestion.options?.map((opt, idx) => {
               const isSelected = answers[currentQuestion.id] === idx;
+              const letter = String.fromCharCode(65 + idx); // A, B, C, D
               return (
                 <button
                   key={idx}
                   type="button"
                   onClick={() => handleSelect(idx)}
                   disabled={isAnimating}
-                  className={`quiz-option ${isSelected ? "quiz-option--selected" : ""}`}
+                  className={`quiz-option press-feedback ${isSelected ? "quiz-option--selected" : ""}`}
                   aria-pressed={isSelected}
                 >
-                  <span className="quiz-option__bullet" aria-hidden />
+                  <span
+                    aria-hidden
+                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md border text-[12px] font-bold tabular-nums transition ${
+                      isSelected
+                        ? "border-[var(--primary)] bg-[var(--primary)] text-white shadow-[0_4px_10px_color-mix(in_srgb,var(--primary)_30%,transparent)]"
+                        : "border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-muted)]"
+                    }`}
+                  >
+                    {letter}
+                  </span>
                   <span className="quiz-option__label">{opt}</span>
                 </button>
               );
@@ -137,9 +147,9 @@ export default function QuizMCQSection({ questions, onComplete, initialAnswers =
           <button
             type="button"
             onClick={() => onComplete(answers)}
-            className="btn-premium"
+            className="btn-premium press-feedback"
           >
-            <span>Finish Part 1</span>
+            <span>Finish MCQs</span>
             <CheckCircle2 className="h-4 w-4" aria-hidden />
           </button>
         ) : null}

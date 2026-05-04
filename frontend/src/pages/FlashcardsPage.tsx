@@ -305,28 +305,29 @@ export default function FlashcardsPage() {
   const totalCount = progress?.total ?? cardsRaw.length;
 
   return (
-    <AppShell title="Flashcards" breadcrumbs={["Flashcards"]} subtitle={className || undefined}>
+    <AppShell title={className || "Flashcards"} subtitle={className ? "Flashcards" : undefined}>
       <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-5">
-        {/* Hero header */}
+        {/* Hero header — no title duplication; AppShell already shows class + Flashcards */}
         <div className="rounded-[var(--radius-2xl)] border border-[var(--border)] bg-[var(--surface)] p-5 shadow-[var(--shadow-sm)] sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div className="min-w-0">
               <div className="inline-flex items-center gap-1.5 rounded-full border border-[color-mix(in_srgb,var(--primary)_28%,var(--border))] bg-[var(--primary-soft)] px-2.5 py-1 text-[10.5px] font-semibold uppercase tracking-[0.18em] text-[var(--primary)]">
                 <Sparkles className="h-3 w-3" />
-                Flashcards
+                {totalCount > 0
+                  ? `${totalCount} ${totalCount === 1 ? "card" : "cards"}`
+                  : "Practice"}
               </div>
-              <h1 className="mt-3 text-[26px] font-semibold leading-tight tracking-tight text-[var(--text-main)] sm:text-[30px]">
-                Practice with intent
-              </h1>
-              <p className="mt-1 text-[13.5px] text-[var(--text-muted)]">
-                {className ? (
-                  <>Class: <span className="font-medium text-[var(--text-main)]">{className}</span></>
-                ) : (
-                  "Browse, study, or add new cards"
-                )}
-                {totalCount > 0 ? (
-                  <> &middot; {totalCount} total {totalCount === 1 ? "card" : "cards"}</>
-                ) : null}
+              <h2 className="mt-3 text-[20px] font-semibold leading-tight tracking-tight text-[var(--text-main)] sm:text-[22px]">
+                {dueNowCount > 0
+                  ? dueNowCount === 1
+                    ? "1 card is ready to review"
+                    : `${dueNowCount} cards are ready to review`
+                  : "You're caught up"}
+              </h2>
+              <p className="mt-1 text-[13px] text-[var(--text-muted)]">
+                {dueNowCount > 0
+                  ? "Run a focused session — spaced repetition will surface the right cards."
+                  : "Generate new cards or revisit the deck whenever you're ready."}
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">

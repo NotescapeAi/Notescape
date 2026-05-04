@@ -784,16 +784,11 @@ export default function FlashcardsStudyMode() {
               <div className="ns-scroll min-h-0 flex-1 overflow-y-auto">
                 <div className="mx-auto w-full max-w-[680px] py-1">
                   <div className={`flash-hero px-5 py-5 sm:px-7 sm:py-6 ${revealed ? "flash-hero--revealed" : ""}`}>
-                    {/* Header row: label + counter */}
-                    <div className="flex items-center justify-between">
-                      <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--primary-soft)] bg-[var(--primary-soft)] px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--primary)]">
-                        <span className="h-1.5 w-1.5 rounded-full bg-[var(--primary)]" />
-                        Question
-                      </span>
-                      <span className="text-[11px] font-semibold tabular-nums text-[var(--text-muted-soft)]">
-                        {displayCurrent} / {displayTotal}
-                      </span>
-                    </div>
+                    {/* Header label only — counter lives in the session header (no duplication) */}
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--primary-soft)] bg-[var(--primary-soft)] px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--primary)]">
+                      <span className="h-1.5 w-1.5 rounded-full bg-[var(--primary)]" />
+                      Question
+                    </span>
 
                     {/* Question text */}
                     <div className="mt-4 text-[20px] font-semibold leading-[1.4] tracking-tight text-[var(--text-main)] sm:text-[23px]">
@@ -845,7 +840,7 @@ export default function FlashcardsStudyMode() {
               {/* ── Rating row — always pinned at the bottom, never scrolls away ── */}
               <div className="shrink-0 mx-auto w-full max-w-[680px]">
                 <div className="mb-2 flex items-center justify-between gap-3">
-                  <span className="text-[11.5px] font-medium tracking-[-0.005em] text-[var(--text-muted)]">
+                  <span className="text-[12px] font-medium tracking-[-0.005em] text-[var(--text-muted)]">
                     How well did you know it?
                   </span>
                   <span className="hidden items-center gap-1.5 text-[11px] font-medium text-[var(--text-muted-soft)] sm:inline-flex">

@@ -1,29 +1,77 @@
+/*
+  BrandLogo — guarantees identical visual size across themes.
+
+  The two PNG assets (logo-light.png / logo-dark.png) may have different amounts
+  of transparent padding around the glyph, which causes the logo to *appear*
+  different sizes when both are rendered into the same 36×36 box with
+  object-fit: contain. We solve this two ways:
+
+  1. Wrap the <img> in a fixed-size box that defines the visible footprint.
+  2. Provide a CSS variable (`--logo-scale`) so each theme can fine-tune the
+     intrinsic glyph size to feel optically equal in both light and dark.
+*/
+
 .brand-logo {
   display: inline-flex;
   align-items: center;
   gap: 10px;
   min-width: 0;
   text-decoration: none;
+  /* Default scale; overridden per-theme below for visual parity */
+  --logo-scale: 1;
 }
 
-/* Same box for light/dark PNGs — object-fit prevents stretch; swapping assets does not resize layout */
 .brand-logo-img {
   display: block;
   flex-shrink: 0;
+  /* Fixed size box — never changes regardless of asset swap */
   width: 36px;
   height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  max-width: 36px;
+  max-height: 36px;
   object-fit: contain;
   object-position: center;
+  /* Keep the glyph crisp on HiDPI without anti-alias bleed */
+  image-rendering: -webkit-optimize-contrast;
+  /* Optical-size correction — the dark-mode asset has slightly more transparent
+     padding around the mark, so a small bump keeps the two visually balanced. */
+  transform: scale(var(--logo-scale));
+  transform-origin: center;
+  transition: transform 0.2s ease;
+}
+
+/* Per-theme optical balancing — keeps the rendered glyph the same visual size
+   across both light and dark mode logos. */
+.dark .brand-logo {
+  --logo-scale: 1.08;
+}
+
+/* Sidebar variant — slightly smaller box for compact rail */
+.brand-logo-sidebar .brand-logo-img,
+.brand-logo-header .brand-logo-img {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  max-width: 32px;
+  max-height: 32px;
 }
 
 .brand-logo-text {
   display: inline-flex;
   align-items: center;
-  font-size: 20px;
+  font-size: 19px;
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.024em;
   line-height: 1;
   white-space: nowrap;
+}
+
+.brand-logo-sidebar .brand-logo-text {
+  font-size: 17.5px;
+  letter-spacing: -0.022em;
 }
 
 .brand-logo-footer .brand-logo-text {
@@ -36,10 +84,14 @@
 
 @media (max-width: 640px) {
   .brand-logo-text {
-    font-size: 19px;
+    font-size: 18px;
   }
 
   .brand-logo-footer .brand-logo-text {
     font-size: 19px;
   }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brand-logo-img { transition: none; }
 }

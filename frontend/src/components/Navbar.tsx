@@ -1,8 +1,7 @@
-import { useEffect, useState } from "react";
-import { Link, NavLink } from "react-router-dom";
+import { useEffect, useState, type MouseEvent } from "react";
+import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { Menu, X } from "lucide-react";
 import BrandLogo from "./BrandLogo";
-import { useTheme } from "../hooks/useTheme";
 import "./navbar.css";
 
 const navLinkClass = ({ isActive }: { isActive: boolean }) =>
@@ -11,8 +10,8 @@ const navLinkClass = ({ isActive }: { isActive: boolean }) =>
 const Navbar: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
-  const { resolvedTheme } = useTheme();
-  const isDark = resolvedTheme === "dark";
+  const location = useLocation();
+  const navigate = useNavigate();
 
   useEffect(() => {
     const hero = document.querySelector<HTMLElement>("#hero");
@@ -41,8 +40,47 @@ const Navbar: React.FC = () => {
     };
   }, []);
 
+  /**
+   * Smooth-scroll to in-page anchors. If we're already on the right route,
+   * just scrollIntoView. Otherwise navigate first, then scroll on next tick.
+   */
+  function handleHashClick(e: MouseEvent<HTMLAnchorElement>, hash: string) {
+    e.preventDefault();
+    setIsOpen(false);
+    const id = hash.replace(/^#/, "");
+
+    const scrollToTarget = () => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const prefersReducedMotion =
+        window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+      el.scrollIntoView({
+        behavior: prefersReducedMotion ? "auto" : "smooth",
+        block: "start",
+      });
+      // Update URL hash without re-triggering router
+      try {
+        window.history.replaceState(null, "", `/#${id}`);
+      } catch {
+        /* no-op */
+      }
+    };
+
+    if (location.pathname !== "/") {
+      navigate("/");
+      // Wait for landing page to mount before scrolling
+      window.setTimeout(scrollToTarget, 80);
+    } else {
+      scrollToTarget();
+    }
+  }
+
+  const isDarkPref =
+    typeof window !== "undefined" &&
+    document.documentElement.classList.contains("dark");
+
   const headerStyle = scrolled
-    ? isDark
+    ? isDarkPref
       ? {
           background: "rgba(14, 17, 24, 0.88)",
           backdropFilter: "saturate(160%) blur(12px)",
@@ -72,9 +110,12 @@ const Navbar: React.FC = () => {
         <BrandLogo variant="header" className="ns-logo" />
 
         <div className="hidden md:flex items-center gap-1 lg:gap-2">
-          <Link to="/#features" className="ns-link hover:text-blue-600">
+          <a href="/#features" onClick={(e) => handleHashClick(e, "#features")} className="ns-link">
             Features
-          </Link>
+          </a>
+          <a href="/#how" onClick={(e) => handleHashClick(e, "#how")} className="ns-link">
+            How it works
+          </a>
           <NavLink to="/pricing" className={navLinkClass}>
             Pricing
           </NavLink>
@@ -84,31 +125,57 @@ const Navbar: React.FC = () => {
         </div>
 
         <div className="hidden md:flex ns-actions items-center gap-3">
-          <Link to="/get-started" className="btn-primary-purple">
-            Sign Up
+          <Link to="/login" className="ns-link">
+            Log in
+          </Link>
+          <Link to="/get-started" className="btn-primary-purple press-feedback">
+            Sign up
           </Link>
         </div>
 
         <div className="md:hidden">
-          <button onClick={() => setIsOpen(!isOpen)} aria-label="Toggle menu">
-            {isOpen ? <X size={28} /> : <Menu size={28} />}
+          <button
+            onClick={() => setIsOpen(!isOpen)}
+            aria-label="Toggle navigation menu"
+            aria-expanded={isOpen}
+            className="ns-mobile-toggle"
+          >
+            {isOpen ? <X size={26} /> : <Menu size={26} />}
           </button>
         </div>
       </nav>
 
       {isOpen && (
-        <div className="md:hidden surface-95 backdrop-blur border-t shadow-md px-6 py-4 flex flex-col gap-3">
-          <Link to="/#features" className="ns-link hover:text-blue-600" onClick={() => setIsOpen(false)}>
+        <div className="md:hidden ns-mobile-panel">
+          <a
+            href="/#features"
+            onClick={(e) => handleHashClick(e, "#features")}
+            className="ns-link"
+          >
             Features
-          </Link>
+          </a>
+          <a
+            href="/#how"
+            onClick={(e) => handleHashClick(e, "#how")}
+            className="ns-link"
+          >
+            How it works
+          </a>
           <NavLink to="/pricing" className={navLinkClass} onClick={() => setIsOpen(false)}>
             Pricing
           </NavLink>
           <NavLink to="/support" className={navLinkClass} onClick={() => setIsOpen(false)}>
             Support
           </NavLink>
-          <Link to="/get-started" className="btn-primary-purple mt-2" onClick={() => setIsOpen(false)}>
-            Sign Up
+          <Link to="/login" className="ns-link" onClick={() => setIsOpen(false)}>
+            Log in
+          </Link>
+          <Link
+            to="/get-started"
+            className="btn-primary-purple mt-2 press-feedback"
+            onClick={() => setIsOpen(false)}
+          >
+            Sign up
           </Link>
         </div>
       )}

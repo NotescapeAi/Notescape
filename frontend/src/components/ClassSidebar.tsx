@@ -40,41 +40,33 @@ export default function ClassSidebar({
       }`}
     >
       <div className="flex-shrink-0 border-b border-[var(--border)] px-3 py-3">
-        <div className={`flex items-center ${collapsed ? "justify-center" : "justify-between"} gap-2`}>
-          {!collapsed && (
-            <div className="min-w-0">
-              <div className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--text-muted-soft)]">
-                My Classes
-              </div>
-              <div className="mt-0.5 text-xs text-[var(--text-muted)]">{items.length} active</div>
-            </div>
-          )}
-          <button
-            onClick={onToggleCollapse}
-            aria-label={collapsed ? "Expand classes panel" : "Collapse classes panel"}
-            title={collapsed ? "Expand panel" : "Collapse panel"}
-            className="flex h-8 w-8 items-center justify-center rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface)] hover:text-[var(--text-main)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
-            type="button"
-          >
-            {collapsed ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}
-          </button>
-        </div>
-
         {!collapsed ? (
           <>
-            <div className="mt-3 flex h-9 items-center gap-2 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-2)] px-3 transition focus-within:border-[color-mix(in_srgb,var(--primary)_55%,var(--border))] focus-within:ring-2 focus-within:ring-[var(--ring)]">
-              <Search className="h-4 w-4 flex-shrink-0 text-[var(--text-muted-soft)]" />
-              <input
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Search classes"
-                className="h-full w-full min-w-0 border-0 bg-transparent p-0 text-[13.5px] text-[var(--text-main)] placeholder:text-[var(--text-muted-soft)] focus:outline-none focus:ring-0"
-              />
+            {/* Search + collapse toggle on a single row — no decorative header */}
+            <div className="flex items-center gap-2">
+              <div className="flex h-9 flex-1 items-center gap-2 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-2)] px-3 transition focus-within:border-[color-mix(in_srgb,var(--primary)_55%,var(--border))] focus-within:ring-2 focus-within:ring-[var(--ring)]">
+                <Search className="h-4 w-4 flex-shrink-0 text-[var(--text-muted-soft)]" />
+                <input
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                  placeholder="Search classes"
+                  className="h-full w-full min-w-0 border-0 bg-transparent p-0 text-[13.5px] text-[var(--text-main)] placeholder:text-[var(--text-muted-soft)] focus:outline-none focus:ring-0"
+                />
+              </div>
+              <button
+                onClick={onToggleCollapse}
+                aria-label="Collapse classes panel"
+                title="Collapse panel"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface)] hover:text-[var(--text-main)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+                type="button"
+              >
+                <ChevronsLeft className="h-4 w-4" />
+              </button>
             </div>
             <Button
               variant="primary"
               size="sm"
-              className="mt-2.5 w-full"
+              className="mt-2.5 w-full press-feedback"
               onClick={onNew}
             >
               <Plus className="h-4 w-4" />
@@ -82,15 +74,26 @@ export default function ClassSidebar({
             </Button>
           </>
         ) : (
-          <button
-            onClick={onNew}
-            className="mt-2.5 flex h-9 w-full items-center justify-center rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:text-[var(--primary)]"
-            title="New class"
-            aria-label="New class"
-            type="button"
-          >
-            <Plus className="h-4 w-4" />
-          </button>
+          <div className="flex flex-col items-center gap-2">
+            <button
+              onClick={onToggleCollapse}
+              aria-label="Expand classes panel"
+              title="Expand panel"
+              className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-muted)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface)] hover:text-[var(--text-main)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+              type="button"
+            >
+              <ChevronsRight className="h-4 w-4" />
+            </button>
+            <button
+              onClick={onNew}
+              className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-md)] border border-dashed border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-muted)] transition hover:border-[var(--primary)] hover:bg-[var(--primary-soft)] hover:text-[var(--primary)]"
+              title="New class"
+              aria-label="New class"
+              type="button"
+            >
+              <Plus className="h-4 w-4" />
+            </button>
+          </div>
         )}
       </div>
 
@@ -141,11 +144,8 @@ export default function ClassSidebar({
                     </span>
                     {!collapsed && (
                       <div className="min-w-0 flex-1">
-                        <div className={`truncate text-[13.5px] font-semibold ${isActive ? "text-[var(--primary)]" : "text-[var(--text-main)]"}`}>
+                        <div className={`truncate text-[14px] font-semibold leading-tight tracking-[-0.005em] ${isActive ? "text-[var(--primary)]" : "text-[var(--text-main)]"}`}>
                           {c.name}
-                        </div>
-                        <div className="mt-0.5 truncate text-[11.5px] text-[var(--text-muted-soft)]">
-                          {c.subject || "Class workspace"}
                         </div>
                       </div>
                     )}

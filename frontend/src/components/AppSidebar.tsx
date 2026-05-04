@@ -271,11 +271,11 @@ function SidebarLink({
       className={({ isActive: navActive }) => {
         const active = matchActive ?? navActive;
         return [
-          "group relative flex min-h-[42px] items-center gap-3 rounded-[var(--radius-md)] text-[13.5px] font-medium transition-colors duration-150",
+          "group relative flex min-h-[42px] items-center gap-3 rounded-[var(--radius-md)] text-[13.5px] font-medium transition-all duration-200 ease-out",
           collapsed ? "justify-center px-0" : "px-3",
           active
             ? "bg-[var(--primary-soft)] text-[var(--primary)] font-semibold"
-            : "text-[var(--text-muted)] hover:bg-[var(--surface-2)] hover:text-[var(--text-main)]",
+            : "text-[var(--text-muted)] hover:bg-[var(--surface-2)] hover:text-[var(--text-main)] hover:translate-x-[1px]",
         ].join(" ");
       }}
     >
@@ -283,16 +283,18 @@ function SidebarLink({
         const active = matchActive ?? navActive;
         return (
           <>
-            {/* Left accent bar when active (expanded only) */}
+            {/* Left accent bar when active (expanded only) — animated grow */}
             {active && !collapsed ? (
               <span
                 aria-hidden
-                className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-[var(--primary)]"
+                className="absolute left-0 top-1.5 bottom-1.5 w-[3px] rounded-full bg-gradient-to-b from-[var(--primary)] to-[color-mix(in_srgb,var(--primary)_65%,#a855f7)] shadow-[0_0_8px_color-mix(in_srgb,var(--primary)_45%,transparent)]"
               />
             ) : null}
             <span
-              className={`flex h-7 w-7 shrink-0 items-center justify-center transition-transform duration-150 ${
-                active ? "text-[var(--primary)]" : "text-[var(--text-muted)] group-hover:text-[var(--text-main)]"
+              className={`flex h-7 w-7 shrink-0 items-center justify-center transition-all duration-200 ease-out ${
+                active
+                  ? "text-[var(--primary)]"
+                  : "text-[var(--text-muted)] group-hover:text-[var(--text-main)] group-hover:scale-[1.06]"
               }`}
             >
               {icon}

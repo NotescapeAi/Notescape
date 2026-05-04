@@ -205,14 +205,14 @@ function documentWorkflowLabel(file: FileRow): string {
     return "Ready, preview unavailable";
   }
   if (s === "UPLOADING") return "Uploading";
-  if (s === "UPLOADED") return "Uploaded";
+  if (s === "UPLOADED") return "Preparing";
   if (isReadyStatus(s) && chunks > 0) return "Ready";
   if (s === "FAILED_PREVIEW" && chunks > 0) return "Ready";
   if (s === "FAILED_PREVIEW") return "Preview failed";
-  if (isReadyStatus(s) && chunks === 0) return "Processing";
-  if (s === "EXTRACTING_TEXT" || s === "RUNNING_OCR") return "Extracting text";
-  if (s === "CHUNKING" || s === "GENERATING_EMBEDDINGS") return "Indexing content";
-  if (s === "CONVERTING_PREVIEW" || s === "PREVIEW_READY") return "Building preview";
+  if (isReadyStatus(s) && chunks === 0) return "Preparing";
+  if (s === "EXTRACTING_TEXT" || s === "RUNNING_OCR") return "Reading";
+  if (s === "CHUNKING" || s === "GENERATING_EMBEDDINGS") return "Indexing";
+  if (s === "CONVERTING_PREVIEW" || s === "PREVIEW_READY") return "Almost there";
   if (
     [
       "PROCESSING",
@@ -223,10 +223,10 @@ function documentWorkflowLabel(file: FileRow): string {
       "PREPARING_REVIEW",
     ].includes(s)
   ) {
-    return "Processing";
+    return "Preparing";
   }
   if (s === "OCR_NEEDS_REVIEW") return "Needs review";
-  return "Processing";
+  return "Preparing";
 }
 
 /** Secondary line under the status pill — no fake percentages. */
@@ -252,22 +252,22 @@ function documentStageDetail(file: FileRow): string | null {
       : "Could not build PDF preview.";
   }
   const stages: Record<string, string> = {
-    UPLOADING: "Saving your upload…",
-    UPLOADED: "Waiting for the processor…",
-    PROCESSING: "Handoff to document processor…",
-    OCR_QUEUED: "In queue…",
-    EXTRACTING_TEXT: "Reading text from the file…",
-    CHUNKING: "Splitting content into searchable segments…",
-    GENERATING_EMBEDDINGS: "Vector index for chat and search…",
-    CONVERTING_PREVIEW: "Optional PDF preview (LibreOffice)…",
-    PREVIEW_READY: "Wrapping up…",
-    OCR_DONE: "Almost done…",
-    RUNNING_OCR: "Running OCR on pages…",
+    UPLOADING: "Uploading your file…",
+    UPLOADED: "Just a moment…",
+    PROCESSING: "Getting your study material ready…",
+    OCR_QUEUED: "In line for processing…",
+    EXTRACTING_TEXT: "Reading your notes…",
+    CHUNKING: "Organising the content…",
+    GENERATING_EMBEDDINGS: "Making it searchable…",
+    CONVERTING_PREVIEW: "Building a clean preview…",
+    PREVIEW_READY: "Almost there…",
+    OCR_DONE: "Almost there…",
+    RUNNING_OCR: "Reading handwritten pages…",
     SPLITTING_PAGES: "Preparing pages…",
-    ENHANCING_IMAGE: "Enhancing scans…",
-    PREPARING_REVIEW: "Preparing review…",
+    ENHANCING_IMAGE: "Sharpening your scans…",
+    PREPARING_REVIEW: "Setting up review…",
   };
-  return stages[s] ?? "Working on your document…";
+  return stages[s] ?? "Preparing your notes…";
 }
 
 function canOpenDocumentInWorkspace(file: FileRow): boolean {
@@ -422,7 +422,7 @@ function StatusPill({ file }: { file: FileRow }) {
 }
 
 function flashcardSourceStatus(file: FileRow) {
-  if (isStudyGenerationReady(file)) return { disabled: false, label: "Ready for study generation" };
+  if (isStudyGenerationReady(file)) return { disabled: false, label: "Ready" };
   if (String(file.status || "").toUpperCase() === "OCR_NEEDS_REVIEW") return { disabled: true, label: "Review OCR first" };
   if (
     [
@@ -437,7 +437,7 @@ function flashcardSourceStatus(file: FileRow) {
       "OCR_QUEUED",
     ].includes(String(file.status || "").toUpperCase())
   ) {
-    return { disabled: true, label: "Processing" };
+    return { disabled: true, label: "Preparing" };
   }
   if (String(file.status || "").toUpperCase() === "FAILED") return { disabled: true, label: "Extraction failed" };
   return { disabled: true, label: "Unsupported" };
@@ -917,8 +917,8 @@ function ClassesContent() {
       const status = String(file.status || "UPLOADED").toUpperCase();
       const prev = fileStatusRef.current[file.id];
       if (prev && prev !== status) {
-        if (isReadyStatus(status)) showToastMessage("Document is ready.");
-        if (status === "FAILED") showToastMessage("Processing failed. Please retry.");
+        if (isReadyStatus(status)) showToastMessage("Your notes are ready.");
+        if (status === "FAILED") showToastMessage("Something went wrong. Please retry.");
       }
       next[file.id] = status;
     }
@@ -1260,8 +1260,8 @@ function ClassesContent() {
         setFiles((xs) => [row, ...(xs ?? [])]);
         showToastMessage(
           mode === "handwritten"
-            ? "Handwritten notes uploaded. OCR review will be ready shortly."
-            : "Document uploaded. Processing started."
+            ? "Handwritten notes uploaded — review will be ready shortly."
+            : "Uploaded — preparing your study material…"
         );
       }
       setDocumentsPage(0);

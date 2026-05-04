@@ -763,7 +763,10 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
             />
           )}
 
-          {/* Header: session title + tools on row 1; class context on row 2 (no overlapping helper text) */}
+          {/* Header: chat title + tools on row 1; source selector on row 2.
+              The chat title only renders when this is a real conversation —
+              empty drafts hide the title entirely (the New chat button in the
+              left rail already conveys that state). */}
           <header className="z-10 flex shrink-0 flex-col gap-0 border-b border-[var(--border)] bg-[var(--surface)] px-4 py-3 sm:px-5">
             <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
               <div className="flex min-w-0 flex-1 items-start gap-3">
@@ -772,10 +775,16 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
                   </svg>
                 </div>
-                <div className="min-w-0 flex-1 pt-0.5">
-                  <h2 className="truncate text-sm font-semibold leading-snug tracking-tight text-[var(--text-main)]">
-                    {activeSession?.title || EMPTY_SESSION_TITLE}
-                  </h2>
+                <div className="min-w-0 flex-1 pt-1">
+                  {activeSession && !isGenericSessionTitle(activeSession.title) ? (
+                    <h2 className="truncate text-sm font-semibold leading-snug tracking-tight text-[var(--text-main)]">
+                      {activeSession.title}
+                    </h2>
+                  ) : (
+                    <span className="truncate text-[13px] font-medium leading-snug text-[var(--text-muted)]">
+                      New chat
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -856,50 +865,46 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
               </div>
             </div>
 
-            <div className="mt-3 border-t border-[var(--border)] pt-3">
+            <div className="mt-3 flex min-w-0 flex-wrap items-center gap-2 border-t border-[var(--border)] pt-3">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted-soft)]">
+                Source
+              </span>
               {isClassLocked ? (
-                <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
-                  <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted-soft)]">Class</span>
-                  <span className="min-w-0 truncate text-sm font-medium text-[var(--text-main)]" title={selectedClassName}>
-                    {selectedClassName || "Class context"}
+                <span
+                  className="inline-flex min-w-0 items-center gap-1.5 rounded-full border border-[color-mix(in_srgb,var(--primary)_25%,var(--border))] bg-[var(--primary-soft)] px-3 py-1 text-[12.5px] font-medium text-[var(--primary)]"
+                  title={selectedClassName}
+                >
+                  <span className="truncate">{selectedClassName || "Class"}</span>
+                </span>
+              ) : (
+                <div className="relative min-w-0 flex-1 sm:max-w-[320px]">
+                  <select
+                    id="chat-class-select"
+                    value={classId ?? ""}
+                    onChange={(e) => handleClassChange(e.target.value ? Number(e.target.value) : null)}
+                    disabled={classes.length === 0}
+                    className="h-9 w-full min-w-0 cursor-pointer appearance-none rounded-full border border-[var(--border)] bg-[var(--surface-2)] py-1 pl-3.5 pr-9 text-[12.5px] font-medium text-[var(--text-main)] outline-none transition focus:border-[color-mix(in_srgb,var(--primary)_55%,var(--border))] focus:ring-2 focus:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-60"
+                    aria-label="Select source class"
+                  >
+                    <option value="">General</option>
+                    {classes.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" aria-hidden>
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                    </svg>
                   </span>
                 </div>
-              ) : (
-                <div className="flex min-w-0 flex-col gap-2">
-                  <label htmlFor="chat-class-select" className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted-soft)]">
-                    Class context
-                  </label>
-                  <div className="relative max-w-xl">
-                    <select
-                      id="chat-class-select"
-                      value={classId ?? ""}
-                      onChange={(e) => handleClassChange(e.target.value ? Number(e.target.value) : null)}
-                      disabled={classes.length === 0}
-                      className="h-10 w-full min-w-0 cursor-pointer appearance-none rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-2)] py-2 pl-3 pr-10 text-sm font-medium text-[var(--text-main)] shadow-sm outline-none transition focus:border-[color-mix(in_srgb,var(--primary)_55%,var(--border))] focus:ring-2 focus:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-60 dark:bg-[color-mix(in_srgb,var(--surface-2)_92%,#000)]"
-                      aria-label="Select a class for document context"
-                    >
-                      <option value="">General chat (no class)</option>
-                      {classes.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </select>
-                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" aria-hidden>
-                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                      </svg>
-                    </span>
-                  </div>
-                  {classes.length === 0 ? (
-                    <p className="text-xs leading-relaxed text-[var(--text-muted)]">Add a class under Classes to attach notes and PDFs here.</p>
-                  ) : !classId ? (
-                    <p className="max-w-xl text-xs leading-relaxed text-[var(--text-muted)]">
-                      Your materials load when you pick a class. Leave as general for questions without your files.
-                    </p>
-                  ) : null}
-                </div>
               )}
+              {scopeFileIds.length > 0 ? (
+                <span className="inline-flex items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-2.5 py-0.5 text-[11px] font-semibold text-[var(--text-muted)]">
+                  {scopeFileIds.length} {scopeFileIds.length === 1 ? "file" : "files"}
+                </span>
+              ) : null}
             </div>
           </header>
           {/* Error banner */}
@@ -944,12 +949,12 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
                 </div>
 
                 <h3 className="mb-2 text-xl font-semibold tracking-tight text-[var(--text-main)] sm:text-2xl">
-                  {classId ? "What should we work on?" : "Start a focused study chat"}
+                  Ask anything from your notes
                 </h3>
                 <p className="mb-8 max-w-md text-sm leading-relaxed text-[var(--text-muted)] sm:text-[15px]">
                   {classId
-                    ? "Summaries, quiz ideas, and explanations from the materials in this class."
-                    : "Select a class or document to ground your answers, or ask a general question."}
+                    ? "Summaries, quiz ideas, explanations — grounded in this class."
+                    : "Choose a class for grounded answers, or start with a general question."}
                 </p>
 
                 {classId && (
@@ -1069,13 +1074,6 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
               </div>
             )}
 
-            {classes.length > 0 && classId == null && !isClassLocked ? (
-              <div className="mx-auto mb-3 max-w-3xl rounded-xl border border-[color-mix(in_srgb,var(--primary)_22%,var(--border))] bg-[var(--primary-soft)] px-3.5 py-2.5 text-[12.5px] leading-snug text-[var(--text-secondary)]">
-                <span className="font-semibold text-[var(--text-main)]">Tip: </span>
-                Choose a class in the sidebar to ask from your uploaded materials. Without a class, replies use general mode only.
-              </div>
-            ) : null}
-
             <div className="max-w-3xl mx-auto">
               <ChatInput
                 value={input}
@@ -1086,24 +1084,6 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
                 onToggleListening={handleMicClick}
                 disabled={false}
               />
-            </div>
-
-            <div className="mx-auto mt-2 flex max-w-3xl justify-center">
-              <span
-                className={`inline-flex max-w-full items-center rounded-full border px-3 py-1 text-[11px] font-medium leading-snug text-[var(--text-secondary)] transition ${
-                  chatMode === "auto"
-                    ? "border-[color-mix(in_srgb,var(--primary)_28%,var(--border))] bg-[var(--primary-soft)] text-[var(--primary)]"
-                    : chatMode === "rag"
-                      ? "border-[color-mix(in_srgb,var(--primary)_28%,var(--border))] bg-[var(--primary-soft)] text-[var(--primary)]"
-                      : "border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-muted)]"
-                }`}
-              >
-                {chatMode === "auto"
-                  ? "Auto: grounded answers when a class is selected; otherwise general."
-                  : chatMode === "rag"
-                    ? "Answers use indexed files for the selected class."
-                    : "General answers (no class files)."}
-              </span>
             </div>
 
             {/* Listening indicator */}
@@ -1160,7 +1140,8 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
                   <svg className="h-8 w-8 opacity-25" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.69-6.44l-2.12-2.12a1.5 1.5 0 00-1.061-.44H4.5A2.25 2.25 0 002.25 6v12a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9a2.25 2.25 0 00-2.25-2.25h-5.379a1.5 1.5 0 01-1.06-.44z" />
                   </svg>
-                  <p className="text-[11.5px]">Select a class to view its documents.</p>
+                  <p className="text-[12px] font-semibold text-[var(--text-secondary)]">No class selected</p>
+                  <p className="text-[11.5px] text-[var(--text-muted-soft)]">Choose a class to show files.</p>
                 </div>
               ) : busyFiles ? (
                 <div className="flex h-20 items-center justify-center">

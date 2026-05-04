@@ -52,7 +52,7 @@ export default function StatCard({
   const t = toneStyles[tone];
   return (
     <div
-      className={`ns-card ns-card-hover accent-rail flex flex-col gap-2.5 p-4 sm:p-5 ${className ?? ""}`}
+      className={`ns-card ns-card-hover accent-rail group flex flex-col gap-2.5 p-4 sm:p-5 ${className ?? ""}`}
     >
       <div className="flex items-center justify-between gap-2">
         <div className="text-[10.5px] font-semibold uppercase tracking-[0.13em] text-[var(--text-muted-soft)]">
@@ -60,7 +60,7 @@ export default function StatCard({
         </div>
         {icon ? (
           <span
-            className={`flex h-8 w-8 items-center justify-center rounded-[var(--radius-md)] ring-1 ${t.bg} ${t.text} ${t.ring}`}
+            className={`flex h-8 w-8 items-center justify-center rounded-[var(--radius-md)] ring-1 transition-transform duration-200 ease-out group-hover:scale-105 ${t.bg} ${t.text} ${t.ring}`}
           >
             {icon}
           </span>

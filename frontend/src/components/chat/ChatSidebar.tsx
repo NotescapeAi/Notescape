@@ -103,9 +103,9 @@ export default function ChatSidebar({
         ) : sessions.length === 0 ? (
           <div className="flex flex-col items-center justify-center px-4 py-10 text-center text-[var(--text-muted)]">
             <MessageSquare size={28} className="mb-2 opacity-25" />
-            <p className="text-xs">No conversations yet.</p>
+            <p className="text-xs font-medium text-[var(--text-secondary)]">No chats yet</p>
             <p className="mt-0.5 text-[11px] text-[var(--text-muted-soft)]">
-              Start a new chat to ask about your materials.
+              Start a new conversation.
             </p>
           </div>
         ) : (
