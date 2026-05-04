@@ -1,8 +1,8 @@
 /* =============================================================
    Footer — theme-adaptive, premium ending to the page
-   Light: soft lavender mist + warm neutrals (lighter, cleaner).
-   Dark: lifted charcoal with soft brand glow (not a heavy slab).
-   Heart: refined warm red, readable in both themes.
+   Light: clean white surface, neutral borders, dark readable type.
+   Dark: lifted charcoal with soft brand glow.
+   Heart: refined warm red in both themes.
    ============================================================= */
 
 .ns-premium-footer {
@@ -14,15 +14,11 @@
   border-top: 1px solid rgba(15, 23, 42, 0.06);
 }
 
-/* —— Light theme: airy lavender–peach mist —— */
+/* —— Light theme: proper white, no navy or tinted wash —— */
 :root:not(.dark) .ns-premium-footer {
-  color: #1a1726;
-  background:
-    radial-gradient(90% 120% at 12% -20%, rgba(196, 181, 253, 0.35), transparent 52%),
-    radial-gradient(70% 90% at 92% 0%, rgba(253, 186, 170, 0.22), transparent 48%),
-    radial-gradient(60% 80% at 50% 100%, rgba(125, 211, 252, 0.12), transparent 45%),
-    linear-gradient(180deg, #fdfcfa 0%, #f7f4fc 38%, #faf8ff 100%);
-  border-top-color: rgba(124, 58, 237, 0.08);
+  color: #0f172a;
+  background: #ffffff;
+  border-top-color: rgba(15, 23, 42, 0.08);
 }
 
 /* —— Dark theme: softer “lifted” surface vs deep navy block —— */
@@ -46,6 +42,10 @@
   background-size: 3px 3px;
 }
 
+:root:not(.dark) .ns-footer-grain {
+  opacity: 0;
+}
+
 .dark .ns-footer-grain {
   opacity: 0.4;
   background-image: radial-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px);
@@ -61,20 +61,10 @@
   border-radius: 50%;
 }
 
-:root:not(.dark) .ns-footer-glow--a {
-  width: 420px;
-  height: 200px;
-  top: -40px;
-  left: -80px;
-  background: radial-gradient(closest-side, rgba(167, 139, 250, 0.28), transparent 78%);
-}
-
-:root:not(.dark) .ns-footer-glow--b {
-  width: 380px;
-  height: 180px;
-  bottom: -70px;
-  right: -60px;
-  background: radial-gradient(closest-side, rgba(251, 182, 162, 0.35), transparent 78%);
+/* No coloured glow blobs in light mode — keeps the footer strictly white */
+:root:not(.dark) .ns-footer-glow {
+  opacity: 0;
+  visibility: hidden;
 }
 
 .dark .ns-footer-glow--a {
@@ -105,10 +95,10 @@
   width: 100%;
   max-width: 1280px;
   margin: 0 auto;
-  padding: 52px 24px 0;
+  padding: 56px 24px 0;
   display: flex;
   flex-direction: column;
-  gap: 40px;
+  gap: 44px;
 }
 
 .footer-grid {
@@ -131,7 +121,7 @@
 }
 
 :root:not(.dark) .footer-tagline {
-  color: rgba(55, 48, 76, 0.72);
+  color: #475569;
   line-height: 1.65;
   margin: 0;
   font-size: 14.5px;
@@ -155,7 +145,7 @@
 }
 
 :root:not(.dark) .footer-col h4 {
-  color: #312a44;
+  color: #0f172a;
   font-size: 12px;
   font-weight: 700;
   margin: 0 0 14px;
@@ -182,7 +172,7 @@
 
 :root:not(.dark) .footer-col ul li a {
   position: relative;
-  color: rgba(55, 48, 76, 0.68);
+  color: #334155;
   text-decoration: none;
   font-size: 13.5px;
   line-height: 1.4;
@@ -218,8 +208,12 @@
   pointer-events: none;
 }
 
+:root:not(.dark) .footer-col ul li a::before {
+  background: #0f172a;
+}
+
 :root:not(.dark) .footer-col ul li a:hover {
-  color: #1a1428;
+  color: #0f172a;
   padding-left: 14px;
 }
 
@@ -235,7 +229,7 @@
 .footer-col ul li a:focus-visible {
   outline: none;
   border-radius: 4px;
-  box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.35);
+  box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.14);
 }
 
 .dark .footer-col ul li a:focus-visible {
@@ -253,8 +247,8 @@
 }
 
 :root:not(.dark) .footer-bottom {
-  border-top: 1px solid rgba(124, 58, 237, 0.1);
-  color: rgba(55, 48, 76, 0.55);
+  border-top: 1px solid rgba(15, 23, 42, 0.08);
+  color: #64748b;
 }
 
 .dark .footer-bottom {
@@ -284,7 +278,7 @@
 }
 
 :root:not(.dark) .ns-premium-footer .footer-love {
-  color: rgba(55, 48, 76, 0.52);
+  color: #64748b;
 }
 
 .dark .ns-premium-footer .footer-love {
