@@ -243,21 +243,21 @@ export default function QuizPanel({ classId, files, topicFocus, onQuizCreated }:
   const hasReadyPdf = readyPdfFiles.length > 0;
 
   return (
-    <div className="space-y-5 px-6 pb-6 pt-4">
+    <div id="quiz-builder" className="space-y-5 scroll-mt-4 px-6 pb-6 pt-4">
       {error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700 shadow-sm animate-in fade-in slide-in-from-top-2">
-          <div className="mb-1 font-semibold">Error</div>
-          <div>{error}</div>
+        <div className="rounded-[var(--radius-lg)] border border-[color-mix(in_srgb,var(--danger)_35%,var(--border))] bg-[var(--danger-soft)] p-4 text-sm text-[var(--danger)] shadow-[var(--shadow-sm)] animate-in fade-in slide-in-from-top-2 dark:border-red-900/40 dark:bg-red-950/25 dark:text-red-100">
+          <div className="mb-1 font-semibold text-[var(--text-main)]">Something went wrong</div>
+          <div className="text-[var(--text-secondary)]">{error}</div>
         </div>
       )}
 
       {success && (
-        <div className="rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-700 shadow-sm animate-in fade-in slide-in-from-top-2">
-          <div className="flex items-center gap-2">
-            <CheckCircle className="h-5 w-5" />
-            <div className="font-bold">Quiz created successfully!</div>
+        <div className="rounded-[var(--radius-lg)] border border-[color-mix(in_srgb,var(--success)_40%,var(--border))] bg-[var(--success-soft)] p-4 text-sm shadow-[var(--shadow-sm)] animate-in fade-in slide-in-from-top-2 dark:border-emerald-900/40 dark:bg-emerald-950/20">
+          <div className="flex items-center gap-2 text-[var(--success)]">
+            <CheckCircle className="h-5 w-5 shrink-0" />
+            <div className="font-semibold text-[var(--text-main)]">Practice set ready</div>
           </div>
-          <div className="mt-1 pl-7">Check the Available Quizzes list to start.</div>
+          <p className="mt-2 text-[13px] leading-relaxed text-[var(--text-muted)]">Open it from <span className="font-medium text-[var(--text-secondary)]">Saved sets</span> on the right when you are ready.</p>
         </div>
       )}
 
@@ -291,13 +291,13 @@ export default function QuizPanel({ classId, files, topicFocus, onQuizCreated }:
           </div>
         </div>
         {!hasReadyPdf && (
-          <p className="px-1 text-xs text-[var(--text-muted)]">
-            No PDFs are ready for quiz generation yet. Wait for processing to finish, then refresh this class.
+          <p className="px-1 text-xs leading-relaxed text-[var(--text-muted)]">
+            No PDFs are ready yet. Wait for indexing to finish, then refresh.
           </p>
         )}
         {selectedFile && !selectedFileReady && (
-          <p className="px-1 text-xs text-amber-600 dark:text-amber-400">
-            This PDF is still being processed and cannot generate quizzes yet.
+          <p className="px-1 text-xs leading-relaxed text-amber-700 dark:text-amber-300">
+            This file is still processing — try again in a moment.
           </p>
         )}
         {topicFocus && (
@@ -436,7 +436,7 @@ export default function QuizPanel({ classId, files, topicFocus, onQuizCreated }:
 
       <div className="rounded-2xl border border-[var(--primary)]/10 bg-gradient-to-br from-[var(--primary)]/5 to-purple-500/5 p-5">
         <div className="mb-2 flex items-center justify-between">
-          <span className="text-sm font-semibold text-[var(--text-muted)]">Total Assessment</span>
+          <span className="text-sm font-semibold text-[var(--text-muted)]">Total questions</span>
           <div className="flex items-baseline gap-1">
             <span className="text-3xl font-bold text-[var(--primary)] tabular-nums">{totalQuestions}</span>
             <span className="text-sm font-medium text-[var(--text-muted)]">questions</span>
@@ -465,11 +465,6 @@ export default function QuizPanel({ classId, files, topicFocus, onQuizCreated }:
               style={{ width: `${progress}%` }}
             />
           </div>
-          {jobId && (
-            <div className="text-right font-mono text-[10px] text-[var(--text-muted)] opacity-50">
-              ID: {jobId.substring(0, 8)}
-            </div>
-          )}
         </div>
       )}
 
@@ -494,7 +489,7 @@ export default function QuizPanel({ classId, files, topicFocus, onQuizCreated }:
         ) : (
           <>
             <Sparkles className="h-4 w-4 transition-transform group-hover:rotate-12 group-hover:scale-110" />
-            <span>Generate Quiz</span>
+            <span>Build practice set</span>
           </>
         )}
       </button>

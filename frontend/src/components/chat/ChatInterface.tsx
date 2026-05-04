@@ -679,9 +679,6 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
   const activeSession = sessions.find(s => s.id === activeSessionId);
   const showVoiceBar = playingMessageId !== null;
   const selectedClassName = classId ? classes.find(c => c.id === classId)?.name ?? "Selected class" : "";
-  const classHelperText = classes.length === 0
-    ? "No classes found. Create a class first."
-    : "Optional: select a class to chat with your study materials.";
 
   const suggestions = [
     { label: "Summarize this class", desc: "Get a quick overview of key topics" },
@@ -766,109 +763,143 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
             />
           )}
 
-          {/* Header */}
-          <header className="z-10 flex flex-shrink-0 flex-col gap-3 border-b border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex min-w-0 flex-1 items-center gap-3">
-              <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--primary-soft)] text-[var(--primary)]">
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
-                </svg>
+          {/* Header: session title + tools on row 1; class context on row 2 (no overlapping helper text) */}
+          <header className="z-10 flex shrink-0 flex-col gap-0 border-b border-[var(--border)] bg-[var(--surface)] px-4 py-3 sm:px-5">
+            <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
+              <div className="flex min-w-0 flex-1 items-start gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--primary-soft)] text-[var(--primary)]">
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+                  </svg>
+                </div>
+                <div className="min-w-0 flex-1 pt-0.5">
+                  <h2 className="truncate text-sm font-semibold leading-snug tracking-tight text-[var(--text-main)]">
+                    {activeSession?.title || EMPTY_SESSION_TITLE}
+                  </h2>
+                </div>
               </div>
 
-              <div className="min-w-0 flex-1">
-                <h2 className="truncate text-[14px] font-semibold leading-tight text-[var(--text-main)]">
-                  {activeSession?.title || EMPTY_SESSION_TITLE}
-                </h2>
-                <div className="mt-1 flex items-center gap-2">
-                  {isClassLocked ? (
-                    <span className="inline-flex min-w-0 max-w-full items-center gap-1.5 text-[11.5px] text-[var(--text-muted)]">
-                      <span className="font-semibold uppercase tracking-wide text-[var(--text-muted-soft)]">
-                        Class
-                      </span>
-                      <span className="truncate font-medium text-[var(--text-main)]" title={selectedClassName}>
-                        {selectedClassName || "Class context"}
-                      </span>
-                    </span>
-                  ) : (
-                    <label className="inline-flex min-w-0 max-w-full items-center gap-1.5 text-[11.5px] text-[var(--text-muted)]">
-                      <span className="font-semibold uppercase tracking-wide text-[var(--text-muted-soft)]">
-                        Class
-                      </span>
-                      <select
-                        value={classId ?? ""}
-                        onChange={e => handleClassChange(e.target.value ? Number(e.target.value) : null)}
-                        disabled={classes.length === 0}
-                        className="h-7 min-w-[160px] max-w-[260px] cursor-pointer truncate rounded-[var(--radius-sm)] border border-[var(--border)] bg-[var(--surface-2)] px-2 py-0 pr-6 text-[11.5px] font-medium text-[var(--text-main)] shadow-none outline-none focus:border-[color-mix(in_srgb,var(--primary)_55%,var(--border))] focus:ring-2 focus:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-60"
-                        aria-label="Select a class"
-                      >
-                        <option value="">Select a class</option>
-                        {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                      </select>
-                    </label>
-                  )}
-                  {!classId && (
-                    <span className="hidden text-[11px] text-[var(--text-muted-soft)] sm:inline">
-                      {classHelperText}
-                    </span>
-                  )}
+              <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                {isSpeaking && (
+                  <div className="flex items-center gap-1.5 rounded-full border border-[color-mix(in_srgb,var(--primary)_25%,transparent)] bg-[var(--primary-soft)] px-2.5 py-1">
+                    <div className="flex h-3 items-center gap-[3px]">
+                      {[0, 1, 2].map((i) => (
+                        <div
+                          key={i}
+                          className="voice-wave-bar"
+                          style={{
+                            height: `${8 + i * 2}px`,
+                            animation: `voiceBar 0.7s ease-in-out infinite`,
+                            animationDelay: `${i * 0.12}s`,
+                          }}
+                        />
+                      ))}
+                    </div>
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-[var(--primary)]">Speaking</span>
+                  </div>
+                )}
+
+                <div
+                  className="inline-flex items-center gap-0.5 rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface-2)] p-1 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+                  role="group"
+                  aria-label="Answer mode"
+                >
+                  {(["auto", "rag", "general"] as ChatMode[]).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setChatMode(m)}
+                      title={m === "auto" ? "Uses your documents when helpful" : m === "rag" ? "Answers from your files only" : "General knowledge"}
+                      className={`min-w-[3.25rem] rounded-[var(--radius-md)] px-3 py-1.5 text-xs font-semibold transition ${
+                        chatMode === m
+                          ? "bg-[var(--surface)] text-[var(--text-main)] shadow-[var(--shadow-xs)] ring-1 ring-[var(--border)]"
+                          : "text-[var(--text-muted)] hover:bg-[var(--surface)]/80 hover:text-[var(--text-main)]"
+                      }`}
+                    >
+                      {m === "auto" ? "Auto" : m === "rag" ? "PDF" : "AI"}
+                    </button>
+                  ))}
                 </div>
+
+                <label className="inline-flex shrink-0 cursor-pointer select-none items-center gap-2 rounded-[var(--radius-md)] border border-transparent px-2 py-1.5 text-xs font-medium text-[var(--text-secondary)] transition hover:border-[var(--border)] hover:bg-[var(--surface-2)]">
+                  <span
+                    className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition ${
+                      sourcesEnabled ? "bg-[var(--primary)]" : "bg-[var(--border-strong)]"
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow-sm transition-transform ${
+                        sourcesEnabled ? "translate-x-4" : "translate-x-[3px]"
+                      }`}
+                    />
+                    <input type="checkbox" checked={sourcesEnabled} onChange={toggleSources} className="sr-only" />
+                  </span>
+                  <span className="whitespace-nowrap">Citations</span>
+                </label>
+
+                <button
+                  type="button"
+                  onClick={() => setShowRightPanel((v) => !v)}
+                  title={showRightPanel ? "Hide context files" : "Show context files"}
+                  aria-pressed={showRightPanel}
+                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-md)] border transition ${
+                    showRightPanel
+                      ? "border-[color-mix(in_srgb,var(--primary)_35%,var(--border))] bg-[var(--primary-soft)] text-[var(--primary)]"
+                      : "border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text-main)]"
+                  }`}
+                >
+                  <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                    <rect x="3" y="3" width="18" height="18" rx="2.5" />
+                    <path strokeLinecap="round" d="M15 3v18" />
+                  </svg>
+                </button>
               </div>
             </div>
 
-            <div className="flex flex-shrink-0 flex-wrap items-center gap-1.5">
-              {isSpeaking && (
-                <div className="mr-1 flex items-center gap-1.5 rounded-full bg-[var(--primary-soft)] px-2.5 py-1">
-                  <div className="flex h-3 items-center gap-[3px]">
-                    {[0,1,2].map(i => (
-                      <div key={i} className="voice-wave-bar" style={{ height: `${8 + i * 2}px`, animation: `voiceBar 0.7s ease-in-out infinite`, animationDelay: `${i * 0.12}s` }} />
-                    ))}
+            <div className="mt-3 border-t border-[var(--border)] pt-3">
+              {isClassLocked ? (
+                <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+                  <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted-soft)]">Class</span>
+                  <span className="min-w-0 truncate text-sm font-medium text-[var(--text-main)]" title={selectedClassName}>
+                    {selectedClassName || "Class context"}
+                  </span>
+                </div>
+              ) : (
+                <div className="flex min-w-0 flex-col gap-2">
+                  <label htmlFor="chat-class-select" className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--text-muted-soft)]">
+                    Class context
+                  </label>
+                  <div className="relative max-w-xl">
+                    <select
+                      id="chat-class-select"
+                      value={classId ?? ""}
+                      onChange={(e) => handleClassChange(e.target.value ? Number(e.target.value) : null)}
+                      disabled={classes.length === 0}
+                      className="h-10 w-full min-w-0 cursor-pointer appearance-none rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-2)] py-2 pl-3 pr-10 text-sm font-medium text-[var(--text-main)] shadow-sm outline-none transition focus:border-[color-mix(in_srgb,var(--primary)_55%,var(--border))] focus:ring-2 focus:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-60 dark:bg-[color-mix(in_srgb,var(--surface-2)_92%,#000)]"
+                      aria-label="Select a class for document context"
+                    >
+                      <option value="">General chat (no class)</option>
+                      {classes.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" aria-hidden>
+                      <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </span>
                   </div>
-                  <span className="text-[10px] font-semibold text-[var(--primary)]">Speaking</span>
+                  {classes.length === 0 ? (
+                    <p className="text-xs leading-relaxed text-[var(--text-muted)]">Add a class under Classes to attach notes and PDFs here.</p>
+                  ) : !classId ? (
+                    <p className="max-w-xl text-xs leading-relaxed text-[var(--text-muted)]">
+                      Your materials load when you pick a class. Leave as general for questions without your files.
+                    </p>
+                  ) : null}
                 </div>
               )}
-
-              {/* Mode selector */}
-              <div className="flex items-center gap-0.5 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-2)] p-0.5">
-                {(["auto", "rag", "general"] as ChatMode[]).map((m) => (
-                  <button
-                    key={m}
-                    onClick={() => setChatMode(m)}
-                    title={m === "auto" ? "Smart mode" : m === "rag" ? "Documents only" : "General AI"}
-                    className={`h-7 rounded-[var(--radius-sm)] px-2.5 text-[11px] font-semibold transition ${
-                      chatMode === m
-                        ? "bg-[var(--surface)] text-[var(--text-main)] shadow-[var(--shadow-xs)]"
-                        : "text-[var(--text-muted)] hover:text-[var(--text-main)]"
-                    }`}
-                  >
-                    {m === "auto" ? "Auto" : m === "rag" ? "PDF" : "AI"}
-                  </button>
-                ))}
-              </div>
-
-              {/* Citations toggle */}
-              <label className="inline-flex cursor-pointer select-none items-center gap-1.5 rounded-[var(--radius-sm)] px-2 py-1 text-[11px] font-medium text-[var(--text-muted)] transition hover:bg-[var(--surface-2)] hover:text-[var(--text-main)]">
-                <span className={`relative inline-flex h-4 w-7 items-center rounded-full transition ${sourcesEnabled ? "bg-[var(--primary)]" : "bg-[var(--border-strong)]"}`}>
-                  <span className={`inline-block h-3 w-3 rounded-full bg-white shadow-sm transition-transform ${sourcesEnabled ? "translate-x-3.5" : "translate-x-0.5"}`} />
-                  <input type="checkbox" checked={sourcesEnabled} onChange={toggleSources} className="sr-only" />
-                </span>
-                Citations
-              </label>
-
-              <button
-                onClick={() => setShowRightPanel(v => !v)}
-                title="Toggle files panel"
-                aria-pressed={showRightPanel}
-                className={`flex h-8 w-8 items-center justify-center rounded-[var(--radius-sm)] transition ${
-                  showRightPanel
-                    ? "bg-[var(--primary-soft)] text-[var(--primary)]"
-                    : "text-[var(--text-muted)] hover:bg-[var(--surface-2)] hover:text-[var(--text-main)]"
-                }`}
-              >
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-                  <rect x="3" y="3" width="18" height="18" rx="2.5" />
-                  <path strokeLinecap="round" d="M15 3v18" />
-                </svg>
-              </button>
             </div>
           </header>
           {/* Error banner */}
@@ -889,7 +920,7 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
           {/* Messages */}
           <div
             ref={convoRef}
-            className="min-h-0 flex-1 overflow-y-auto chat-scrollbar px-4 py-4 md:px-8"
+            className="min-h-0 flex-1 overflow-y-auto chat-scrollbar px-4 py-5 md:px-8 md:py-6"
             onMouseUp={() => {
               const sel = window.getSelection()?.toString().trim() || "";
               setSelectedText(sel.length > 0 ? sel : "");
@@ -906,19 +937,19 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
             ) : messages.length === 0 ? (
               /* Empty state — shown only when there are no messages yet */
               <div className="msg-appear flex h-full min-h-[56vh] flex-col items-center justify-center px-4 text-center">
-                <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-[var(--radius-xl)] bg-[var(--primary-soft)] text-[var(--primary)]">
-                  <svg className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-2xl bg-[var(--primary-soft)] text-[var(--primary)] shadow-[var(--shadow-sm)]">
+                  <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
                   </svg>
                 </div>
 
-                <h3 className="mb-1.5 text-[20px] font-semibold tracking-tight text-[var(--text-main)]">
-                  {classId ? "What would you like to explore?" : "Start a study chat"}
+                <h3 className="mb-2 text-xl font-semibold tracking-tight text-[var(--text-main)] sm:text-2xl">
+                  {classId ? "What should we work on?" : "Start a focused study chat"}
                 </h3>
-                <p className="mb-8 max-w-sm text-[13.5px] leading-relaxed text-[var(--text-muted)]">
+                <p className="mb-8 max-w-md text-sm leading-relaxed text-[var(--text-muted)] sm:text-[15px]">
                   {classId
-                    ? "Ask about your materials, get summaries, create quizzes, or explore key concepts."
-                    : "Ask a general question, or select a class to ground answers in your materials."}
+                    ? "Summaries, quiz ideas, and explanations from the materials in this class."
+                    : "Select a class or document to ground your answers, or ask a general question."}
                 </p>
 
                 {classId && (
@@ -1018,7 +1049,7 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
           </div>
 
           {/* Input area */}
-          <div className="flex-shrink-0 bg-transparent px-4 pt-2 pb-1">
+          <div className="shrink-0 border-t border-[var(--border)] bg-[color-mix(in_srgb,var(--surface)_96%,var(--surface-2))] px-4 pb-3 pt-3 dark:bg-[color-mix(in_srgb,var(--surface)_85%,#0a0a0c)] sm:px-5">
             {/* Selected context */}
             {selectedText && (
               <div className="mb-3 max-w-3xl mx-auto flex items-center gap-3 rounded-xl border border-[var(--primary)]/25 bg-[var(--primary)]/5 px-3.5 py-2.5 msg-appear">
@@ -1038,6 +1069,13 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
               </div>
             )}
 
+            {classes.length > 0 && classId == null && !isClassLocked ? (
+              <div className="mx-auto mb-3 max-w-3xl rounded-xl border border-[color-mix(in_srgb,var(--primary)_22%,var(--border))] bg-[var(--primary-soft)] px-3.5 py-2.5 text-[12.5px] leading-snug text-[var(--text-secondary)]">
+                <span className="font-semibold text-[var(--text-main)]">Tip: </span>
+                Choose a class in the sidebar to ask from your uploaded materials. Without a class, replies use general mode only.
+              </div>
+            ) : null}
+
             <div className="max-w-3xl mx-auto">
               <ChatInput
                 value={input}
@@ -1050,22 +1088,21 @@ export default function ChatInterface({ classId: propClassId }: ChatInterfacePro
               />
             </div>
 
-            {/* Mode hint bar */}
-            <div className="mx-auto mt-1 flex max-w-3xl items-center justify-center gap-2">
+            <div className="mx-auto mt-2 flex max-w-3xl justify-center">
               <span
-                className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] transition ${
+                className={`inline-flex max-w-full items-center rounded-full border px-3 py-1 text-[11px] font-medium leading-snug text-[var(--text-secondary)] transition ${
                   chatMode === "auto"
-                    ? "border-[color-mix(in_srgb,var(--primary)_30%,transparent)] bg-[var(--primary-soft)] text-[var(--primary)]"
+                    ? "border-[color-mix(in_srgb,var(--primary)_28%,var(--border))] bg-[var(--primary-soft)] text-[var(--primary)]"
                     : chatMode === "rag"
-                    ? "border-[color-mix(in_srgb,var(--primary)_30%,transparent)] bg-[var(--primary-soft)] text-[var(--primary)]"
-                    : "border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-muted)]"
+                      ? "border-[color-mix(in_srgb,var(--primary)_28%,var(--border))] bg-[var(--primary-soft)] text-[var(--primary)]"
+                      : "border-[var(--border)] bg-[var(--surface-2)] text-[var(--text-muted)]"
                 }`}
               >
                 {chatMode === "auto"
-                  ? "Smart mode · auto-detects PDF vs general"
+                  ? "Auto: grounded answers when a class is selected; otherwise general."
                   : chatMode === "rag"
-                  ? "Documents only"
-                  : "General AI mode"}
+                    ? "Answers use indexed files for the selected class."
+                    : "General answers (no class files)."}
               </span>
             </div>
 

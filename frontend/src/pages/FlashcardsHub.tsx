@@ -119,7 +119,10 @@ export default function FlashcardsHub() {
   }
 
   return (
-    <AppShell title="Flashcards">
+    <AppShell
+      title="Flashcards"
+      subtitle="Generate cards from your documents and review with spaced repetition."
+    >
       <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-6">
         {featuredDeck ? (
           <section className="card-accent p-7 text-inverse lg:p-8">
@@ -190,9 +193,9 @@ export default function FlashcardsHub() {
             <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-3xl border border-[color-mix(in_srgb,var(--primary)_20%,var(--border))] bg-[var(--surface-accent-soft)] text-[var(--primary)]">
               <Layers3 className="h-6 w-6" />
             </div>
-            <h2 className="mt-5 text-2xl font-semibold text-[var(--text-main)]">No flashcard decks yet</h2>
-            <p className="mx-auto mt-2 max-w-md text-sm text-[var(--text-secondary)]">
-              Create a class and generate flashcards from your study materials to build your review space.
+            <h2 className="mt-5 text-2xl font-semibold text-[var(--text-main)]">No flashcards yet</h2>
+            <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-[var(--text-secondary)]">
+              Create a class, then generate flashcards from a document to begin review.
             </p>
             <div className="mt-5">
               <Button variant="primary" className="rounded-full px-5" onClick={() => navigate("/classes")}>

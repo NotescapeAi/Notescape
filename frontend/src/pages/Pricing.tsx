@@ -24,7 +24,7 @@ export default function Pricing() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6 }}
             >
-              New features coming soon
+              Notescape
             </motion.header>
 
             <motion.h1
@@ -33,7 +33,7 @@ export default function Pricing() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.8, delay: 0.2 }}
             >
-              Pricing Plans
+              Pricing
             </motion.h1>
 
             <motion.p
@@ -42,7 +42,7 @@ export default function Pricing() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.8, delay: 0.4 }}
             >
-              Designed for learners, built for clarity — transparent pricing coming soon.
+              Paid tiers are not live yet. Join the waitlist and we will email you when subscriptions and pricing are available.
             </motion.p>
 
             <motion.form

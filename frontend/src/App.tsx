@@ -41,7 +41,7 @@ const FlashcardsPage     = lazy(() => import("./pages/FlashcardsPage"));
 const FlashcardsHub      = lazy(() => import("./pages/FlashcardsHub"));
 const FlashcardsViewMode = lazy(() => import("./pages/FlashcardsViewMode"));
 const FlashcardsStudyMode = lazy(() => import("./pages/FlashcardsStudyMode"));
-const FlashcardsVoiceQuizPage = lazy(() => import("./pages/FlashcardsVoiceQuizPage"));
+const VoiceFlashcardsPage = lazy(() => import("./pages/VoiceFlashcardsPage"));
 const FlashcardsBookmarks = lazy(() => import("./pages/FlashcardsBookmarks"));
 
 const Pricing            = lazy(() => import("./pages/Pricing"));
@@ -56,7 +56,6 @@ const QuizzesPage = lazy(() => import("./pages/quizzes/QuizzesPage"));
 const QuizAttemptPage = lazy(() => import("./pages/quizzes/QuizAttemptPage"));
 const QuizHistoryPage = lazy(() => import("./pages/quizzes/QuizHistoryPage"));
 const QuizHistoryDetailsPage = lazy(() => import("./pages/quizzes/QuizHistoryDetailsPage"));
-const VoiceRevisionMode = lazy(() => import("./pages/VoiceRevisionMode"));
 
 
 function GetStartedGate() {
@@ -150,7 +149,7 @@ function AppRoutes() {
         path="/classes/:classId/flashcards/voice"
         element={
           <RequireAuth>
-            <FlashcardsVoiceQuizPage />
+            <VoiceFlashcardsPage />
           </RequireAuth>
         }
       />
@@ -199,7 +198,7 @@ function AppRoutes() {
         path="/voice-revision"
         element={
           <RequireAuth>
-            <VoiceRevisionMode />
+            <VoiceFlashcardsPage />
           </RequireAuth>
         }
       />

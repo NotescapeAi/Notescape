@@ -55,7 +55,7 @@ export default function Settings() {
     : "inline-flex items-center rounded-xl border border-[rgba(139,92,246,0.16)] bg-white px-4 py-2 text-sm font-semibold text-[var(--text-main)] shadow-[0_8px_20px_rgba(124,58,237,0.08)] transition-all duration-200 hover:border-[rgba(139,92,246,0.24)] hover:bg-[rgba(245,243,255,0.9)]";
 
   return (
-    <AppShell title="Settings">
+    <AppShell title="Settings" subtitle="Appearance, session, and account controls.">
       <div className="mx-auto flex w-full max-w-[880px] flex-col gap-5 px-1">
         <section className={sectionClass}>
           <h2 className={`text-base font-semibold ${isDark ? "text-white" : "text-[var(--text-main)]"}`}>

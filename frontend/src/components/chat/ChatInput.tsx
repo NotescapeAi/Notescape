@@ -43,7 +43,7 @@ export default function ChatInput({
 
   return (
     <div
-      className={`relative flex items-center gap-2 rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-2.5 py-1.5 shadow-sm transition-all focus-within:border-[var(--primary)] focus-within:ring-1 focus-within:ring-[var(--primary)]/20 ${
+      className={`relative flex items-center gap-2.5 rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-3 py-2 shadow-[var(--shadow-sm)] transition-all focus-within:border-[color-mix(in_srgb,var(--primary)_45%,var(--border))] focus-within:ring-2 focus-within:ring-[var(--ring)] ${
         disabled ? "opacity-75" : ""
       }`}
       title={disabled ? disabledMessage : undefined}
@@ -93,9 +93,15 @@ export default function ChatInput({
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={handleKeyDown}
           disabled={disabled}
-          placeholder={disabled ? (disabledMessage || "Select a class to start chatting.") : isListening ? "Listening..." : "Ask a question..."}
+          placeholder={
+            disabled
+              ? (disabledMessage || "Select a class or document to ask from your materials.")
+              : isListening
+                ? "Listening…"
+                : "Ask a question…"
+          }
           rows={1}
-          className="w-full resize-none bg-transparent text-sm leading-6 text-[var(--text-main)] placeholder:text-[var(--text-secondary)] focus:outline-none max-h-[200px] custom-scrollbar"
+          className="w-full resize-none bg-transparent text-sm leading-6 text-[var(--text-main)] placeholder:text-[var(--text-muted-soft)] focus:outline-none max-h-[200px] custom-scrollbar"
           style={{ minHeight: "24px" }}
         />
       </div>

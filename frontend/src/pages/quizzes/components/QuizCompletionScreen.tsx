@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
-import { Trophy, ArrowRight, Star, Frown, CheckCircle2 } from "lucide-react";
+import type { CSSProperties } from "react";
+import { useEffect, useState } from "react";
+import { ArrowRight, BookOpen, RotateCcw, Sparkles, Target, Trophy } from "lucide-react";
+import Confetti from "react-confetti";
 import type { QuizBreakdown } from "../../../lib/api";
-import Confetti from 'react-confetti';
 
 type Props = {
   score: number;
@@ -10,6 +11,41 @@ type Props = {
   onReviewFlashcards?: (topic?: string) => void;
   onPracticeQuiz?: (topic?: string) => void;
   onGoBack: () => void;
+};
+
+type Tier = "great" | "good" | "practice";
+
+function tierFor(percentage: number): Tier {
+  if (percentage >= 75) return "great";
+  if (percentage >= 50) return "good";
+  return "practice";
+}
+
+const tierContent: Record<
+  Tier,
+  { title: string; subtitle: string; ringColor: string; icon: React.ReactNode; chipClass: string }
+> = {
+  great: {
+    title: "Outstanding",
+    subtitle: "You've mastered this topic with excellent accuracy. Keep the streak going.",
+    ringColor: "var(--success)",
+    icon: <Trophy className="h-7 w-7" aria-hidden />,
+    chipClass: "topic-chip topic-chip--strong",
+  },
+  good: {
+    title: "Solid run",
+    subtitle: "Strong foundation with a few weak spots — review the topics below.",
+    ringColor: "var(--primary)",
+    icon: <Sparkles className="h-7 w-7" aria-hidden />,
+    chipClass: "topic-chip topic-chip--improving",
+  },
+  practice: {
+    title: "Keep practicing",
+    subtitle: "Reinforce the material with focused flashcards and try again.",
+    ringColor: "var(--warning)",
+    icon: <Target className="h-7 w-7" aria-hidden />,
+    chipClass: "topic-chip topic-chip--weak",
+  },
 };
 
 export default function QuizCompletionScreen({
@@ -21,150 +57,176 @@ export default function QuizCompletionScreen({
   onGoBack,
 }: Props) {
   const percentage = Math.round((score / (total || 1)) * 100);
-  const isSuccess = percentage >= 70;
-  
+  const tier = tierFor(percentage);
+  const content = tierContent[tier];
+
   const [windowSize, setWindowSize] = useState({
-    width: window.innerWidth,
-    height: window.innerHeight,
+    width: typeof window !== "undefined" ? window.innerWidth : 1024,
+    height: typeof window !== "undefined" ? window.innerHeight : 768,
   });
 
   useEffect(() => {
-    const handleResize = () => {
-      setWindowSize({
-        width: window.innerWidth,
-        height: window.innerHeight,
-      });
-    };
-
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    function handleResize() {
+      setWindowSize({ width: window.innerWidth, height: window.innerHeight });
+    }
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
   }, []);
 
+  const weakTopics = (breakdown?.by_tag ?? [])
+    .filter((t) => t.accuracy < 0.7 || t.struggled_questions > 0)
+    .slice(0, 4);
+
   return (
-    <div className="mx-auto w-full max-w-[600px] px-4 py-16 text-center relative">
-      {isSuccess && (
-        <div className="fixed inset-0 pointer-events-none z-[100] overflow-hidden">
-            <Confetti
-                width={windowSize.width}
-                height={windowSize.height}
-                recycle={false}
-                numberOfPieces={500}
-                gravity={0.2}
-            />
+    <div className="mx-auto w-full max-w-[760px] px-4 pb-12 pt-2 sm:px-6">
+      {tier === "great" && (
+        <div className="pointer-events-none fixed inset-0 z-[100] overflow-hidden">
+          <Confetti
+            width={windowSize.width}
+            height={windowSize.height}
+            recycle={false}
+            numberOfPieces={320}
+            gravity={0.18}
+            colors={["#7c3aed", "#a855f7", "#10b981", "#f59e0b", "#ef5f8b"]}
+          />
         </div>
       )}
 
-      <div className="mb-8 flex justify-center">
-        <div className="relative">
-          {isSuccess ? (
-             <>
-                <div className="absolute inset-0 animate-ping rounded-full bg-yellow-200 opacity-50 dark:bg-yellow-900/30"></div>
-                <div className="relative rounded-full bg-gradient-to-br from-yellow-100 to-orange-100 p-8 shadow-lg ring-4 ring-[var(--surface)] dark:from-yellow-900/25 dark:to-orange-900/20 dark:ring-[var(--surface-elevated)]">
-                    <Trophy className="h-20 w-20 text-yellow-600 dark:text-yellow-400 drop-shadow-sm" />
-                </div>
-                <div className="absolute -top-2 -right-2 rotate-12 rounded-full bg-[var(--surface)] p-2 shadow-md dark:bg-[var(--surface-elevated)]">
-                    <Star className="h-8 w-8 text-yellow-500 fill-yellow-500" />
-                </div>
-             </>
-          ) : (
-             <div className="relative rounded-full bg-[var(--surface-2)] p-8 ring-4 ring-[var(--surface)] dark:ring-[var(--surface-elevated)]">
-                {percentage >= 50 ? (
-                    <CheckCircle2 className="h-20 w-20 text-blue-500 dark:text-blue-400" />
-                ) : (
-                    <Frown className="h-20 w-20 text-gray-400" />
-                )}
-             </div>
-          )}
-        </div>
-      </div>
-
-      <h1 className="mb-3 text-4xl font-bold text-[var(--text-main)] tracking-tight">
-        {isSuccess ? "Outstanding!" : percentage >= 50 ? "Good Job!" : "Keep Practicing"}
-      </h1>
-      <p className="mb-10 text-lg text-[var(--text-muted)] max-w-md mx-auto leading-relaxed">
-        {isSuccess 
-            ? "You've mastered this topic with excellent accuracy. Great work!" 
-            : percentage >= 50 
-            ? "You have a solid understanding, but there's room for improvement." 
-            : "Review the material and try again to improve your score."}
-      </p>
-
-      <div className="mb-12 grid grid-cols-2 gap-6">
-        <div className="group relative overflow-hidden rounded-2xl bg-[var(--surface)] p-6 shadow-sm border border-[var(--border)] hover:border-[var(--primary)]/30 transition-all">
-          <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-1">
-            Total Score
-          </div>
-          <div className="text-4xl font-black text-[var(--primary)] tabular-nums">
-            {score}<span className="text-xl text-[var(--text-muted)] font-medium">/{total}</span>
+      {/* Hero card with score ring */}
+      <section className="ns-card flex flex-col items-center gap-6 p-6 text-center sm:flex-row sm:items-center sm:gap-8 sm:p-8 sm:text-left">
+        <div
+          className="score-ring shrink-0"
+          style={{ ["--value" as any]: percentage, ["--value-color" as any]: content.ringColor } as CSSProperties}
+          role="img"
+          aria-label={`Score ${percentage}%`}
+        >
+          <div className="text-center">
+            <div className="text-[34px] font-semibold leading-none tabular-nums tracking-[-0.03em] text-[var(--text-main)] sm:text-[40px]">
+              {percentage}%
+            </div>
+            <div className="mt-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--text-muted-soft)]">
+              accuracy
+            </div>
           </div>
         </div>
-        
-        <div className={`group relative overflow-hidden rounded-2xl bg-[var(--surface)] p-6 shadow-sm border border-[var(--border)] transition-all ${
-            isSuccess ? "border-green-200 bg-green-50/30" : ""
-        }`}>
-          <div className="text-xs font-bold uppercase tracking-wider text-[var(--text-muted)] mb-1">
-            Accuracy
+
+        <div className="flex-1">
+          <span className="eyebrow">
+            <span className="eyebrow-dot" aria-hidden />
+            Quiz complete
+          </span>
+          <div className="mt-2 flex items-center justify-center gap-2.5 sm:justify-start">
+            <span
+              className="inline-flex h-9 w-9 items-center justify-center rounded-[var(--radius-md)]"
+              style={{
+                background: `color-mix(in srgb, ${content.ringColor} 12%, transparent)`,
+                color: content.ringColor,
+              }}
+              aria-hidden
+            >
+              {content.icon}
+            </span>
+            <h1 className="text-[28px] font-semibold tracking-[-0.025em] text-[var(--text-main)] sm:text-[32px]">
+              {content.title}
+            </h1>
           </div>
-          <div className={`text-4xl font-black tabular-nums ${
-            isSuccess ? 'text-green-600' : percentage >= 50 ? 'text-blue-600' : 'text-gray-500'
-          }`}>
-            {percentage}%
+          <p className="mt-2 max-w-xl text-[14px] leading-relaxed text-[var(--text-secondary)]">
+            {content.subtitle}
+          </p>
+
+          <div className="mt-4 flex flex-wrap justify-center gap-2 sm:justify-start">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface-2)] px-3 py-1 text-[12.5px] font-medium text-[var(--text-main)]">
+              <span className="text-[var(--text-muted-soft)]">Score</span>
+              <span className="tabular-nums font-semibold">
+                {score}
+                <span className="text-[var(--text-muted-soft)]">/{total}</span>
+              </span>
+            </span>
+            <span className={content.chipClass}>
+              {tier === "great" ? "Mastery level" : tier === "good" ? "On track" : "Needs review"}
+            </span>
           </div>
         </div>
-      </div>
+      </section>
 
-      {breakdown?.by_tag?.length ? (
-        <div className="mb-10 rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-5 text-left shadow-sm">
-          <div className="text-xs font-bold uppercase tracking-[0.22em] text-[var(--text-muted)]">
-            Weak topics
+      {/* Weak topics */}
+      {weakTopics.length > 0 ? (
+        <section className="ns-card mt-6 p-5 sm:p-6">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <span className="eyebrow">
+                <span className="eyebrow-dot" aria-hidden />
+                Recommended next
+              </span>
+              <h2 className="mt-2 text-[18px] font-semibold tracking-[-0.018em] text-[var(--text-main)]">
+                Topics to revise
+              </h2>
+              <p className="mt-1 text-[13.5px] leading-relaxed text-[var(--text-muted)]">
+                Based on your accuracy across these tags.
+              </p>
+            </div>
           </div>
-          <div className="mt-2 text-lg font-bold text-[var(--text-main)]">Recommended revision</div>
-          <div className="mt-4 space-y-3">
-            {breakdown.by_tag
-              .filter((topic) => topic.accuracy < 0.7 || topic.struggled_questions > 0)
-              .slice(0, 4)
-              .map((topic) => (
-                <div key={`${topic.tag_id}-${topic.tag}`} className="rounded-2xl border border-[var(--border)] bg-[var(--surface-2)] p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <div className="font-semibold text-[var(--text-main)]">{topic.tag}</div>
-                      <div className="mt-1 text-xs text-[var(--text-muted)]">
-                        {topic.struggled_questions} question{topic.struggled_questions === 1 ? "" : "s"} need review · {Math.round(topic.accuracy_pct)}% accuracy
+
+          <ul className="mt-4 space-y-2.5">
+            {weakTopics.map((topic) => {
+              const acc = Math.round(topic.accuracy_pct);
+              const chipClass =
+                acc < 45
+                  ? "topic-chip topic-chip--weak"
+                  : acc < 70
+                    ? "topic-chip topic-chip--improving"
+                    : "topic-chip";
+              return (
+                <li
+                  key={`${topic.tag_id}-${topic.tag}`}
+                  className="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface-2)] p-4"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="text-[15px] font-semibold text-[var(--text-main)]">
+                          {topic.tag}
+                        </span>
+                        <span className={chipClass}>
+                          {acc}% accuracy
+                        </span>
+                      </div>
+                      <div className="mt-1 text-[12.5px] text-[var(--text-muted)]">
+                        {topic.struggled_questions}{" "}
+                        {topic.struggled_questions === 1 ? "question" : "questions"} need review
                       </div>
                     </div>
-                    <span className="rounded-full border border-[var(--border)] px-3 py-1 text-xs font-semibold text-[var(--text-main)]">
-                      {topic.accuracy_pct < 45 ? "Weak" : "Improving"}
-                    </span>
+                    <div className="flex shrink-0 flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => onReviewFlashcards?.(topic.tag)}
+                        className="inline-flex h-9 items-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] px-3 text-[12.5px] font-semibold text-[var(--text-main)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-2)]"
+                      >
+                        <BookOpen className="h-3.5 w-3.5" aria-hidden />
+                        Review flashcards
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onPracticeQuiz?.(topic.tag)}
+                        className="inline-flex h-9 items-center gap-1.5 rounded-[var(--radius-md)] border border-[color-mix(in_srgb,var(--primary)_28%,var(--border))] bg-[var(--primary-soft)] px-3 text-[12.5px] font-semibold text-[var(--primary)] transition hover:border-[color-mix(in_srgb,var(--primary)_45%,var(--border))]"
+                      >
+                        <RotateCcw className="h-3.5 w-3.5" aria-hidden />
+                        Practice again
+                      </button>
+                    </div>
                   </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => onReviewFlashcards?.(topic.tag)}
-                      className="rounded-full border border-[var(--border)] px-3 py-1.5 text-xs font-bold text-[var(--text-main)] hover:border-[var(--primary)]"
-                    >
-                      Review flashcards
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onPracticeQuiz?.(topic.tag)}
-                      className="rounded-full border border-[var(--border)] px-3 py-1.5 text-xs font-bold text-[var(--text-main)] hover:border-[var(--primary)]"
-                    >
-                      Generate more practice
-                    </button>
-                  </div>
-                </div>
-              ))}
-          </div>
-        </div>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
       ) : null}
 
-      <div className="flex justify-center gap-4">
-        <button
-          onClick={onGoBack}
-          className="group flex items-center gap-2 rounded-full bg-[var(--primary)] px-8 py-4 text-sm font-bold text-white shadow-lg shadow-[var(--primary)]/25 transition-all hover:scale-105 hover:shadow-xl hover:opacity-95 active:scale-95"
-        >
-          <span>Back to Quizzes</span>
-          <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
+      {/* Bottom action */}
+      <div className="mt-7 flex justify-center">
+        <button type="button" onClick={onGoBack} className="btn-premium">
+          <span>Back to quizzes</span>
+          <ArrowRight className="h-4 w-4" aria-hidden />
         </button>
       </div>
     </div>

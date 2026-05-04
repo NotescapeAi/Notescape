@@ -335,6 +335,10 @@ export type WeakTag = {
   weakness_score: number;
   class_id?: number | null;
   last_seen?: string | null;
+  /** True when recent quiz attempts contributed to this row (quiz_accuracy is meaningful). */
+  has_quiz_data?: boolean;
+  /** True when recent flashcard reviews contributed to this row. */
+  has_flash_data?: boolean;
 };
 
 export type QuizTagBreakdown = {

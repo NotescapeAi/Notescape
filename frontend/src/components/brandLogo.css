@@ -6,21 +6,28 @@
   text-decoration: none;
 }
 
-.brand-logo img {
+/* Same box for light/dark PNGs — object-fit prevents stretch; swapping assets does not resize layout */
+.brand-logo-img {
   display: block;
-  max-width: none;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+  object-position: center;
 }
 
 .brand-logo-text {
+  display: inline-flex;
+  align-items: center;
   font-size: 20px;
   font-weight: 700;
-  letter-spacing: 0;
+  letter-spacing: -0.02em;
   line-height: 1;
   white-space: nowrap;
 }
 
 .brand-logo-footer .brand-logo-text {
-  font-size: 22px;
+  font-size: 20px;
 }
 
 .brand-logo-icon-only {
@@ -33,6 +40,6 @@
   }
 
   .brand-logo-footer .brand-logo-text {
-    font-size: 20px;
+    font-size: 19px;
   }
 }

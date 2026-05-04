@@ -206,7 +206,7 @@ export default function FlashcardsPage() {
     });
   };
 
-  const handleVoiceQuiz = (cardsList: Flashcard[], startIndex = 0) => {
+  const handleVoiceFlashcards = (cardsList: Flashcard[], startIndex = 0) => {
     navigate(`/classes/${id}/flashcards/voice`, {
       state: {
         cards: cardsList,
@@ -334,9 +334,9 @@ export default function FlashcardsPage() {
                 <BookOpen className="h-4 w-4" />
                 Study due{dueNowCount ? ` (${dueNowCount})` : ""}
               </Button>
-              <Button onClick={() => handleVoiceQuiz(dueCards.length ? dueCards : filtered)} className="gap-1.5">
+              <Button onClick={() => handleVoiceFlashcards(dueCards.length ? dueCards : filtered)} className="gap-1.5">
                 <Mic className="h-4 w-4" />
-                Voice quiz
+                Voice flashcards
               </Button>
               <Button onClick={openCreate} className="gap-1.5">
                 <Plus className="h-4 w-4" />
@@ -512,9 +512,9 @@ export default function FlashcardsPage() {
             <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[var(--primary-soft)] text-[var(--primary)]">
               <Sparkles className="h-5 w-5" />
             </div>
-            <div className="mt-3 text-[15px] font-semibold text-[var(--text-main)]">No flashcards found</div>
-            <div className="mt-1 text-[13px] text-[var(--text-muted)]">
-              Generate cards from your documents or add one manually to start studying.
+            <div className="mt-3 text-[15px] font-semibold text-[var(--text-main)]">No flashcards yet</div>
+            <div className="mt-1 text-[13px] leading-relaxed text-[var(--text-muted)]">
+              Generate flashcards from a document to begin review, or add a card manually.
             </div>
             <div className="mt-4 flex flex-wrap justify-center gap-2">
               <Button variant="primary" onClick={openCreate} className="gap-1.5">
@@ -559,7 +559,7 @@ export default function FlashcardsPage() {
                     <KebabMenu
                       items={[
                         { label: "Study", onClick: () => handleStudy(filtered, startIndex) },
-                        { label: "Voice quiz", onClick: () => handleVoiceQuiz(filtered, startIndex) },
+                        { label: "Voice flashcards", onClick: () => handleVoiceFlashcards(filtered, startIndex) },
                         { label: "View", onClick: () => handleView(filtered, startIndex) },
                         { label: "Edit", onClick: () => openEdit(c) },
                         { label: "Delete", onClick: () => handleDelete(String(c.id)) },

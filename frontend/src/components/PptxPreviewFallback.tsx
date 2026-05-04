@@ -87,7 +87,7 @@ export default function PptxPreviewFallback({
   }
 
   return (
-    <div className="flex min-h-[min(78vh,640px)] w-full max-w-full flex-col items-center justify-center overflow-x-hidden px-4 py-10 sm:px-8">
+    <div className="flex h-full w-full max-w-full flex-col items-center justify-center overflow-x-hidden overflow-y-auto px-4 py-10 sm:px-8">
       <div
         className="w-full max-w-lg rounded-2xl border border-[var(--border)] bg-[var(--surface)] px-6 py-8 text-center shadow-sm"
         style={{ boxShadow: "var(--shadow-panel, 0 8px 30px rgba(15,23,42,0.06))" }}

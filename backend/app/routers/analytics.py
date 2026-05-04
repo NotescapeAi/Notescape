@@ -534,7 +534,7 @@ async def weak_tags(
     cache_key = _cache_key(
         user_id,
         "weak-tags",
-        f"limit={limit}:quiz={recent_quiz_attempts}:flash={recent_flashcard_reviews}",
+        f"v3-has-signals:limit={limit}:quiz={recent_quiz_attempts}:flash={recent_flashcard_reviews}",
     )
     cached = cache_get_json(cache_key)
     if cached is not None:
@@ -604,7 +604,9 @@ async def weak_tags(
                 (1 - COALESCE(q.quiz_accuracy, 0)) * 0.6
                 + COALESCE(f.flashcard_difficulty, 0) * 0.4
               ) AS weakness_score,
-              COALESCE(f.class_id, q.class_id) AS class_id
+              COALESCE(f.class_id, q.class_id) AS class_id,
+              (q.tag_id IS NOT NULL) AS has_quiz_data,
+              (f.tag_id IS NOT NULL) AS has_flash_data
             FROM tags t
             LEFT JOIN quiz_by_tag q ON q.tag_id = t.id
             LEFT JOIN flash_by_tag f ON f.tag_id = t.id
@@ -627,6 +629,8 @@ async def weak_tags(
             "last_seen": r[4].isoformat() if r[4] else None,
             "weakness_score": float(r[5] or 0),
             "class_id": int(r[6]) if r[6] is not None else None,
+            "has_quiz_data": bool(r[7]),
+            "has_flash_data": bool(r[8]),
         }
         for r in rows
     ]

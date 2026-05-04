@@ -14,13 +14,6 @@ type BrandLogoProps = {
   showText?: boolean;
 };
 
-const sizeByVariant: Record<BrandLogoVariant, string> = {
-  header: "h-8 sm:h-9",
-  sidebar: "h-8",
-  footer: "h-8 sm:h-10",
-  "icon-only": "h-8 w-8",
-};
-
 export default function BrandLogo({
   variant = "header",
   forceTheme,
@@ -33,16 +26,20 @@ export default function BrandLogo({
   const isDarkLogo = logoTheme === "dark";
   const labelVisible = showText ?? variant !== "icon-only";
   const textClass = isDarkLogo ? "text-white" : "text-[var(--text-main)]";
+
   const content = (
     <>
       <img
         src={isDarkLogo ? logoDark : logoLight}
         alt="Notescape logo"
-        className={`${sizeByVariant[variant]} w-auto flex-shrink-0 object-contain`}
+        width={36}
+        height={36}
+        className="brand-logo-img"
+        decoding="async"
       />
-      {labelVisible && (
+      {labelVisible ? (
         <span className={`brand-logo-text ${textClass}`}>Notescape</span>
-      )}
+      ) : null}
     </>
   );
 

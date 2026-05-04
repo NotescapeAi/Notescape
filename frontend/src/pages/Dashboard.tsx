@@ -12,7 +12,6 @@ import {
   Mic,
   Sparkles,
   Target,
-  TrendingDown,
   Upload,
 } from "lucide-react";
 import AppShell from "../layouts/AppShell";
@@ -28,17 +27,11 @@ import {
   listFlashcards,
   getStudySessionOverview,
   getWeakTags,
-  createStudyPlan,
-  listStudyPlans,
-  getStudyPlan,
-  getClassAnalytics,
   getQuizHistory,
   listRecentStudySessions,
   type ClassRow,
   type Flashcard,
   type WeakTag,
-  type StudyPlan,
-  type ClassAnalytics,
   type QuizHistoryItem,
   type StudySession,
 } from "../lib/api";
@@ -60,6 +53,26 @@ function formatShortDate(iso?: string | null) {
   }
 }
 
+function isDue(card: Flashcard) {
+  if (!card.due_at) return true;
+  return new Date(card.due_at) <= new Date();
+}
+
+/** Weighted accuracy across recent attempts (meaningful totals only). */
+function quizAttemptsAccuracyPct(attempts: QuizHistoryItem[]): number | null {
+  if (!attempts.length) return null;
+  let earned = 0;
+  let possible = 0;
+  for (const a of attempts) {
+    const tp = Number(a.total_possible);
+    if (!Number.isFinite(tp) || tp <= 0) continue;
+    earned += Number(a.score) || 0;
+    possible += tp;
+  }
+  if (possible <= 0) return null;
+  return Math.round((earned / possible) * 100);
+}
+
 export default function Dashboard() {
   const { profile } = useUser();
   const [classes, setClasses] = useState<ClassRow[]>([]);
@@ -79,14 +92,6 @@ export default function Dashboard() {
   const [quizHistory, setQuizHistory] = useState<QuizHistoryItem[]>([]);
   const [recentSessions, setRecentSessions] = useState<StudySession[]>([]);
   const [loading, setLoading] = useState(true);
-  const [studyPlans, setStudyPlans] = useState<StudyPlan[]>([]);
-  const [planGoal, setPlanGoal] = useState("exam_preparation");
-  const [planExamDate, setPlanExamDate] = useState("");
-  const [planMinutes, setPlanMinutes] = useState(45);
-  const [selectedClassId, setSelectedClassId] = useState<number | null>(null);
-  const [classAnalytics, setClassAnalytics] = useState<ClassAnalytics | null>(null);
-  const [coachLoading, setCoachLoading] = useState(false);
-  const [coachError, setCoachError] = useState<string | null>(null);
   const navigate = useNavigate();
 
   const firstName =
@@ -94,56 +99,12 @@ export default function Dashboard() {
     profile?.full_name?.trim().split(/\s+/)[0] ||
     "";
 
-  function isDue(card: Flashcard) {
-    if (!card.due_at) return true;
-    return new Date(card.due_at) <= new Date();
-  }
-
-  async function handleCreatePlan() {
-    if (!selectedClassId) return;
-    setCoachLoading(true);
-    setCoachError(null);
-    try {
-      await createStudyPlan({
-        class_id: selectedClassId,
-        goal: planGoal,
-        daily_time_minutes: planMinutes,
-        exam_date: planExamDate || undefined,
-      });
-      await refreshStudyCoach(selectedClassId);
-    } catch (err: unknown) {
-      setCoachError(err instanceof Error ? err.message : "Failed to create plan.");
-    } finally {
-      setCoachLoading(false);
-    }
-  }
-
-  async function refreshStudyCoach(targetClassId?: number | null) {
-    const cid = targetClassId ?? selectedClassId;
-    if (!cid) return;
-    setCoachLoading(true);
-    try {
-      const [plans, analyticsData] = await Promise.all([listStudyPlans(), getClassAnalytics(cid)]);
-      let hydratedPlans = plans;
-      const targetPlan = plans.find((p) => p.class_id === cid) || plans[0];
-      if (targetPlan) {
-        const detail = await getStudyPlan(targetPlan.id);
-        hydratedPlans = plans.map((p) => (p.id === detail.id ? detail : p));
-      }
-      setStudyPlans(hydratedPlans);
-      setClassAnalytics(analyticsData);
-    } finally {
-      setCoachLoading(false);
-    }
-  }
-
   useEffect(() => {
     (async () => {
       setLoading(true);
       try {
         const cs = await listClasses();
         setClasses(cs);
-        if (cs[0]) setSelectedClassId(cs[0].id);
 
         const fileGroups = await Promise.all(
           cs.map(async (c) => ({ classId: c.id, className: c.name, rows: await listFiles(c.id) }))
@@ -170,8 +131,17 @@ export default function Dashboard() {
         const progRows = await Promise.all(cs.map((c) => getFlashcardProgress(c.id).catch(() => null)));
         const totalDue = progRows.reduce((sum, p) => sum + Number(p?.due_now ?? 0), 0);
         setDueNow(totalDue);
-        const dueIdx = progRows.findIndex((p) => Number(p?.due_now ?? 0) > 0);
-        const cardClassId = dueIdx >= 0 ? cs[dueIdx]?.id : cs[0]?.id;
+
+        let bestIdx = -1;
+        let bestDue = -1;
+        progRows.forEach((p, i) => {
+          const d = Number(p?.due_now ?? 0);
+          if (d > bestDue) {
+            bestDue = d;
+            bestIdx = i;
+          }
+        });
+        const cardClassId = bestIdx >= 0 && bestDue > 0 ? cs[bestIdx]?.id : cs[0]?.id;
         setStudyClassId(cardClassId ?? null);
         if (cardClassId != null) {
           const classFiles = await listFiles(cardClassId);
@@ -196,51 +166,43 @@ export default function Dashboard() {
         });
         setWeakTags(weakTagRows);
         setQuizHistory(
-          [...historyRows].sort((a, b) => String(b.attempted_at).localeCompare(String(a.attempted_at))).slice(0, 6)
+          [...historyRows].sort((a, b) => String(b.attempted_at).localeCompare(String(a.attempted_at))).slice(0, 8)
         );
         setRecentSessions(sessionsRows);
-
-        if (cs[0]) await refreshStudyCoach(cs[0].id);
       } finally {
         setLoading(false);
       }
     })();
   }, []);
 
-  useEffect(() => {
-    if (selectedClassId) refreshStudyCoach(selectedClassId);
-  }, [selectedClassId]);
-
   const recentClasses = useMemo(() => classes.slice(0, 6), [classes]);
-  const weakInsights = useMemo(
-    () => [...weakTags].sort((a, b) => a.quiz_accuracy_pct - b.quiz_accuracy_pct).slice(0, 5),
-    [weakTags]
-  );
-  const strongInsights = useMemo(
-    () => [...weakTags].sort((a, b) => b.quiz_accuracy_pct - a.quiz_accuracy_pct).slice(0, 5),
-    [weakTags]
-  );
-  const overallAccuracy = useMemo(() => {
-    if (!weakTags.length) return null;
-    const total = weakTags.reduce((sum, tag) => sum + (tag.quiz_accuracy_pct || 0), 0);
-    return Math.round(total / weakTags.length);
-  }, [weakTags]);
-  const activePlan = useMemo(
-    () => studyPlans.find((p) => p.class_id === selectedClassId) || studyPlans[0],
-    [studyPlans, selectedClassId]
-  );
-  const planProgress = useMemo(() => {
-    if (!activePlan?.items) return { total: 0, completed: 0, pending: 0 };
-    const total = activePlan.items.length;
-    const completed = activePlan.items.filter((i) => i.status === "completed").length;
-    const pending = activePlan.items.filter((i) => i.status === "pending").length;
-    return { total, completed, pending };
-  }, [activePlan]);
 
-  const weakest = weakInsights[0];
-  const weakestClassName = weakest?.class_id ? classes.find((c) => c.id === weakest.class_id)?.name : null;
+  const quizAccuracyFromAttempts = useMemo(() => quizAttemptsAccuracyPct(quizHistory), [quizHistory]);
+
+  const weakQuizTags = useMemo(() => {
+    const rows = weakTags.filter((t) => t.has_quiz_data === true);
+    return [...rows].sort((a, b) => a.quiz_accuracy_pct - b.quiz_accuracy_pct);
+  }, [weakTags]);
+
+  const weakFlashTags = useMemo(() => {
+    const rows = weakTags.filter((t) => t.has_flash_data === true && t.has_quiz_data !== true);
+    return [...rows].sort((a, b) => b.flashcard_difficulty_pct - a.flashcard_difficulty_pct);
+  }, [weakTags]);
+
+  const weakestQuiz = weakQuizTags[0];
+  const weakestFlash = weakFlashTags[0];
+  const weakestQuizClassName = weakestQuiz?.class_id
+    ? classes.find((c) => c.id === weakestQuiz.class_id)?.name
+    : null;
+  const weakestFlashClassName = weakestFlash?.class_id
+    ? classes.find((c) => c.id === weakestFlash.class_id)?.name
+    : null;
+
+  const studyClass = studyClassId ? classes.find((c) => c.id === studyClassId) : null;
   const primaryClass = classes[0];
-  const studyClass = studyClassId ? classes.find((c) => c.id === studyClassId) : primaryClass;
+
+  const lastSession = recentSessions[0];
+  const lastQuiz = quizHistory[0];
 
   const activityRows = useMemo(() => {
     const rows: Array<{ id: string; icon: ReactNode; label: string; detail?: string }> = [];
@@ -263,29 +225,87 @@ export default function Dashboard() {
     recentSessions.slice(0, 3).forEach((s) => {
       rows.push({
         id: `s-${s.id}`,
-        icon: <Sparkles className="h-4 w-4" />,
-        label: s.mode?.includes("voice") ? "Voice revision session" : "Study session",
+        icon: <BookOpen className="h-4 w-4" />,
+        label: s.mode?.includes("voice") ? "Voice flashcards session" : "Study session",
         detail: [s.class_name, s.started_at ? formatShortDate(s.started_at) : ""].filter(Boolean).join(" · "),
       });
     });
-    if (dueCards.length && studyClass) {
-      rows.push({
-        id: "due",
-        icon: <BookOpen className="h-4 w-4" />,
-        label: "Flashcards ready",
-        detail: `${dueNow} due across your classes`,
-      });
-    }
     return rows.slice(0, 6);
-  }, [recentFiles, quizHistory, recentSessions, dueCards.length, dueNow, studyClass]);
+  }, [recentFiles, quizHistory, recentSessions]);
 
   const isNewUser = !loading && classes.length === 0;
+
+  const primaryCta = useMemo(() => {
+    if (loading || isNewUser) return null;
+    if (dueNow > 0 && studyClassId) {
+      return {
+        title: "Review due flashcards",
+        body: `You have ${dueNow} card${dueNow === 1 ? "" : "s"} due for review across your classes (spaced repetition).`,
+        primaryLabel: dueCards.length ? "Start review" : "Open flashcards hub",
+        onPrimary: () =>
+          dueCards.length
+            ? navigate(`/classes/${studyClassId}/flashcards/study`, {
+                state: { cards: dueCards, className: studyClass?.name ?? "", startIndex: 0 },
+              })
+            : navigate("/flashcards"),
+      };
+    }
+    if (lastSession?.class_id) {
+      const cid = lastSession.class_id;
+      const cname = lastSession.class_name || classes.find((c) => c.id === cid)?.name || "Your class";
+      const voice = lastSession.mode?.includes("voice");
+      return {
+        title: "Continue where you left off",
+        body: `${voice ? "Voice flashcards" : "Study session"} in ${cname}${lastSession.started_at ? ` · ${formatShortDate(lastSession.started_at)}` : ""}.`,
+        primaryLabel: voice ? "Open voice flashcards" : "Open flashcards",
+        onPrimary: () =>
+          voice
+            ? navigate(`/classes/${cid}/flashcards/voice`)
+            : navigate(`/classes/${cid}/flashcards`),
+      };
+    }
+    if (lastQuiz) {
+      return {
+        title: "Pick up a quiz",
+        body: `Last attempt: ${lastQuiz.quiz_title} (${lastQuiz.score}/${lastQuiz.total_possible}).`,
+        primaryLabel: "Open this quiz",
+        onPrimary: () => navigate(`/quizzes/${lastQuiz.quiz_id}`),
+      };
+    }
+    if (fileCount === 0 && classes.length > 0) {
+      return {
+        title: "Add study material",
+        body: "Upload a document so you can generate flashcards and quizzes.",
+        primaryLabel: "Upload document",
+        onPrimary: () => navigate("/classes"),
+      };
+    }
+    return {
+      title: "Browse flashcards",
+      body: "Review or study cards from any of your classes.",
+      primaryLabel: "Open flashcards hub",
+      onPrimary: () => navigate("/flashcards"),
+    };
+  }, [
+    loading,
+    isNewUser,
+    dueNow,
+    studyClassId,
+    dueCards,
+    studyClass?.name,
+    lastSession,
+    lastQuiz,
+    fileCount,
+    classes,
+    navigate,
+    dueCards.length,
+  ]);
 
   const headerActions = (
     <div className="flex flex-wrap items-center gap-2">
       <Link
         to="/classes"
-        className="inline-flex h-9 items-center justify-center gap-2 rounded-[var(--radius-md)] bg-[var(--primary)] px-3.5 text-sm font-semibold text-[var(--text-inverse)] shadow-[var(--shadow-xs)] transition hover:bg-[var(--primary-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
+        className="inline-flex h-9 min-h-9 items-center justify-center gap-2 rounded-[var(--radius-md)] bg-[var(--primary)] px-3.5 text-sm font-semibold text-[var(--text-inverse)] shadow-[var(--shadow-xs)] transition hover:bg-[var(--primary-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)]"
       >
         <Upload className="h-4 w-4 shrink-0" aria-hidden />
         <span className="hidden sm:inline">Upload document</span>
@@ -293,7 +313,7 @@ export default function Dashboard() {
       </Link>
       <Link
         to="/classes"
-        className="inline-flex h-9 items-center justify-center gap-2 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] px-3 text-sm font-semibold text-[var(--text-main)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] sm:px-3.5"
+        className="inline-flex h-9 min-h-9 items-center justify-center gap-2 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] px-3 text-sm font-semibold text-[var(--text-main)] transition hover:border-[var(--border-strong)] hover:bg-[var(--surface-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--ring)] sm:px-3.5"
       >
         <FolderPlus className="h-4 w-4 shrink-0" aria-hidden />
         <span className="hidden sm:inline">New class</span>
@@ -305,32 +325,54 @@ export default function Dashboard() {
   return (
     <AppShell
       title={firstName ? `Welcome back, ${firstName}` : "Dashboard"}
-      subtitle="Your workspace for classes, active recall, and quizzes."
+      subtitle="Continue studying from your classes, documents, flashcards, and quizzes."
       headerMaxWidthClassName="max-w-[1180px]"
       headerActions={headerActions}
     >
       <div className="mx-auto w-full max-w-[1180px] space-y-6 pb-10">
-        {!isNewUser ? (
-          <div className="ns-card flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
-            <div className="min-w-0">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--text-muted-soft)]">
-                Today
-              </p>
-              <p className="mt-1 max-w-2xl text-[14px] leading-relaxed text-[var(--text-muted)]">
-                Here is what deserves your attention — short sessions beat rare marathons.
-              </p>
+        {!isNewUser && primaryCta ? (
+          <section className="premium-cta p-5 sm:p-7">
+            <div className="relative flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+              <div className="min-w-0 flex-1">
+                <span className="eyebrow">
+                  <span className="eyebrow-dot" aria-hidden />
+                  Next step
+                </span>
+                <h2 className="mt-2 text-[22px] font-semibold leading-tight tracking-[-0.025em] text-[var(--text-main)] sm:text-[26px]">
+                  {primaryCta.title}
+                </h2>
+                <p className="mt-2 max-w-2xl text-[14.5px] leading-relaxed text-[var(--text-secondary)] sm:text-[15px]">
+                  {primaryCta.body}
+                </p>
+                <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-[13px]">
+                  <Link
+                    to="/chatbot"
+                    className="inline-flex items-center gap-1.5 font-semibold text-[var(--primary)] underline-offset-4 hover:underline"
+                  >
+                    <MessageCircle className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                    Ask from your materials
+                  </Link>
+                  <Link
+                    to="/voice-revision"
+                    className="inline-flex items-center gap-1.5 font-medium text-[var(--text-secondary)] underline-offset-4 hover:text-[var(--text-main)] hover:underline"
+                  >
+                    <Mic className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                    Voice flashcards
+                  </Link>
+                </div>
+              </div>
+              <div className="flex shrink-0 items-end">
+                <button
+                  type="button"
+                  className="btn-premium"
+                  onClick={primaryCta.onPrimary}
+                >
+                  {primaryCta.primaryLabel}
+                  <ArrowUpRight className="h-4 w-4" aria-hidden />
+                </button>
+              </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="primary" size="sm" onClick={() => navigate("/chatbot")}>
-                <MessageCircle className="h-4 w-4" aria-hidden />
-                Study Assistant
-              </Button>
-              <Button type="button" variant="secondary" size="sm" onClick={() => navigate("/voice-revision")}>
-                <Mic className="h-4 w-4" aria-hidden />
-                Voice Flashcards
-              </Button>
-            </div>
-          </div>
+          </section>
         ) : null}
 
         {isNewUser ? (
@@ -338,7 +380,7 @@ export default function Dashboard() {
             <EmptyState
               icon={<Sparkles className="h-6 w-6" />}
               title="Welcome to Notescape"
-              description="Follow the steps below, then open Classes to add your first materials."
+              description="Start by creating a class or uploading a study document."
               action={
                 <>
                   <Button type="button" variant="primary" onClick={() => navigate("/classes")}>
@@ -373,29 +415,49 @@ export default function Dashboard() {
             <StatCard
               label="Active classes"
               value={classes.length}
-              hint="Organize by subject or term."
+              hint="Classes you created."
               icon={<GraduationCap className="h-4 w-4" />}
+              tone="primary"
               loading={loading}
             />
             <StatCard
               label="Documents"
               value={fileCount}
-              hint="PDFs, notes, and slides."
+              hint={
+                fileCount === 0
+                  ? "No documents uploaded.\nUpload PDFs, notes, or slides to start studying with context."
+                  : "Files uploaded to your classes."
+              }
               icon={<FileText className="h-4 w-4" />}
+              tone="neutral"
               loading={loading}
             />
             <StatCard
-              label="Flashcards due"
+              label="Due for review"
               value={dueNow}
-              hint="Across all classes."
+              hint="Flashcards due now (spaced repetition), all classes."
               icon={<Layers className="h-4 w-4" />}
+              tone={dueNow > 0 ? "warning" : "neutral"}
               loading={loading}
             />
             <StatCard
               label="Quiz accuracy"
-              value={overallAccuracy != null ? `${overallAccuracy}%` : "—"}
-              hint={overallAccuracy != null ? "Blended across tagged topics." : "Complete a quiz to unlock."}
+              value={loading ? "—" : quizAccuracyFromAttempts != null ? `${quizAccuracyFromAttempts}%` : "—"}
+              hint={
+                quizAccuracyFromAttempts != null
+                  ? "Across your recent quiz attempts."
+                  : "No quiz attempts yet.\nTake a quiz to start tracking accuracy."
+              }
               icon={<Target className="h-4 w-4" />}
+              tone={
+                quizAccuracyFromAttempts != null
+                  ? quizAccuracyFromAttempts >= 75
+                    ? "success"
+                    : quizAccuracyFromAttempts >= 50
+                      ? "warning"
+                      : "danger"
+                  : "neutral"
+              }
               loading={loading}
             />
           </section>
@@ -405,55 +467,97 @@ export default function Dashboard() {
           <section className="ns-card p-5 sm:p-6">
             <SectionHeader
               eyebrow="What to study next"
-              title={weakest ? "Focus where quizzes say you are shaky" : "Build your signal"}
+              title={weakestQuiz ? "Topic from your quizzes" : weakestFlash ? "Topic from flashcard reviews" : "Build your queue"}
               description={
-                weakest
-                  ? `We prioritize topics with lower recent accuracy so you do not drift before exams.`
-                  : "Upload documents and attempt quizzes to unlock recommendations."
+                weakestQuiz || weakestFlash
+                  ? "Based on your recent practice data."
+                  : "Add materials, review flashcards, or take a quiz to get targeted suggestions."
               }
             />
-            {weakest ? (
-              <div className="mt-4 flex flex-col gap-3 rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface-2)] p-4 sm:flex-row sm:items-center sm:justify-between">
+            {weakestQuiz ? (
+              <div className="mt-4 flex flex-col gap-4 rounded-[var(--radius-xl)] border border-[var(--border)] bg-gradient-to-br from-[var(--surface-2)] to-[var(--surface)] p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
                 <div className="flex min-w-0 items-start gap-3">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--primary-soft)] text-[var(--primary)]">
-                    <TrendingDown className="h-5 w-5" aria-hidden />
-                  </div>
+                  <span className="mt-0.5 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--primary-soft)] text-[var(--primary)]">
+                    <Target className="h-5 w-5" />
+                  </span>
                   <div className="min-w-0">
-                    <div className="text-[15px] font-semibold text-[var(--text-main)]">{weakest.tag}</div>
-                    <div className="mt-0.5 text-[13.5px] text-[var(--text-muted)]">
-                      {weakestClassName ? `${weakestClassName} · ` : ""}
-                      Quiz accuracy ~{Math.round(weakest.quiz_accuracy_pct)}%. Short reviews here compound quickly.
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[15.5px] font-semibold tracking-[-0.01em] text-[var(--text-main)]">
+                        {weakestQuiz.tag}
+                      </span>
+                      <span
+                        className={
+                          Math.round(weakestQuiz.quiz_accuracy_pct) < 50
+                            ? "topic-chip topic-chip--weak"
+                            : "topic-chip topic-chip--improving"
+                        }
+                      >
+                        {Math.round(weakestQuiz.quiz_accuracy_pct)}% accuracy
+                      </span>
+                    </div>
+                    <div className="mt-1 text-[13.5px] leading-relaxed text-[var(--text-muted)]">
+                      {weakestQuizClassName ? `${weakestQuizClassName} · ` : ""}
+                      Recent quiz accuracy is below your average. Reinforce with targeted review.
                     </div>
                   </div>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  {weakest.class_id ? (
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  {weakestQuiz.class_id ? (
                     <Button
                       type="button"
                       variant="primary"
                       size="sm"
                       onClick={() =>
-                        navigate(
-                          `/classes/${weakest.class_id}/flashcards?tag=${encodeURIComponent(weakest.tag)}`
-                        )
+                        navigate(`/classes/${weakestQuiz.class_id}/flashcards?tag=${encodeURIComponent(weakestQuiz.tag)}`)
                       }
                     >
                       Review flashcards
                     </Button>
                   ) : null}
-                  {weakest.class_id ? (
-                    <Button type="button" variant="secondary" size="sm" onClick={() => navigate("/quizzes")}>
-                      Take quiz
+                  <Button type="button" variant="secondary" size="sm" onClick={() => navigate("/quizzes")}>
+                    Quizzes
+                  </Button>
+                </div>
+              </div>
+            ) : weakestFlash ? (
+              <div className="mt-4 flex flex-col gap-4 rounded-[var(--radius-xl)] border border-[var(--border)] bg-gradient-to-br from-[var(--surface-2)] to-[var(--surface)] p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+                <div className="flex min-w-0 items-start gap-3">
+                  <span className="mt-0.5 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--warning-soft)] text-[var(--warning)]">
+                    <Layers className="h-5 w-5" />
+                  </span>
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-[15.5px] font-semibold tracking-[-0.01em] text-[var(--text-main)]">
+                        {weakestFlash.tag}
+                      </span>
+                      <span className="topic-chip topic-chip--improving">
+                        {Math.round(weakestFlash.flashcard_difficulty_pct)}% hard
+                      </span>
+                    </div>
+                    <div className="mt-1 text-[13.5px] leading-relaxed text-[var(--text-muted)]">
+                      {weakestFlashClassName ? `${weakestFlashClassName} · ` : ""}
+                      Recent flashcard ratings show extra friction here.
+                    </div>
+                  </div>
+                </div>
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  {weakestFlash.class_id ? (
+                    <Button
+                      type="button"
+                      variant="primary"
+                      size="sm"
+                      onClick={() =>
+                        navigate(`/classes/${weakestFlash.class_id}/flashcards?tag=${encodeURIComponent(weakestFlash.tag)}`)
+                      }
+                    >
+                      Review flashcards
                     </Button>
                   ) : null}
-                  <Button type="button" variant="ghost" size="sm" onClick={() => navigate("/chatbot")}>
-                    Ask assistant
-                  </Button>
                 </div>
               </div>
             ) : (
               <p className="mt-3 text-[13.5px] leading-relaxed text-[var(--text-muted)]">
-                Upload documents and attempt quizzes to unlock recommendations.
+                No topic signals yet. Upload a document, review flashcards, or complete a quiz.
               </p>
             )}
           </section>
@@ -463,8 +567,13 @@ export default function Dashboard() {
           <div className="grid gap-4 lg:grid-cols-2">
             <section className="ns-card flex flex-col p-5">
               <SectionHeader
-                eyebrow="Due today"
-                title="Flashcards in queue"
+                eyebrow="Review queue"
+                title={studyClass ? `Due cards · ${studyClass.name}` : "Flashcards"}
+                description={
+                  dueNow > 0 && studyClass
+                    ? `${dueNow} due across all classes. Showing the next few from ${studyClass.name}.`
+                    : undefined
+                }
                 action={
                   studyClassId ? (
                     <Button
@@ -472,12 +581,14 @@ export default function Dashboard() {
                       variant="secondary"
                       size="sm"
                       onClick={() =>
-                        navigate(`/classes/${studyClassId}/flashcards/study`, {
-                          state: { cards: dueCards, className: studyClass?.name ?? "", startIndex: 0 },
-                        })
+                        dueCards.length
+                          ? navigate(`/classes/${studyClassId}/flashcards/study`, {
+                              state: { cards: dueCards, className: studyClass?.name ?? "", startIndex: 0 },
+                            })
+                          : navigate("/flashcards")
                       }
                     >
-                      Study now
+                      {dueCards.length ? "Study now" : "Flashcards hub"}
                       <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
                     </Button>
                   ) : null
@@ -485,8 +596,12 @@ export default function Dashboard() {
               />
               <div className="mt-4 min-h-[110px] space-y-2">
                 {dueCards.length === 0 ? (
-                  <div className="rounded-[var(--radius-md)] border border-dashed border-[var(--border)] bg-[var(--surface-2)] px-4 py-6 text-center text-[13.5px] text-[var(--text-muted)]">
-                    You are caught up. Nice work.
+                  <div className="rounded-[var(--radius-md)] border border-dashed border-[var(--border)] bg-[var(--surface-2)] px-4 py-6 text-center text-[13.5px] leading-relaxed text-[var(--text-muted)]">
+                    <span className="font-medium text-[var(--text-secondary)]">No flashcards ready for review.</span>
+                    <br />
+                    <span className="mt-2 inline-block text-[13px]">
+                      Generate flashcards from a document to begin review, or open the flashcards hub for every class.
+                    </span>
                   </div>
                 ) : (
                   dueCards.map((card) => (
@@ -499,22 +614,55 @@ export default function Dashboard() {
                     </div>
                   ))
                 )}
+                <button
+                  type="button"
+                  onClick={() => navigate("/flashcards")}
+                  className="w-full pt-1 text-left text-[13px] font-medium text-[var(--primary)] underline-offset-4 hover:underline"
+                >
+                  View all classes in Flashcards hub
+                </button>
               </div>
             </section>
 
             <section className="ns-card flex flex-col p-5">
-              <SectionHeader eyebrow="Resume" title={primaryClass?.name ?? "Pick a class"} />
-              <p className="mt-2 text-[13.5px] text-[var(--text-muted)]">
-                {resumeFile ? (
-                  <>
-                    Last document: <span className="font-medium text-[var(--text-main)]">{resumeFile}</span>
-                  </>
+              <SectionHeader eyebrow="Continue" title="Resume" />
+              <div className="mt-2 space-y-3 text-[13.5px] text-[var(--text-muted)]">
+                {lastSession?.class_id ? (
+                  <p>
+                    <span className="font-medium text-[var(--text-main)]">Last session: </span>
+                    {lastSession.mode?.includes("voice") ? "Voice flashcards" : "Flashcards study"}
+                    {lastSession.class_name ? ` · ${lastSession.class_name}` : ""}
+                    {lastSession.started_at ? ` · ${formatShortDate(lastSession.started_at)}` : ""}
+                  </p>
+                ) : recentFiles[0] ? (
+                  <p>
+                    <span className="font-medium text-[var(--text-main)]">Recent file: </span>
+                    {recentFiles[0].filename} ({recentFiles[0].className})
+                  </p>
                 ) : (
-                  "Upload a document in any class to anchor your next session."
+                  <p>Upload a document in a class to anchor your next session.</p>
                 )}
-              </p>
-              {primaryClass ? (
-                <div className="mt-4">
+              </div>
+              {lastSession?.class_id ? (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="primary"
+                    size="sm"
+                    onClick={() =>
+                      lastSession.mode?.includes("voice")
+                        ? navigate(`/classes/${lastSession.class_id}/flashcards/voice`)
+                        : navigate(`/classes/${lastSession.class_id}/flashcards`)
+                    }
+                  >
+                    Continue
+                  </Button>
+                  <Button type="button" variant="secondary" size="sm" onClick={() => navigate("/quizzes")}>
+                    Quizzes
+                  </Button>
+                </div>
+              ) : primaryClass ? (
+                <div className="mt-4 flex flex-wrap gap-2">
                   <Button
                     type="button"
                     variant="primary"
@@ -523,18 +671,61 @@ export default function Dashboard() {
                   >
                     Open class
                   </Button>
+                  {resumeFile ? (
+                    <span className="self-center text-xs text-[var(--text-muted)]">Latest file: {resumeFile}</span>
+                  ) : null}
                 </div>
               ) : null}
             </section>
           </div>
         ) : null}
 
+        {!isNewUser && quizHistory.length > 0 ? (
+          <section className="ns-card p-5 sm:p-6">
+            <SectionHeader
+              eyebrow="Quizzes"
+              title="Recent attempts"
+              action={
+                <Button type="button" variant="ghost" size="sm" onClick={() => navigate("/quizzes/history")}>
+                  Full history
+                  <ArrowUpRight className="h-3.5 w-3.5" aria-hidden />
+                </Button>
+              }
+            />
+            <ul className="mt-4 divide-y divide-[var(--border)] rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface)]">
+              {quizHistory.slice(0, 5).map((q) => {
+                const pct =
+                  q.total_possible > 0 ? Math.round((Number(q.score) / Number(q.total_possible)) * 100) : null;
+                return (
+                  <li key={q.attempt_id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                    <div className="min-w-0">
+                      <div className="truncate font-medium text-[var(--text-main)]">{q.quiz_title}</div>
+                      <div className="mt-0.5 text-xs text-[var(--text-muted)]">
+                        {q.file_name ? `${q.file_name} · ` : ""}
+                        {formatShortDate(q.attempted_at)}
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <span className="tabular-nums text-sm font-semibold text-[var(--text-secondary)]">
+                        {q.score}/{q.total_possible}
+                        {pct != null ? ` (${pct}%)` : ""}
+                      </span>
+                      <Button type="button" variant="secondary" size="sm" onClick={() => navigate(`/quizzes/${q.quiz_id}`)}>
+                        Retry
+                      </Button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        ) : null}
+
         {!isNewUser ? (
-          <section className="ns-card p-5">
+          <section className="ns-card p-5 sm:p-6">
             <SectionHeader
               eyebrow="Your classes"
               title="Overview"
-              description="Jump back into the material you care about."
               action={
                 <Button type="button" variant="ghost" size="sm" onClick={() => navigate("/classes")}>
                   All classes
@@ -544,8 +735,8 @@ export default function Dashboard() {
             />
             <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {recentClasses.length === 0 ? (
-                <div className="rounded-[var(--radius-md)] border border-dashed border-[var(--border)] px-4 py-8 text-center text-[13.5px] text-[var(--text-muted)] sm:col-span-2 lg:col-span-3">
-                  No classes yet.
+                <div className="rounded-[var(--radius-md)] border border-dashed border-[var(--border)] px-4 py-8 text-center text-[13.5px] leading-relaxed text-[var(--text-muted)] sm:col-span-2 lg:col-span-3">
+                  Start by creating a class or uploading a study document.
                 </div>
               ) : (
                 recentClasses.map((c) => (
@@ -577,223 +768,9 @@ export default function Dashboard() {
 
         {!isNewUser ? (
           <section className="ns-card p-5 sm:p-6">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <SectionHeader
-                eyebrow="Learning insights"
-                title="Weak and strong areas"
-                description="Powered by your recent quiz performance."
-              />
-              <span className="text-xs font-medium text-[var(--text-secondary)]">
-                {overallAccuracy == null ? "Not enough data yet" : `Blended accuracy ${overallAccuracy}%`}
-              </span>
-            </div>
-            {weakTags.length ? (
-              <div className="mt-5 grid gap-4 md:grid-cols-2">
-                <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/50 p-4">
-                  <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--text-muted-soft)]">Weak areas</div>
-                  <ul className="mt-3 space-y-2">
-                    {weakInsights.map((tag) => (
-                      <li key={`weak-${tag.tag_id}`} className="flex items-center justify-between gap-2 text-sm">
-                        <span className="truncate font-medium text-[var(--text-main)]">{tag.tag}</span>
-                        <span className="shrink-0 tabular-nums text-[var(--text-secondary)]">{Math.round(tag.quiz_accuracy_pct)}%</span>
-                      </li>
-                    ))}
-                  </ul>
-                  {weakInsights[0]?.class_id ? (
-                    <div className="mt-3">
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        onClick={() =>
-                          navigate(
-                            `/classes/${weakInsights[0].class_id}/flashcards?tag=${encodeURIComponent(weakInsights[0].tag)}`
-                          )
-                        }
-                      >
-                        Study weak areas
-                      </Button>
-                    </div>
-                  ) : null}
-                </div>
-                <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/50 p-4">
-                  <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--text-muted-soft)]">Strong areas</div>
-                  <ul className="mt-3 space-y-2">
-                    {strongInsights.map((tag) => (
-                      <li key={`strong-${tag.tag_id}`} className="flex items-center justify-between gap-2 text-sm">
-                        <span className="truncate font-medium text-[var(--text-main)]">{tag.tag}</span>
-                        <span className="shrink-0 tabular-nums text-[var(--text-secondary)]">{Math.round(tag.quiz_accuracy_pct)}%</span>
-                      </li>
-                    ))}
-                  </ul>
-                  <p className="mt-3 text-xs leading-relaxed text-[var(--text-secondary)]">
-                    Keep light reviews on strong tags so they stay exam-ready.
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <p className="mt-4 text-sm text-[var(--text-secondary)]">Complete a quiz or review flashcards to see insights.</p>
-            )}
-          </section>
-        ) : null}
-
-        {!isNewUser ? (
-          <section className="ns-card p-5 sm:p-6">
             <SectionHeader
-              eyebrow="Study coach"
-              title="Plan, analytics, voice"
-              description="Adaptive tasks tied to the class you select."
-              action={<span className="text-xs text-[var(--text-secondary)]">{coachLoading ? "Updating…" : "Synced to weak topics"}</span>}
-            />
-
-            <div className="mt-5 grid gap-5 lg:grid-cols-2">
-              <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/40 p-4 sm:p-5">
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <label className="block text-sm font-semibold text-[var(--text-main)] sm:col-span-2">
-                    Class
-                    <select
-                      value={selectedClassId ?? ""}
-                      onChange={(e) => setSelectedClassId(Number(e.target.value))}
-                      className="mt-2 h-10 w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 text-sm text-[var(--text-main)]"
-                    >
-                      <option value="">Select class</option>
-                      {classes.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="block text-sm font-semibold text-[var(--text-main)]">
-                    Exam date
-                    <input
-                      type="date"
-                      value={planExamDate}
-                      onChange={(e) => setPlanExamDate(e.target.value)}
-                      className="mt-2 h-10 w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 text-sm text-[var(--text-main)]"
-                    />
-                  </label>
-                  <label className="block text-sm font-semibold text-[var(--text-main)]">
-                    Daily minutes
-                    <input
-                      type="number"
-                      min={15}
-                      max={180}
-                      value={planMinutes}
-                      onChange={(e) => setPlanMinutes(Number(e.target.value))}
-                      className="mt-2 h-10 w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 text-sm text-[var(--text-main)]"
-                    />
-                  </label>
-                </div>
-                <label className="mt-4 block text-sm font-semibold text-[var(--text-main)]">
-                  Goal
-                  <select
-                    value={planGoal}
-                    onChange={(e) => setPlanGoal(e.target.value)}
-                    className="mt-2 h-10 w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 text-sm text-[var(--text-main)]"
-                  >
-                    <option value="exam_preparation">Exam preparation</option>
-                    <option value="quick_revision">Quick revision</option>
-                    <option value="weak_topic_recovery">Weak-topic recovery</option>
-                    <option value="full_course_review">Full course review</option>
-                  </select>
-                </label>
-                {coachError ? (
-                  <div className="mt-3 rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-800 dark:text-rose-100">
-                    {coachError}
-                  </div>
-                ) : null}
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <Button type="button" variant="primary" onClick={handleCreatePlan} disabled={!selectedClassId || coachLoading}>
-                    Create / refresh plan
-                  </Button>
-                  <Button type="button" variant="secondary" onClick={() => navigate("/voice-revision")}>
-                    Voice Flashcards
-                  </Button>
-                  {activePlan ? (
-                    <span className="self-center text-xs text-[var(--text-secondary)]">
-                      {planProgress.completed}/{planProgress.total || "0"} tasks · {activePlan.title}
-                    </span>
-                  ) : null}
-                </div>
-                {activePlan ? (
-                  <div className="mt-4 space-y-2">
-                    {(activePlan.items ?? []).slice(0, 4).map((item) => (
-                      <div
-                        key={item.id}
-                        className="flex items-start justify-between gap-2 rounded-lg border border-[var(--border-soft)] bg-[var(--surface)] px-3 py-2.5"
-                      >
-                        <div className="min-w-0">
-                          <div className="text-sm font-semibold text-[var(--text-main)]">{item.title}</div>
-                          <div className="text-xs text-[var(--text-secondary)]">
-                            {item.topic} · {item.date} · {item.task_type}
-                          </div>
-                        </div>
-                        <span className="shrink-0 rounded-full bg-[var(--surface-2)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-secondary)]">
-                          {item.status}
-                        </span>
-                      </div>
-                    ))}
-                    {activePlan.items && activePlan.items.length === 0 ? (
-                      <div className="rounded-lg border border-dashed border-[var(--border)] px-3 py-3 text-sm text-[var(--text-secondary)]">
-                        Plan generated. Tasks will appear when data is ready.
-                      </div>
-                    ) : null}
-                  </div>
-                ) : (
-                  <p className="mt-3 text-sm text-[var(--text-secondary)]">
-                    Create a plan to generate day-wise tasks with flashcards, quizzes, and voice revision.
-                  </p>
-                )}
-              </div>
-
-              <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-2)]/40 p-4 sm:p-5">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div>
-                    <div className="text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--text-muted-soft)]">Analytics</div>
-                    <div className="mt-1 text-lg font-semibold text-[var(--text-main)]">
-                      Exam readiness {classAnalytics?.exam_readiness?.score ?? 0}%
-                    </div>
-                  </div>
-                  <div className="text-right text-xs text-[var(--text-secondary)]">
-                    {classAnalytics?.exam_readiness?.components
-                      ? `Mastery ${classAnalytics.exam_readiness.components.mastery}% · Coverage ${classAnalytics.exam_readiness.components.coverage}%`
-                      : "Practice to unlock detail"}
-                  </div>
-                </div>
-                <div className="mt-4 space-y-2">
-                  {(classAnalytics?.weak_topics ?? []).slice(0, 4).map((topic) => (
-                    <div
-                      key={topic.topic}
-                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[var(--border-soft)] bg-[var(--surface)] px-3 py-2.5"
-                    >
-                      <div className="min-w-0">
-                        <div className="font-medium text-[var(--text-main)]">{topic.topic}</div>
-                        <div className="text-xs text-[var(--text-secondary)]">
-                          Mastery {topic.mastery_score}% · Quiz {topic.quiz_accuracy_pct}% · Voice {topic.voice_score_pct}%
-                        </div>
-                      </div>
-                      <span className="rounded-full bg-[var(--surface-2)] px-2 py-0.5 text-[10px] font-semibold text-[var(--text-secondary)]">
-                        {topic.status}
-                      </span>
-                    </div>
-                  ))}
-                  {(classAnalytics?.weak_topics?.length ?? 0) === 0 ? (
-                    <div className="rounded-lg border border-dashed border-[var(--border)] px-3 py-3 text-sm text-[var(--text-secondary)]">
-                      Take a quiz or voice session to surface weak topics.
-                    </div>
-                  ) : null}
-                </div>
-              </div>
-            </div>
-          </section>
-        ) : null}
-
-        {!isNewUser ? (
-          <section className="ns-card p-5 sm:p-6">
-            <SectionHeader
-              eyebrow="Recent activity"
-              title="Last moves"
+              eyebrow="Activity"
+              title="Recent moves"
               description={`Study time (7d): ${studyOverview ? formatDuration(studyOverview.total_seconds_7d) : "—"} · ${studyOverview?.sessions_7d ?? 0} sessions`}
             />
             {activityRows.length === 0 ? (
@@ -801,7 +778,10 @@ export default function Dashboard() {
             ) : (
               <ul className="mt-4 space-y-3">
                 {activityRows.map((item) => (
-                  <li key={item.id} className="flex gap-3 rounded-xl border border-transparent px-1 py-1 transition hover:border-[var(--border)] hover:bg-[var(--surface-2)]/60">
+                  <li
+                    key={item.id}
+                    className="flex gap-3 rounded-xl border border-transparent px-1 py-1 transition hover:border-[var(--border)] hover:bg-[var(--surface-2)]/60"
+                  >
                     <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--surface-2)] text-[var(--primary)]">
                       {item.icon}
                     </div>
@@ -815,7 +795,6 @@ export default function Dashboard() {
             )}
           </section>
         ) : null}
-
       </div>
     </AppShell>
   );

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import AppShell from "../../layouts/AppShell";
-import { ArrowLeft, Clock } from "lucide-react";
+import { Clock } from "lucide-react";
 import {
   getQuiz,
   getQuizBreakdown,
@@ -213,41 +213,50 @@ export default function QuizAttemptPage() {
 
   if (loading) {
     return (
-        <AppShell title="Quiz">
-            <div className="flex justify-center p-12">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[var(--primary)]"></div>
-            </div>
-        </AppShell>
+      <AppShell title="Quiz" backLabel="Quizzes" backTo="/quizzes">
+        <div className="flex justify-center p-12">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-[var(--surface-2)] border-t-[var(--primary)]" />
+        </div>
+      </AppShell>
     );
   }
 
   if (loadErr || !quizData) {
-     return (
-        <AppShell title="Quiz">
-            <div className="p-8 text-center text-red-500">
-                {loadErr || "Quiz not found"}
-                <div className="mt-4">
-                    <Link to="/quizzes" className="underline">Back to Quizzes</Link>
-                </div>
-            </div>
-        </AppShell>
-     );
+    return (
+      <AppShell title="Quiz" backLabel="Quizzes" backTo="/quizzes">
+        <div className="mx-auto max-w-md rounded-[var(--radius-xl)] border border-[color-mix(in_srgb,var(--danger)_30%,var(--border))] bg-[var(--danger-soft)] p-6 text-center">
+          <div className="text-sm font-semibold text-[var(--danger)]">
+            {loadErr || "Quiz not found"}
+          </div>
+          <div className="mt-4">
+            <Link
+              to="/quizzes"
+              className="inline-flex items-center gap-1.5 text-sm font-semibold text-[var(--primary)] underline-offset-4 hover:underline"
+            >
+              Back to quizzes
+            </Link>
+          </div>
+        </div>
+      </AppShell>
+    );
   }
 
+  const headerActions =
+    currentSection !== "completed" ? (
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-[12.5px] font-semibold tabular-nums text-[var(--text-main)] shadow-[var(--shadow-xs)]">
+        <Clock className="h-3.5 w-3.5 text-[var(--primary)]" aria-hidden />
+        {formatTime(elapsedSeconds)}
+      </span>
+    ) : null;
+
   return (
-    <AppShell title={quizData.quiz.title} headerMaxWidthClassName="max-w-[1200px]">
-        {/* Top Bar (only if not completed) */}
-        {currentSection !== "completed" && (
-            <div className="mx-auto w-full max-w-[1200px] px-4 py-4 flex justify-between items-center">
-                 <button onClick={() => navigate("/quizzes")} className="flex items-center gap-2 text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors">
-                    <ArrowLeft className="h-4 w-4" /> Exit
-                 </button>
-                 <div className="flex items-center gap-2 rounded-full bg-[var(--surface)] px-4 py-2 text-sm font-semibold shadow-sm border border-[var(--border)]">
-                    <Clock className="h-4 w-4 text-[var(--primary)]" />
-                    <span className="tabular-nums">{formatTime(elapsedSeconds)}</span>
-                 </div>
-            </div>
-        )}
+    <AppShell
+      title={quizData.quiz.title}
+      backLabel={currentSection === "completed" ? "Back to quizzes" : "Exit quiz"}
+      backTo="/quizzes"
+      headerMaxWidthClassName="max-w-[1200px]"
+      headerActions={headerActions}
+    >
 
         {currentSection === "start" && (
             <QuizStartScreen 

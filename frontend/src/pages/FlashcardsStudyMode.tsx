@@ -245,6 +245,8 @@ export default function FlashcardsStudyMode() {
   const [emptyState, setEmptyState] = useState(false);
 
   const responseStart = useRef<number | null>(null);
+  /** Snapshot of queue length when session starts — stable denominator for Card X / Y (backend current_index stays ~0 due to queue reorder). */
+  const initialQueueTotalRef = useRef<number | null>(null);
   const scrollRestoreRef = useRef<number | null>(null);
   const reviewInFlightRef = useRef(false);
   const timerRef = useRef<SessionTimerHandle | null>(null);
@@ -277,10 +279,15 @@ export default function FlashcardsStudyMode() {
     setStats(normalizeStats(data));
     setRevealed(false);
     if (data.current_card) responseStart.current = Date.now();
+    const tc = Number(data.total_cards ?? 0);
+    if (tc > 0 && initialQueueTotalRef.current === null) {
+      initialQueueTotalRef.current = tc;
+    }
   }
 
   async function startSession() {
     if (!classNum) return;
+    initialQueueTotalRef.current = null;
     setLoading(true);
     setSubmitting(false);
     setError(null);
@@ -306,6 +313,7 @@ export default function FlashcardsStudyMode() {
 
   async function loadOrCreateSession() {
     if (!classNum) return;
+    initialQueueTotalRef.current = null;
     setLoading(true);
     setSubmitting(false);
     setError(null);
@@ -491,6 +499,20 @@ export default function FlashcardsStudyMode() {
     stats.mastery_percent ||
     (stats.total_unique ? Math.round((stats.mastered_count / stats.total_unique) * 100) : 0);
 
+  /** Stable deck size for this session (queue shrinks as cards are mastered). */
+  const displayTotal = Math.max(initialQueueTotalRef.current ?? stats.total_cards ?? 1, 1);
+  /** Ordinal card in session — backend queue index stays ~0 after reorder; total_reviews advances correctly. */
+  const displayCurrent =
+    stats.done || stats.ended
+      ? displayTotal
+      : currentCard
+        ? stats.total_reviews + 1
+        : 0;
+  const sessionProgressPct =
+    stats.done || stats.ended
+      ? 100
+      : Math.min(100, Math.round(((stats.total_reviews + 1) / displayTotal) * 100));
+
   // Keyboard shortcuts
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -519,7 +541,7 @@ export default function FlashcardsStudyMode() {
     }).catch(() => undefined);
   };
 
-  // Rating options — label + keyboard key only, no verbose hint text
+  // Rating options — SRS labels map to confidence 1–5 on the API.
   const ratingOptions = [
     { score: 1 as const, label: "Again",   tone: "var(--danger)"   },
     { score: 2 as const, label: "Hard",    tone: "var(--warning)"  },
@@ -537,8 +559,8 @@ export default function FlashcardsStudyMode() {
 
   return (
     <AppShell
-      title="Flashcards"
-      backLabel="Back to Flashcards"
+      title="Study session"
+      backLabel="Flashcards"
       backTo={classId ? `/classes/${classId}/flashcards` : "/classes"}
       contentGapClassName="gap-3"
       contentOverflowClassName="overflow-hidden"
@@ -575,10 +597,16 @@ export default function FlashcardsStudyMode() {
                 <Target className="h-4 w-4" />
               </div>
               <div className="min-w-0 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                <span className="text-[13px] font-semibold text-[var(--text-main)]">
-                  Card {stats.total_cards ? stats.current_index + 1 : 0}
-                  <span className="mx-1 text-[var(--text-muted-soft)]">/</span>
-                  <span className="text-[var(--text-muted)]">{stats.total_cards || 0}</span>
+                <span className="text-[13px] font-semibold tabular-nums text-[var(--text-main)]">
+                  {stats.done || stats.ended ? (
+                    <>{stats.done ? "Queue complete" : "Session ended"}</>
+                  ) : (
+                    <>
+                      Card {displayCurrent}
+                      <span className="mx-1 text-[var(--text-muted-soft)]">/</span>
+                      <span className="text-[var(--text-muted)]">{displayTotal}</span>
+                    </>
+                  )}
                 </span>
                 <span className="text-[11px] font-medium text-[var(--text-muted-soft)]">
                   {masteryPct}% mastered
@@ -631,18 +659,18 @@ export default function FlashcardsStudyMode() {
             </div>
           </div>
 
-          {/* Mastery progress bar */}
+          {/* Session progress through deck (ordinal position); mastery % stays in label row */}
           <div
             className="flash-progress-track mt-2"
             role="progressbar"
             aria-valuemin={0}
             aria-valuemax={100}
-            aria-valuenow={masteryPct}
-            aria-label="Mastery progress"
+            aria-valuenow={sessionProgressPct}
+            aria-label="Study progress through session queue"
           >
             <div
               className="flash-progress-fill"
-              style={{ ["--value" as any]: `${masteryPct}%` } as CSSProperties}
+              style={{ ["--value" as any]: `${sessionProgressPct}%` } as CSSProperties}
             />
           </div>
         </div>
@@ -660,10 +688,11 @@ export default function FlashcardsStudyMode() {
               <div className="w-full max-w-[720px] rounded-[var(--radius-2xl)] border border-[var(--border)] bg-[var(--surface)] p-5 shadow-[var(--shadow-elevated)] sm:p-7">
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div>
-                    <div className="text-[11px] font-semibold uppercase tracking-[0.2em] text-[var(--text-muted-soft)]">
+                    <span className="eyebrow">
+                      <span className="eyebrow-dot" aria-hidden />
                       Session summary
-                    </div>
-                    <h2 className="mt-2 text-2xl font-semibold text-[var(--text-main)] sm:text-3xl">
+                    </span>
+                    <h2 className="mt-2 text-[26px] font-semibold leading-tight tracking-[-0.025em] text-[var(--text-main)] sm:text-[30px]">
                       {stats.done ? "Study queue complete" : "Session ended"}
                     </h2>
                     <p className="mt-2 max-w-[520px] text-sm leading-6 text-[var(--text-secondary)]">
@@ -762,7 +791,7 @@ export default function FlashcardsStudyMode() {
                         Question
                       </span>
                       <span className="text-[11px] font-semibold tabular-nums text-[var(--text-muted-soft)]">
-                        {stats.total_cards ? stats.current_index + 1 : 0} / {stats.total_cards || 0}
+                        {displayCurrent} / {displayTotal}
                       </span>
                     </div>
 
@@ -795,13 +824,18 @@ export default function FlashcardsStudyMode() {
                         onClick={() => setRevealed((v) => !v)}
                         className={revealed ? "flash-cta flash-cta--secondary" : "flash-cta"}
                         aria-pressed={revealed}
-                        title={revealed ? "Hide answer (Space)" : "Show answer (Space)"}
                       >
-                        {revealed
-                          ? <><EyeOff className="h-4 w-4" /><span>Hide answer</span></>
-                          : <><Eye className="h-4 w-4" /><span>Show answer</span></>
-                        }
-                        <span className="kbd ml-1">Space</span>
+                        {revealed ? (
+                          <>
+                            <EyeOff className="h-4 w-4" />
+                            <span>Hide answer</span>
+                          </>
+                        ) : (
+                          <>
+                            <Eye className="h-4 w-4" />
+                            <span>Show answer</span>
+                          </>
+                        )}
                       </button>
                     </div>
                   </div>
@@ -810,35 +844,34 @@ export default function FlashcardsStudyMode() {
 
               {/* ── Rating row — always pinned at the bottom, never scrolls away ── */}
               <div className="shrink-0 mx-auto w-full max-w-[680px]">
-                <div className="mb-1.5 flex items-center justify-between gap-2">
-                  <span className="text-[10.5px] font-semibold uppercase tracking-[0.18em] text-[var(--text-muted-soft)]">
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <span className="text-[11.5px] font-medium tracking-[-0.005em] text-[var(--text-muted)]">
                     How well did you know it?
                   </span>
-                  <span className="hidden sm:inline-flex items-center gap-1 text-[10.5px] text-[var(--text-muted-soft)]">
-                    <span className="kbd">Space</span>
-                    <span>flip</span>
-                    <span className="mx-0.5">&middot;</span>
-                    <span className="kbd">1</span>
+                  <span className="hidden items-center gap-1.5 text-[11px] font-medium text-[var(--text-muted-soft)] sm:inline-flex">
+                    <kbd className="kbd">Space</kbd>
+                    <span>reveal</span>
+                    <span aria-hidden>·</span>
+                    <kbd className="kbd">1</kbd>
                     <span>–</span>
-                    <span className="kbd">5</span>
+                    <kbd className="kbd">5</kbd>
                     <span>rate</span>
                   </span>
                 </div>
 
                 <div className="grid grid-cols-5 gap-1.5 sm:gap-2">
-                  {ratingOptions.map((opt) => (
+                  {ratingOptions.map((opt, idx) => (
                     <button
                       key={opt.score}
                       type="button"
                       onClick={() => handleReview(opt.score)}
                       disabled={submitting || !revealed}
-                      aria-label={`Rate: ${opt.label}`}
-                      title={revealed ? `${opt.label} (key ${opt.score})` : "Reveal the answer first"}
+                      aria-label={`Rate: ${opt.label} (key ${idx + 1})`}
+                      title={revealed ? `${opt.label} (press ${idx + 1})` : "Reveal the answer first"}
                       className={`rating-btn ${revealed ? "rating-btn--ready" : ""}`}
                       style={{ ["--tone" as any]: opt.tone } as CSSProperties}
                     >
                       <span className="rating-btn__label">{opt.label}</span>
-                      <span className="rating-btn__key">{opt.score}</span>
                     </button>
                   ))}
                 </div>

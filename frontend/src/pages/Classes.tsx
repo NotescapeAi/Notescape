@@ -642,6 +642,7 @@ function ClassesContent() {
   const [classesPanelCollapsed, setClassesPanelCollapsed] = useState(
     window.localStorage.getItem("notescape.ui.classesPanel") === "collapsed"
   );
+  const prevClassesPanelCollapsed = useRef(classesPanelCollapsed);
 
   useEffect(() => {
     (async () => setClasses(await listClasses()))();
@@ -1161,10 +1162,13 @@ function ClassesContent() {
     if (pdfFocusMode) {
       setPdfFocusMode(false);
       setSidebar(prevSidebarRef.current);
+      setClassesPanelCollapsed(prevClassesPanelCollapsed.current);
       return;
     }
     prevSidebarRef.current = sidebar;
+    prevClassesPanelCollapsed.current = classesPanelCollapsed;
     setSidebar("collapsed");
+    setClassesPanelCollapsed(true);
     setPdfFocusMode(true);
   }
 
@@ -1956,11 +1960,9 @@ ${finalContent}`;
       ? "Open a document for document-specific answers, or ask about this class."
       : "Choose a class or open a document to start a contextual chat.";
   const isWorkspaceWide = activeTab === "documents" && !!activeFile;
-  const layoutClass = pdfFocusMode
-    ? "grid-cols-1"
-    : studyAssistantOpen && activeFile
-      ? "grid-cols-1 lg:grid-cols-[minmax(0,1fr)_380px]"
-      : "grid-cols-1";
+  const layoutClass = studyAssistantOpen && activeFile
+    ? "grid-cols-1 lg:grid-cols-[minmax(0,1fr)_380px]"
+    : "grid-cols-1";
 
   const hasAnyFiles = (files?.length ?? 0) > 0;
   const selectedFlashcardFiles = (files ?? []).filter((f) => flashcardSourceIds.includes(f.id));
@@ -1988,20 +1990,24 @@ ${finalContent}`;
         <div
           className="grid h-full min-h-0 gap-3"
           style={{
-            gridTemplateColumns: classesPanelCollapsed ? "72px minmax(0,1fr)" : "280px minmax(0,1fr)",
+            gridTemplateColumns: pdfFocusMode
+              ? "minmax(0,1fr)"
+              : classesPanelCollapsed ? "72px minmax(0,1fr)" : "280px minmax(0,1fr)",
             transition: "grid-template-columns 0.25s ease",
           }}
         >
-          <ClassSidebar
-            items={classes}
-            selectedId={selectedId}
-            onSelect={(id) => setSelectedId(id)}
-            onNew={() => setShowCreate(true)}
-            onRename={(id) => onRenameSelected(id)}
-            onDelete={(id) => onDeleteSelected(id)}
-            collapsed={classesPanelCollapsed}
-            onToggleCollapse={toggleClassesPanel}
-          />
+          {!pdfFocusMode && (
+            <ClassSidebar
+              items={classes}
+              selectedId={selectedId}
+              onSelect={(id) => setSelectedId(id)}
+              onNew={() => setShowCreate(true)}
+              onRename={(id) => onRenameSelected(id)}
+              onDelete={(id) => onDeleteSelected(id)}
+              collapsed={classesPanelCollapsed}
+              onToggleCollapse={toggleClassesPanel}
+            />
+          )}
 
         <section className="h-full min-h-0 overflow-hidden">
           <div
@@ -2030,7 +2036,7 @@ ${finalContent}`;
               )
             ) : (
               <>
-                <div className="flex flex-shrink-0 flex-col gap-2.5 border-b border-[var(--border)] pb-3">
+                <div className={`flex flex-shrink-0 flex-col gap-2.5 border-b border-[var(--border)] pb-3${pdfFocusMode ? " hidden" : ""}`}>
                   <div className="min-w-0">
                     <h2 className="truncate text-[22px] font-semibold leading-tight tracking-tight text-[var(--text-main)]">
                       {currentClass}
@@ -2068,15 +2074,15 @@ ${finalContent}`;
                     </div>
                   </div>
                 </div>
-                <div className="min-h-0 flex-1 overflow-y-auto pr-1">
+                <div className={`min-h-0 flex-1 ${activeFile && activeTab === "documents" ? "flex flex-col overflow-hidden" : "overflow-y-auto pr-1"}`}>
                 {activeTab === "documents" && (
-                  <div className="space-y-3">
+                  <div className={activeFile ? "flex flex-col flex-1 min-h-0" : "space-y-3"}>
                     {activeFile ? (
-                      <div className="relative">
-                        <div className={`grid gap-4 ${layoutClass}`}>
+                      <div className="relative flex flex-col flex-1 min-h-0">
+                        <div className={`grid gap-3 flex-1 min-h-0 ${layoutClass}`}>
                       {/* PDF Viewer */}
-                      <div>
-                          <div className="overflow-hidden rounded-[var(--radius-xl)] border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow-sm)]">
+                      <div className="flex flex-col min-h-0">
+                          <div className="flex flex-col flex-1 min-h-0 overflow-hidden rounded-[var(--radius-xl)] border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow-sm)]">
                             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] bg-[var(--surface)] px-4 py-2.5">
                               <div className="flex min-w-0 flex-1 items-center gap-2">
                                 <button
@@ -2119,7 +2125,7 @@ ${finalContent}`;
                                 />
                               </div>
                             </div>
-                            <div className="min-h-[78vh] surface-2">
+                            <div className="flex-1 min-h-0 surface-2">
                               {activeFileViewLoading && !needsConvertedOfficePreview(activeFile) ? (
                                 <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted">
                                   Preparing document...
@@ -2302,18 +2308,18 @@ ${finalContent}`;
                                 )
                               ) : isImageFile(activeFile) && activeFileViewUrl ? (
                                 studyViewerBlobLoading ? (
-                                  <div className="flex h-full min-h-[40vh] items-center justify-center px-6 text-center text-sm text-muted">
+                                  <div className="flex h-full items-center justify-center px-6 text-center text-sm text-muted">
                                     Loading image…
                                   </div>
                                 ) : studyViewerBlobError ? (
-                                  <div className="flex h-full min-h-[40vh] flex-col items-center justify-center gap-3 px-6 text-center text-sm text-muted">
+                                  <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center text-sm text-muted">
                                     <div>{studyViewerBlobError}</div>
                                     <Button type="button" variant="secondary" onClick={() => setStudyViewerRetryNonce((n) => n + 1)}>
                                       Retry
                                     </Button>
                                   </div>
                                 ) : studyViewerBlobUrl ? (
-                                  <div className="flex h-full min-h-[84vh] items-center justify-center bg-[var(--surface)] p-4">
+                                  <div className="flex h-full items-center justify-center bg-[var(--surface)] p-4">
                                     <img
                                       src={studyViewerBlobUrl}
                                       alt={activeFile.filename}
@@ -2353,8 +2359,7 @@ ${finalContent}`;
                       {/* Study Assistant — docked inline beside PDF */}
                       {studyAssistantOpen && (
                         <aside
-                          className="fixed inset-x-3 bottom-3 z-40 flex max-h-[88vh] min-h-0 flex-col overflow-hidden rounded-[var(--radius-xl)] border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow-elevated)] lg:static lg:max-h-none"
-                          style={{ height: "calc(78vh + 64px)" }}
+                          className="fixed inset-x-3 bottom-3 z-40 flex max-h-[88vh] min-h-[50vh] flex-col overflow-hidden rounded-[var(--radius-xl)] border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow-elevated)] lg:static lg:h-full lg:max-h-none lg:min-h-0"
                           aria-label="Study Assistant"
                         >
                           <div className="shrink-0 border-b border-[var(--border)] bg-[var(--surface)] px-4 py-3">
